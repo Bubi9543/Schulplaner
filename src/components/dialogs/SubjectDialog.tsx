@@ -1,0 +1,156 @@
+import { useEffect, useState } from 'react';
+import { Modal } from '@/components/Modal';
+import { useStore } from '@/store/useStore';
+import { SUBJECT_COLORS } from '@/types';
+import type { Subject, SubjectCategory, GradingSystem } from '@/types';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  initial?: Partial<Subject>;
+  defaultSystem?: GradingSystem;
+}
+
+export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern' }: Props) {
+  const addSubject = useStore(s => s.addSubject);
+  const updateSubject = useStore(s => s.updateSubject);
+  const deleteSubject = useStore(s => s.deleteSubject);
+  const editing = !!initial?.id;
+
+  const [name, setName] = useState(initial?.name ?? '');
+  const [short, setShort] = useState(initial?.short ?? '');
+  const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]);
+  const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'neben');
+  const [system, setSystem] = useState<GradingSystem>(initial?.system ?? defaultSystem);
+  const [teacher, setTeacher] = useState(initial?.teacher ?? '');
+  const [room, setRoom] = useState(initial?.room ?? '');
+  const [targetAverage, setTargetAverage] = useState<string>(initial?.targetAverage?.toString() ?? '');
+
+  useEffect(() => {
+    if (open) {
+      setName(initial?.name ?? '');
+      setShort(initial?.short ?? '');
+      setColor(initial?.color ?? SUBJECT_COLORS[0]);
+      setCategory(initial?.category ?? 'neben');
+      setSystem(initial?.system ?? defaultSystem);
+      setTeacher(initial?.teacher ?? '');
+      setRoom(initial?.room ?? '');
+      setTargetAverage(initial?.targetAverage?.toString() ?? '');
+    }
+  }, [open, initial, defaultSystem]);
+
+  async function save() {
+    if (!name.trim()) return;
+    const payload = {
+      name: name.trim(),
+      short: short.trim() || name.trim().slice(0, 2),
+      color,
+      category,
+      system,
+      teacher: teacher.trim() || undefined,
+      room: room.trim() || undefined,
+      targetAverage: targetAverage ? parseFloat(targetAverage.replace(',', '.')) : undefined,
+    };
+    if (editing && initial?.id) {
+      await updateSubject(initial.id, payload);
+    } else {
+      await addSubject(payload);
+    }
+    onClose();
+  }
+
+  async function remove() {
+    if (initial?.id && confirm('Fach mit allen Noten/Stunden/Aufgaben wirklich löschen?')) {
+      await deleteSubject(initial.id);
+      onClose();
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? 'Fach bearbeiten' : 'Neues Fach'}
+      footer={
+        <>
+          {editing && <button onClick={remove} className="btn-soft text-rose-600">Löschen</button>}
+          <button onClick={onClose} className="btn-ghost">Abbrechen</button>
+          <button onClick={save} className="btn-primary" disabled={!name.trim()}>Speichern</button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-3xl p-5 flex items-center gap-4" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
+          <div className="size-16 rounded-2xl bg-white/25 grid place-items-center text-white font-display font-extrabold text-2xl">
+            {(short || name).slice(0, 2)}
+          </div>
+          <div className="text-white">
+            <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
+            <div className="text-xs opacity-80">{category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? 'Bayern' : 'Oberstufe'}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="label">Name</label>
+            <input className="input" autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="z.B. Mathematik" />
+          </div>
+          <div>
+            <label className="label">Kürzel</label>
+            <input className="input" value={short} onChange={e => setShort(e.target.value)} placeholder="M" maxLength={4} />
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Farbe</label>
+          <div className="flex flex-wrap gap-2">
+            {SUBJECT_COLORS.map(c => (
+              <button key={c} type="button" onClick={() => setColor(c)}
+                className={`size-9 rounded-2xl transition ${color === c ? 'ring-4 ring-white scale-110 shadow-soft' : ''}`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Kategorie</label>
+            <div className="flex gap-2">
+              {(['haupt', 'neben'] as const).map(c => (
+                <button key={c} type="button" onClick={() => setCategory(c)}
+                  className={`flex-1 btn ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
+                  {c === 'haupt' ? 'Hauptfach' : 'Nebenfach'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label">Notensystem</label>
+            <div className="flex gap-2">
+              {(['bayern', 'oberstufe'] as const).map(s => (
+                <button key={s} type="button" onClick={() => setSystem(s)}
+                  className={`flex-1 btn ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
+                  {s === 'bayern' ? '1–6' : '0–15'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="label">Lehrer:in (optional)</label>
+            <input className="input" value={teacher} onChange={e => setTeacher(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Raum (optional)</label>
+            <input className="input" value={room} onChange={e => setRoom(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Zielnote (optional)</label>
+          <input className="input" placeholder={system === 'bayern' ? 'z.B. 2,5' : 'z.B. 10'} value={targetAverage} onChange={e => setTargetAverage(e.target.value)} />
+        </div>
+      </div>
+    </Modal>
+  );
+}
