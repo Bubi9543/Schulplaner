@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy, ArrowLeft, Flag, Settings as SettingsIcon, Cloud } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -8,6 +8,8 @@ import { SUBJECT_COLORS } from '@/types';
 import type { GradingSystem, Subject } from '@/types';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
+
+const ONBOARDING_PENDING_KEY = 'onboarding_pending';
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Mathematik', short: 'M', category: 'haupt' },
@@ -32,11 +34,36 @@ export function Onboarding() {
   const setSettings = useStore(s => s.setSettings);
   const addSubject = useStore(s => s.addSubject);
   const load = useStore(s => s.load);
+  const authUser = useStore(s => s.authUser);
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [system, setSystem] = useState<GradingSystem>('bayern');
   const [subjects, setSubjects] = useState<Draft[]>([]);
+
+  const pendingRef = useRef<{ name: string; system: GradingSystem; subjects: Draft[] } | null>(null);
+
+  // On mount: check if we're returning from a Google OAuth redirect
+  useEffect(() => {
+    const raw = localStorage.getItem(ONBOARDING_PENDING_KEY);
+    if (raw) {
+      try { pendingRef.current = JSON.parse(raw); } catch { /* ignore */ }
+    }
+  }, []);
+
+  // When authUser appears after OAuth redirect, finish onboarding with saved data
+  useEffect(() => {
+    if (!authUser || !pendingRef.current) return;
+    const saved = pendingRef.current;
+    pendingRef.current = null;
+    localStorage.removeItem(ONBOARDING_PENDING_KEY);
+    finishWithData(saved.name, saved.system, saved.subjects);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]);
+
+  function saveStateForRedirect() {
+    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, system, subjects }));
+  }
 
   function toggleStarter(s: typeof STARTER_SUBJECTS[number]) {
     setSubjects(prev => {
@@ -56,12 +83,16 @@ export function Onboarding() {
     setSubjects(prev => [...prev, { name: customName.trim(), short: customName.trim().slice(0, 2), color, category: 'neben', system }]);
   }
 
-  async function finish() {
-    for (const s of subjects) {
-      await addSubject({ ...s, system });
+  async function finishWithData(n: string, sys: GradingSystem, subjs: Draft[]) {
+    for (const s of subjs) {
+      await addSubject({ ...s, system: sys });
     }
-    await setSettings({ name: name.trim() || undefined, system, onboarded: true, demo: false });
+    await setSettings({ name: n.trim() || undefined, system: sys, onboarded: true, demo: false });
     await load();
+  }
+
+  async function finish() {
+    await finishWithData(name, system, subjects);
   }
 
   async function tryDemo() {
@@ -108,7 +139,7 @@ export function Onboarding() {
             )}
             {step === 4 && (
               <motion.div key="a" {...fade}>
-                <AccountStep finish={finish} back={prev} />
+                <AccountStep finish={finish} back={prev} onSaveState={saveStateForRedirect} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -327,7 +358,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, fini
   );
 }
 
-function AccountStep({ finish, back }: { finish: () => void; back: () => void }) {
+function AccountStep({ finish, back, onSaveState }: { finish: () => void; back: () => void; onSaveState: () => void }) {
   const { signIn, signUp, signInWithGoogle } = useStore();
   const [mode, setMode] = useState<'choice' | 'login' | 'signup'>('choice');
   const [email, setEmail] = useState('');
@@ -343,8 +374,8 @@ function AccountStep({ finish, back }: { finish: () => void; back: () => void })
   }
 
   async function handleGoogle() {
+    onSaveState(); // persist name/system/subjects before page leaves
     await signInWithGoogle();
-    // OAuth redirect — finish() wird nach Rückkehr automatisch ausgelöst
   }
 
   return (
