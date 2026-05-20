@@ -77,11 +77,37 @@ export function LessonDialog({ open, onClose, initial, defaults }: Props) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Von</label>
-            <input type="time" className="input" value={start} onChange={e => setStart(e.target.value)} />
+            <input type="time" className="input" value={start} onChange={e => {
+              setStart(e.target.value);
+              // keep duration when start changes if end was auto-set
+            }} />
           </div>
           <div>
             <label className="label">Bis</label>
             <input type="time" className="input" value={end} onChange={e => setEnd(e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Dauer (Schnellwahl)</label>
+          <div className="flex gap-2">
+            {[
+              { label: '45 min', min: 45 },
+              { label: '1 Std', min: 60 },
+              { label: '90 min', min: 90 },
+            ].map(p => (
+              <button
+                key={p.min} type="button"
+                onClick={() => {
+                  if (!start) return;
+                  const [h, m] = start.split(':').map(Number);
+                  const total = h * 60 + m + p.min;
+                  setEnd(`${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`);
+                }}
+                className="flex-1 btn btn-ghost text-sm"
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
         <div>

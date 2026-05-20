@@ -27,7 +27,7 @@ export function Dashboard() {
   const { settings, subjects, grades, tasks } = useStore();
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; kind?: TaskKind }>({ open: false });
-  const [gradeDialog, setGradeDialog] = useState(false);
+  const [gradeDialog, setGradeDialog] = useState<{ open: boolean; initial?: import('@/types').Grade }>({ open: false });
 
   const system = settings?.system ?? 'bayern';
   const systemMeta = getSystemMeta(system, config);
@@ -90,7 +90,7 @@ export function Dashboard() {
               <span className="hidden sm:inline">{QUICK_BUTTON_META[k].label}</span>
             </button>
           ))}
-          <button className="btn-primary" onClick={() => setGradeDialog(true)}><Plus className="size-4" />Note</button>
+          <button className="btn-primary" onClick={() => setGradeDialog({ open: true })}><Plus className="size-4" />Note</button>
         </>
       }
     >
@@ -200,12 +200,17 @@ export function Dashboard() {
                 const subj = subjects.find(s => s.id === g.subjectId);
                 if (!subj) return null;
                 return (
-                  <li key={g.id} className="flex items-center gap-3 px-1 py-2.5">
-                    <GradeBadge value={g.value} system={subj.system} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-ink-800 truncate">{subj.name}</div>
-                      <div className="text-xs text-ink-500 truncate">{g.title ?? g.kind} · {relativeDate(g.date)}</div>
-                    </div>
+                  <li key={g.id}>
+                    <button
+                      onClick={() => setGradeDialog({ open: true, initial: g })}
+                      className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
+                    >
+                      <GradeBadge value={g.value} system={subj.system} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-ink-800 truncate">{subj.name}</div>
+                        <div className="text-xs text-ink-500 truncate">{g.title ?? g.kind} · {relativeDate(g.date)}</div>
+                      </div>
+                    </button>
                   </li>
                 );
               })}
@@ -227,15 +232,20 @@ export function Dashboard() {
                 if (!subj) return null;
                 const d = daysUntil(g.date);
                 return (
-                  <li key={g.id} className="flex items-center gap-3 px-1 py-2.5">
-                    <div className="size-9 rounded-xl grid place-items-center text-white font-bold text-xs" style={{ background: subj.color }}>{subj.short}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-ink-800 truncate">{g.title ?? subj.name}</div>
-                      <div className="text-xs text-ink-500">{subj.name}</div>
-                    </div>
-                    <span className={`chip text-[10px] ${d <= 3 ? 'bg-rose-100 text-rose-600 border-rose-200' : d <= 7 ? 'bg-amber-100 text-amber-700 border-amber-200' : ''}`}>
-                      {relativeDate(g.date)}
-                    </span>
+                  <li key={g.id}>
+                    <button
+                      onClick={() => setGradeDialog({ open: true, initial: g })}
+                      className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
+                    >
+                      <div className="size-9 rounded-xl grid place-items-center text-white font-bold text-xs flex-shrink-0" style={{ background: subj.color }}>{subj.short}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-ink-800 truncate">{g.title ?? subj.name}</div>
+                        <div className="text-xs text-ink-500">{subj.name}</div>
+                      </div>
+                      <span className={`chip text-[10px] flex-shrink-0 ${d <= 3 ? 'bg-rose-100 text-rose-600 border-rose-200' : d <= 7 ? 'bg-amber-100 text-amber-700 border-amber-200' : ''}`}>
+                        {relativeDate(g.date)}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
@@ -272,7 +282,7 @@ export function Dashboard() {
       </div>
 
       <TaskDialog open={taskDialog.open} onClose={() => setTaskDialog({ open: false })} defaultKind={taskDialog.kind} />
-      <GradeDialog open={gradeDialog} onClose={() => setGradeDialog(false)} />
+      <GradeDialog open={gradeDialog.open} onClose={() => setGradeDialog({ open: false })} initial={gradeDialog.initial} />
       {/* avoid lint warnings */}
       <div className="hidden" aria-hidden>{accent}</div>
     </PageShell>

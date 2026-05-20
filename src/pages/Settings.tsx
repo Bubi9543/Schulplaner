@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -11,10 +11,10 @@ import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { KIND_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_KIND_WEIGHTS } from '@/types';
-import type { Subject, GradingSystem, GradeKind, AccentName, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings } from '@/types';
+import type { Subject, GradingSystem, GradeKind, AccentName, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
 import { ACCENT_HEX } from '@/types';
 
-type SectionId = 'profile' | 'appearance' | 'animations' | 'dashboard' | 'grading' | 'subjects' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'animations' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }>; tint: string }> = [
   { id: 'profile', label: 'Profil', icon: User, tint: 'from-indigo-500 to-violet-500' },
@@ -22,8 +22,9 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'animations', label: 'Animationen', icon: Sparkles, tint: 'from-amber-400 to-orange-500' },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, tint: 'from-sky-500 to-indigo-500' },
   { id: 'grading', label: 'Noten & Aufgaben', icon: GraduationCap, tint: 'from-emerald-500 to-teal-500' },
-  { id: 'subjects', label: 'Fächer', icon: BookOpen, tint: 'from-violet-500 to-purple-500' },
-  { id: 'data', label: 'Daten', icon: Database, tint: 'from-rose-500 to-pink-600' },
+  { id: 'subjects',    label: 'Fächer',       icon: BookOpen,  tint: 'from-violet-500 to-purple-500' },
+  { id: 'schoolyears', label: 'Schuljahre',   icon: Calendar,  tint: 'from-teal-500 to-cyan-500' },
+  { id: 'data',        label: 'Daten',        icon: Database,  tint: 'from-rose-500 to-pink-600' },
   { id: 'about', label: 'Über', icon: Info, tint: 'from-slate-500 to-slate-700' },
 ];
 
@@ -64,6 +65,7 @@ export function SettingsPage() {
               {section === 'dashboard' && <DashboardSection />}
               {section === 'grading' && <GradingSection />}
               {section === 'subjects' && <SubjectsSection />}
+              {section === 'schoolyears' && <SchoolYearsSection />}
               {section === 'data' && <DataSection />}
               {section === 'about' && <AboutSection />}
             </motion.div>
@@ -530,6 +532,116 @@ function SyncCard() {
         </div>
       )}
     </Card>
+  );
+}
+
+/* ─── Schuljahre ────────────────────────────────────────────────────── */
+
+function SchoolYearsSection() {
+  const schoolYears = useStore(s => s.schoolYears);
+  const addSchoolYear = useStore(s => s.addSchoolYear);
+  const updateSchoolYear = useStore(s => s.updateSchoolYear);
+  const deleteSchoolYear = useStore(s => s.deleteSchoolYear);
+  const setActiveSchoolYear = useStore(s => s.setActiveSchoolYear);
+
+  const [showForm, setShowForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newStart, setNewStart] = useState(() => {
+    const d = new Date();
+    const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1;
+    return `${y}-09-01`;
+  });
+
+  function suggestName() {
+    const [y] = newStart.split('-').map(Number);
+    return `${y}/${String(y + 1).slice(2)}`;
+  }
+
+  async function create() {
+    const name = newName.trim() || suggestName();
+    await addSchoolYear({ name, startDate: new Date(newStart).getTime(), active: true });
+    setShowForm(false);
+    setNewName('');
+  }
+
+  const fmtDate = (ts: number) => new Date(ts).toLocaleDateString('de', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-display font-bold text-lg text-ink-900">Schuljahre</h3>
+            <p className="text-sm text-ink-500 mt-0.5">Deine Noten und Daten bleiben bei jedem Schuljahr erhalten.</p>
+          </div>
+          <button onClick={() => setShowForm(v => !v)} className="btn-primary">
+            <Plus className="size-4" /> Neues Schuljahr
+          </button>
+        </div>
+
+        {showForm && (
+          <div className="mb-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Beginn</label>
+                <input type="date" className="input" value={newStart} onChange={e => setNewStart(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Name (optional)</label>
+                <input className="input" placeholder={suggestName()} value={newName} onChange={e => setNewName(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowForm(false)} className="btn-ghost">Abbrechen</button>
+              <button onClick={create} className="btn-primary">Erstellen</button>
+            </div>
+          </div>
+        )}
+
+        {schoolYears.length === 0 ? (
+          <div className="text-center py-8 text-sm text-ink-500">
+            <Calendar className="size-8 mx-auto mb-2 text-ink-300" />
+            Noch keine Schuljahre angelegt.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {schoolYears.map(y => (
+              <div key={y.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition ${y.active ? 'border-teal-300 bg-teal-50' : 'border-ink-100 bg-white/60'}`}>
+                <div className={`size-9 rounded-xl grid place-items-center flex-shrink-0 ${y.active ? 'bg-teal-500' : 'bg-ink-200'}`}>
+                  {y.active ? <Check className="size-4 text-white" strokeWidth={3} /> : <Calendar className="size-4 text-ink-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-ink-900">{y.name}</div>
+                  <div className="text-xs text-ink-500">
+                    ab {fmtDate(y.startDate)}{y.endDate ? ` · bis ${fmtDate(y.endDate)}` : ' · laufend'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {!y.active && (
+                    <button
+                      onClick={() => setActiveSchoolYear(y.id)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-teal-100 text-teal-700 hover:bg-teal-200 transition font-medium"
+                    >
+                      Aktiv setzen
+                    </button>
+                  )}
+                  {y.active && <span className="text-xs text-teal-600 font-semibold">Aktiv</span>}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Schuljahr "${y.name}" wirklich löschen? Deine Noten bleiben erhalten.`))
+                        deleteSchoolYear(y.id);
+                    }}
+                    className="size-8 rounded-xl grid place-items-center text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 

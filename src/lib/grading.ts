@@ -2,10 +2,12 @@ import type { Grade, GradingSystem, GradingSystemConfig, Subject, GradeKind, Sub
 
 export const KIND_LABEL: Record<GradeKind, string> = {
   schulaufgabe: 'Schulaufgabe',
-  stegreif: 'Stegreifaufgabe',
-  muendlich: 'Mündlich',
-  projekt: 'Projekt',
-  sonstige: 'Sonstige',
+  stegreif:     'Stegreifaufgabe',
+  muendlich:    'Mündlich',
+  referat:      'Referat',
+  klausur:      'Klausur',
+  projekt:      'Projekt',
+  sonstige:     'Sonstige',
 };
 
 export interface SystemMeta {

@@ -17,7 +17,7 @@ interface Props {
   defaultSubjectId?: string;
 }
 
-const KIND_OPTIONS: GradeKind[] = ['schulaufgabe', 'stegreif', 'muendlich', 'projekt', 'sonstige'];
+const KIND_OPTIONS: GradeKind[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
 
 export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props) {
   const subjects = useStore(s => s.subjects);

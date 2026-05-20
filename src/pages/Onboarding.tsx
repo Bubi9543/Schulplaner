@@ -31,7 +31,11 @@ const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Sport',      short: 'Sp',  category: 'neben' },
   { name: 'Religion',   short: 'Rel', category: 'neben' },
   { name: 'Ethik',      short: 'Eth', category: 'neben' },
-  { name: 'Informatik', short: 'Inf', category: 'neben' },
+  { name: 'Informatik',  short: 'Inf', category: 'neben' },
+  { name: 'Wirtschaft',  short: 'Wi',  category: 'neben' },
+  { name: 'WiB',         short: 'WiB', category: 'neben' },
+  { name: 'PUG',         short: 'PUG', category: 'neben' },
+  { name: 'Sozialkunde', short: 'Sk',  category: 'neben' },
 ];
 
 // Per-step visual theme: gradient colors + blob colors

@@ -4,7 +4,7 @@ export type SubjectCategory = 'haupt' | 'neben';
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type GradeKind = 'schulaufgabe' | 'stegreif' | 'muendlich' | 'projekt' | 'sonstige';
+export type GradeKind = 'schulaufgabe' | 'stegreif' | 'muendlich' | 'referat' | 'klausur' | 'projekt' | 'sonstige';
 
 export type GradeKindWeight = { haupt: number; neben: number };
 
@@ -152,11 +152,22 @@ export const ACCENT_HEX: Record<AccentName, string> = {
 
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
   schulaufgabe: { haupt: 2, neben: 1 },
-  stegreif: { haupt: 1, neben: 1 },
-  muendlich: { haupt: 1, neben: 1 },
-  projekt: { haupt: 1, neben: 1 },
-  sonstige: { haupt: 1, neben: 1 },
+  stegreif:     { haupt: 1, neben: 1 },
+  muendlich:    { haupt: 1, neben: 1 },
+  referat:      { haupt: 1, neben: 1 },
+  klausur:      { haupt: 2, neben: 1 },
+  projekt:      { haupt: 1, neben: 1 },
+  sonstige:     { haupt: 1, neben: 1 },
 };
+
+export interface SchoolYear {
+  id: string;
+  name: string;        // e.g. "2024/25"
+  startDate: number;   // ms timestamp
+  endDate?: number;    // ms timestamp, open if undefined
+  active: boolean;
+  createdAt: number;
+}
 
 export const DEFAULT_GRADING_CONFIG: GradingSystemConfig = {
   bayern: { kindWeights: structuredCloneSafe(DEFAULT_KIND_WEIGHTS) },

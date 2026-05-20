@@ -3,7 +3,7 @@ import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll } from '@/lib/sync';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
 
 function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
@@ -42,6 +42,7 @@ interface State {
   grades: Grade[];
   tasks: AppTask[];
   lessons: Lesson[];
+  schoolYears: SchoolYear[];
   authUser: SupabaseUser | null;
   syncStatus: 'idle' | 'syncing' | 'error';
   lastSyncedAt: number | null;
@@ -73,6 +74,11 @@ interface State {
   addLesson: (l: Omit<Lesson, 'id'>) => Promise<Lesson>;
   updateLesson: (id: string, patch: Partial<Lesson>) => Promise<void>;
   deleteLesson: (id: string) => Promise<void>;
+
+  addSchoolYear: (y: Omit<SchoolYear, 'id' | 'createdAt'>) => Promise<SchoolYear>;
+  updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
+  deleteSchoolYear: (id: string) => Promise<void>;
+  setActiveSchoolYear: (id: string) => Promise<void>;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -82,17 +88,19 @@ export const useStore = create<State>((set, get) => ({
   grades: [],
   tasks: [],
   lessons: [],
+  schoolYears: [],
   authUser: null,
   syncStatus: 'idle',
   lastSyncedAt: null,
 
   async load() {
-    const [storedSettings, subjects, grades, tasks, lessons] = await Promise.all([
+    const [storedSettings, subjects, grades, tasks, lessons, schoolYears] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
       db.tasks.toArray(),
       db.lessons.toArray(),
+      db.schoolYears.toArray(),
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
     set({
@@ -102,6 +110,7 @@ export const useStore = create<State>((set, get) => ({
       grades,
       tasks: tasks.sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons,
+      schoolYears: schoolYears.sort((a, b) => b.startDate - a.startDate),
     });
 
     if (supabase) {
@@ -308,5 +317,25 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({ lessons: state.lessons.filter(l => l.id !== id) }));
     const { authUser } = get();
     if (authUser) deleteRow('lessons', id);
+  },
+
+  async addSchoolYear(y) {
+    const year: SchoolYear = { ...y, id: uid(), createdAt: Date.now() };
+    await db.schoolYears.add(year);
+    set(state => ({ schoolYears: [year, ...state.schoolYears] }));
+    return year;
+  },
+  async updateSchoolYear(id, patch) {
+    await db.schoolYears.update(id, patch);
+    set(state => ({ schoolYears: state.schoolYears.map(y => y.id === id ? { ...y, ...patch } : y) }));
+  },
+  async deleteSchoolYear(id) {
+    await db.schoolYears.delete(id);
+    set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
+  },
+  async setActiveSchoolYear(id) {
+    const years = get().schoolYears;
+    await db.schoolYears.bulkPut(years.map(y => ({ ...y, active: y.id === id })));
+    set(state => ({ schoolYears: state.schoolYears.map(y => ({ ...y, active: y.id === id })) }));
   },
 }));

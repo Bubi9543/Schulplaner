@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear } from '@/types';
 
 export class NotenDB extends Dexie {
   subjects!: Table<Subject, string>;
@@ -9,6 +9,7 @@ export class NotenDB extends Dexie {
   lessons!: Table<Lesson, string>;
   settings!: Table<AppSettings, string>;
   photos!: Table<Photo, string>;
+  schoolYears!: Table<SchoolYear, string>;
 
   constructor() {
     super('notenapp');
@@ -46,6 +47,16 @@ export class NotenDB extends Dexie {
       lessons: 'id, subjectId, weekday, start',
       settings: 'id',
       photos: 'id, refId, refType, createdAt',
+    });
+
+    this.version(4).stores({
+      subjects: 'id, name, system, category, createdAt',
+      grades: 'id, subjectId, date, kind, isPending',
+      tasks: 'id, subjectId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, weekday, start',
+      settings: 'id',
+      photos: 'id, refId, refType, createdAt',
+      schoolYears: 'id, active, startDate, createdAt',
     });
   }
 }
