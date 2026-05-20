@@ -18,6 +18,25 @@ export class NotenDB extends Dexie {
       lessons: 'id, subjectId, weekday, start',
       settings: 'id',
     });
+
+    this.version(2).stores({
+      subjects: 'id, name, system, category, createdAt',
+      grades: 'id, subjectId, date, kind, isPending',
+      tasks: 'id, subjectId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, weekday, start',
+      settings: 'id',
+    }).upgrade(async tx => {
+      const grades = tx.table<Grade>('grades');
+      const subjects = tx.table<Subject>('subjects');
+      const subjList = await subjects.toArray();
+      const bayernSubjectIds = new Set(subjList.filter(s => s.system === 'bayern').map(s => s.id));
+      await grades.toCollection().modify(g => {
+        if (bayernSubjectIds.has(g.subjectId) && !g.isPending) {
+          const rounded = Math.round(g.value);
+          if (rounded !== g.value) g.value = Math.max(1, Math.min(6, rounded));
+        }
+      });
+    });
   }
 }
 

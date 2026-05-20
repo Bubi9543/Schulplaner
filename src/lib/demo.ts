@@ -1,6 +1,7 @@
 import { db, uid } from './db';
 import { defaultWeight } from './grading';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Weekday } from '@/types';
+import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Weekday, GradeKind } from '@/types';
 
 const SUBJECTS_DEMO: Array<Omit<Subject, 'id' | 'createdAt'>> = [
   { name: 'Mathematik', short: 'M', color: '#6366f1', category: 'haupt', system: 'bayern', teacher: 'Frau Bauer', room: 'B204', targetAverage: 2.5 },
@@ -16,11 +17,6 @@ const SUBJECTS_DEMO: Array<Omit<Subject, 'id' | 'createdAt'>> = [
   { name: 'Sport', short: 'Sp', color: '#f97316', category: 'neben', system: 'bayern', teacher: 'Frau Lang', room: 'Halle' },
   { name: 'Musik', short: 'Mu', color: '#8b5cf6', category: 'neben', system: 'bayern', teacher: 'Herr Wolf', room: 'Mu1' },
 ];
-
-function randomBetween(min: number, max: number, step = 0.25) {
-  const steps = Math.round((max - min) / step);
-  return Math.round((min + Math.random() * steps) ) * step + min - (min - Math.round(min / step) * step);
-}
 
 function pick<T>(arr: T[]) { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -45,10 +41,10 @@ function genGradesFor(subject: Subject): Grade[] {
     ? ['schulaufgabe', 'schulaufgabe', 'muendlich', 'stegreif', 'muendlich', 'sonstige'] as const
     : ['stegreif', 'muendlich', 'projekt', 'muendlich', 'sonstige'] as const;
   for (let i = 0; i < count; i++) {
-    const kind = kinds[i % kinds.length];
+    const kind = kinds[i % kinds.length] as GradeKind;
     const target = subject.targetAverage ?? 2.6;
     const val = Math.max(1, Math.min(5, target + (Math.random() - 0.45) * 1.8));
-    const v = Math.round(val * 4) / 4;
+    const v = Math.round(val);
     grades.push({
       id: uid(),
       subjectId: subject.id,
@@ -56,7 +52,7 @@ function genGradesFor(subject: Subject): Grade[] {
       kind,
       title: kind === 'schulaufgabe' ? `${i + 1}. Schulaufgabe` : kind === 'stegreif' ? 'Stegreifaufgabe' : kind === 'muendlich' ? 'Mündliche Note' : kind === 'projekt' ? 'Projekt' : 'Sonstige Leistung',
       date: daysAgo(140 - i * 18 + Math.floor(Math.random() * 6)),
-      weight: defaultWeight(kind, subject.system, subject.category),
+      weight: defaultWeight(kind, subject.system, subject.category, DEFAULT_GRADING_CONFIG),
     });
   }
   if (Math.random() > 0.5) {
@@ -67,7 +63,7 @@ function genGradesFor(subject: Subject): Grade[] {
       kind: 'schulaufgabe',
       title: 'Schulaufgabe (steht aus)',
       date: daysFromNow(7 + Math.floor(Math.random() * 14)),
-      weight: defaultWeight('schulaufgabe', subject.system, subject.category),
+      weight: defaultWeight('schulaufgabe', subject.system, subject.category, DEFAULT_GRADING_CONFIG),
       isPending: true,
     });
   }
@@ -118,35 +114,9 @@ function genTasks(subjects: Subject[]): AppTask[] {
       createdAt: daysAgo(3 + i),
     });
   }
-  out.push({
-    id: uid(),
-    title: 'Schulaufgabe Mathe',
-    kind: 'schulaufgabe',
-    subjectId: subjects.find(s => s.name === 'Mathematik')?.id,
-    dueDate: daysFromNow(9, 8),
-    done: false,
-    priority: 3,
-    createdAt: daysAgo(5),
-  });
-  out.push({
-    id: uid(),
-    title: 'Vokabeltest Latein',
-    kind: 'test',
-    subjectId: subjects.find(s => s.name === 'Latein')?.id,
-    dueDate: daysFromNow(2, 8),
-    done: false,
-    priority: 2,
-    createdAt: daysAgo(2),
-  });
-  out.push({
-    id: uid(),
-    title: 'Bibliotheksausweis abholen',
-    kind: 'todo',
-    dueDate: daysFromNow(4, 14),
-    done: false,
-    priority: 1,
-    createdAt: daysAgo(1),
-  });
+  out.push({ id: uid(), title: 'Schulaufgabe Mathe', kind: 'schulaufgabe', subjectId: subjects.find(s => s.name === 'Mathematik')?.id, dueDate: daysFromNow(9, 8), done: false, priority: 3, createdAt: daysAgo(5) });
+  out.push({ id: uid(), title: 'Vokabeltest Latein', kind: 'test', subjectId: subjects.find(s => s.name === 'Latein')?.id, dueDate: daysFromNow(2, 8), done: false, priority: 2, createdAt: daysAgo(2) });
+  out.push({ id: uid(), title: 'Bibliotheksausweis abholen', kind: 'todo', dueDate: daysFromNow(4, 14), done: false, priority: 1, createdAt: daysAgo(1) });
   return out;
 }
 
@@ -171,14 +141,12 @@ export async function installDemo() {
     await db.tasks.bulkAdd(tasks);
 
     const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
       id: 'app',
       name: 'Demo-Schüler',
       system: 'bayern',
       onboarded: true,
       demo: true,
-      theme: 'auto',
-      schoolStart: '08:00',
-      weekStart: 1,
     };
     await db.settings.put(settings);
   });

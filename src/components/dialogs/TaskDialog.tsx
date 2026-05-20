@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
+import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
 import type { AppTask, TaskKind } from '@/types';
+import { Sparkles } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -20,28 +22,38 @@ const KIND_LABEL: Record<TaskKind, string> = {
 
 export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const subjects = useStore(s => s.subjects);
+  const lessons = useStore(s => s.lessons);
+  const settings = useStore(s => s.settings);
   const addTask = useStore(s => s.addTask);
   const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
+  const now = useTimeNow(30000);
 
   const editing = !!initial?.id;
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [kind, setKind] = useState<TaskKind>(initial?.kind ?? defaultKind ?? 'hausaufgabe');
   const [subjectId, setSubjectId] = useState<string>(initial?.subjectId ?? '');
+  const [autoChosen, setAutoChosen] = useState(false);
   const [dueDate, setDueDate] = useState<string>(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
-  const [priority, setPriority] = useState<1 | 2 | 3>((initial?.priority ?? 2) as 1 | 2 | 3);
+  const [priority, setPriority] = useState<1 | 2 | 3>((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
 
   useEffect(() => {
-    if (open) {
-      setTitle(initial?.title ?? '');
-      setDescription(initial?.description ?? '');
-      setKind(initial?.kind ?? defaultKind ?? 'hausaufgabe');
-      setSubjectId(initial?.subjectId ?? '');
-      setDueDate(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
-      setPriority((initial?.priority ?? 2) as 1 | 2 | 3);
+    if (!open) return;
+    let sid = initial?.subjectId ?? '';
+    let auto = false;
+    if (!sid && !editing && settings?.autoSelectActiveSubject) {
+      const active = getActiveSubject(lessons, subjects, now, settings.activeSubjectThresholdMin);
+      if (active) { sid = active.id; auto = true; }
     }
-  }, [open, initial, defaultKind]);
+    setTitle(initial?.title ?? '');
+    setDescription(initial?.description ?? '');
+    setKind(initial?.kind ?? defaultKind ?? 'hausaufgabe');
+    setSubjectId(sid);
+    setAutoChosen(auto);
+    setDueDate(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
+    setPriority((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
+  }, [open, initial, defaultKind, editing, settings, lessons, subjects, now]);
 
   async function save() {
     if (!title.trim()) return;
@@ -98,10 +110,15 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Fach (optional)</label>
-            <select className="input" value={subjectId} onChange={e => setSubjectId(e.target.value)}>
+            <select className="input" value={subjectId} onChange={e => { setSubjectId(e.target.value); setAutoChosen(false); }}>
               <option value="">– kein Fach –</option>
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+            {autoChosen && (
+              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-indigo-600">
+                <Sparkles className="size-3" /> Vorausgewählt: aktuelle Stunde
+              </div>
+            )}
           </div>
           <div>
             <label className="label">Fällig am</label>

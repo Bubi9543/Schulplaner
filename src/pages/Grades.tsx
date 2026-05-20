@@ -10,43 +10,60 @@ import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { formatAverage, gradeTrend, needsAttention, overallAverage, subjectAverage, gradeColor } from '@/lib/grading';
+import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage } from '@/lib/grading';
+import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject } from '@/types';
 
 export function GradesPage() {
   const { subjects, grades, settings } = useStore();
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const [gradeDialog, setGradeDialog] = useState(false);
   const [subjectDialog, setSubjectDialog] = useState(false);
   const system = settings?.system ?? 'bayern';
+  const meta = getSystemMeta(system, config);
+  const digits = settings?.averageDigits ?? 2;
 
-  const overall = useMemo(() => overallAverage(grades, subjects), [grades, subjects]);
-  const trend = useMemo(() => gradeTrend(grades), [grades]);
+  const subjFor = (gid: string) => subjects.find(s => s.id === gid);
+  const overall = useMemo(() => overallAverage(grades, subjects, config), [grades, subjects, config]);
+  const trend = useMemo(() => gradeTrend(grades, g => subjFor(g.subjectId), config, settings?.trendThreshold ?? 0.2), [grades, subjects, config, settings?.trendThreshold]);
 
-  const attentionSubjects = useMemo(() => subjects.filter(s => needsAttention(grades, s)), [subjects, grades]);
+  const attentionSubjects = useMemo(() => subjects.filter(s => needsAttention(grades, s, config)), [subjects, grades, config]);
 
   const distribution = useMemo(() => {
     const validGrades = grades.filter(g => !g.isPending);
-    if (system === 'bayern') {
-      const buckets = [1, 2, 3, 4, 5, 6].map(n => ({ name: n.toString(), count: 0, color: gradeColor(n, 'bayern') }));
+    if (system === 'bayern' || system === 'austria') {
+      return meta.valueOptions.map(n => ({ name: n.toString(), count: validGrades.filter(g => Math.round(g.value) === n && subjFor(g.subjectId)?.system === system).length, color: gradeColor(n, system, config) }));
+    }
+    if (system === 'oberstufe') {
+      const buckets = [
+        { name: '0-3', min: 0, max: 3, count: 0, color: '#ef4444' },
+        { name: '4-6', min: 4, max: 6, count: 0, color: '#f97316' },
+        { name: '7-9', min: 7, max: 9, count: 0, color: '#f59e0b' },
+        { name: '10-12', min: 10, max: 12, count: 0, color: '#22c55e' },
+        { name: '13-15', min: 13, max: 15, count: 0, color: '#10b981' },
+      ];
       for (const g of validGrades) {
-        const idx = Math.min(5, Math.max(0, Math.round(g.value) - 1));
-        buckets[idx].count++;
+        if (subjFor(g.subjectId)?.system !== 'oberstufe') continue;
+        const b = buckets.find(b => g.value >= b.min && g.value <= b.max);
+        if (b) b.count++;
       }
       return buckets;
     }
-    const buckets = [
-      { name: '0-3', min: 0, max: 3, count: 0, color: '#ef4444' },
-      { name: '4-6', min: 4, max: 6, count: 0, color: '#f97316' },
-      { name: '7-9', min: 7, max: 9, count: 0, color: '#f59e0b' },
-      { name: '10-12', min: 10, max: 12, count: 0, color: '#22c55e' },
-      { name: '13-15', min: 13, max: 15, count: 0, color: '#10b981' },
-    ];
+    const c = config.custom;
+    const bins = 5;
+    const step = (c.max - c.min) / bins;
+    const buckets = Array.from({ length: bins }, (_, i) => ({
+      name: `${(c.min + step * i).toFixed(1)}–${(c.min + step * (i + 1)).toFixed(1)}`,
+      count: 0,
+      color: gradeColor(c.min + step * (i + 0.5), 'custom', config),
+    }));
     for (const g of validGrades) {
-      const b = buckets.find(b => g.value >= b.min && g.value <= b.max);
-      if (b) b.count++;
+      if (subjFor(g.subjectId)?.system !== 'custom') continue;
+      const idx = Math.min(bins - 1, Math.max(0, Math.floor((g.value - c.min) / step)));
+      buckets[idx].count++;
     }
     return buckets;
-  }, [grades, system]);
+  }, [grades, system, meta, config, subjects]);
 
   const chartData = useMemo(() => {
     const data: Array<{ date: string; ts: number; [k: string]: number | string }> = [];
@@ -54,8 +71,9 @@ export function GradesPage() {
       const sg = grades.filter(g => g.subjectId === s.id && !g.isPending).sort((a, b) => a.date - b.date);
       let sum = 0, w = 0;
       for (const g of sg) {
-        sum += g.value * (g.weight || 1);
-        w += (g.weight || 1);
+        const ww = effectiveWeight(g, s, config);
+        sum += g.value * ww;
+        w += ww;
         const d = new Date(g.date);
         const date = `${d.getDate()}.${d.getMonth() + 1}.`;
         let entry = data.find(e => e.ts === d.getTime());
@@ -64,7 +82,7 @@ export function GradesPage() {
       }
     }
     return data.sort((a, b) => a.ts - b.ts);
-  }, [grades, subjects]);
+  }, [grades, subjects, config]);
 
   if (!subjects.length) {
     return (
@@ -111,7 +129,7 @@ export function GradesPage() {
                 <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis reversed={system === 'bayern'} domain={system === 'bayern' ? [1, 6] : [0, 15]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
+                  <YAxis reversed={meta.goodIsLow} domain={[meta.min, meta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
                   {subjects.map(s => (
                     <Line key={s.id} type="monotone" dataKey={s.short} stroke={s.color} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls />
@@ -148,14 +166,14 @@ export function GradesPage() {
           ) : (
             <ul className="space-y-2">
               {attentionSubjects.map(s => {
-                const avg = subjectAverage(grades, s);
+                const avg = subjectAverage(grades, s, config);
                 return (
                   <li key={s.id}>
                     <Link to={`/noten/${s.id}`} className="flex items-center gap-3 rounded-2xl p-2 bg-white/70 hover:bg-white transition">
                       <div className="size-10 rounded-xl grid place-items-center text-white font-display font-bold" style={{ background: s.color }}>{s.short}</div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-ink-800 truncate">{s.name}</div>
-                        <div className="text-xs text-rose-600">Ziel: {s.targetAverage ? formatAverage(s.targetAverage, s.system) : (s.system === 'bayern' ? '3,5' : '5')} · aktuell {formatAverage(avg, s.system)}</div>
+                        <div className="text-xs text-rose-600">Ziel: {s.targetAverage ? formatAverage(s.targetAverage, s.system, digits) : (s.system === 'bayern' ? '3,5' : '5')} · aktuell {formatAverage(avg, s.system, digits)}</div>
                       </div>
                       <GradeBadge value={avg ?? 0} system={s.system} size="sm" />
                     </Link>
@@ -182,18 +200,21 @@ export function GradesPage() {
 
 function SubjectRow({ subject }: { subject: Subject }) {
   const grades = useStore(s => s.grades);
-  const avg = subjectAverage(grades, subject);
+  const settings = useStore(s => s.settings);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const digits = settings?.averageDigits ?? 2;
+  const avg = subjectAverage(grades, subject, config);
   const subjectGrades = grades.filter(g => g.subjectId === subject.id);
 
   const distribution = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const g of subjectGrades) {
       if (g.isPending) continue;
-      const k = subject.system === 'bayern' ? Math.round(g.value).toString() : g.value.toString();
+      const k = (subject.system === 'bayern' || subject.system === 'austria') ? Math.round(g.value).toString() : g.value.toString();
       counts[k] = (counts[k] ?? 0) + 1;
     }
-    return Object.entries(counts).map(([k, v]) => ({ name: k, value: v, color: gradeColor(parseFloat(k), subject.system) }));
-  }, [subjectGrades, subject]);
+    return Object.entries(counts).map(([k, v]) => ({ name: k, value: v, color: gradeColor(parseFloat(k), subject.system, config) }));
+  }, [subjectGrades, subject, config]);
 
   return (
     <Link to={`/noten/${subject.id}`} className="group relative rounded-3xl overflow-hidden p-4 text-white shadow-soft transition hover:-translate-y-0.5">
@@ -203,7 +224,7 @@ function SubjectRow({ subject }: { subject: Subject }) {
         <div>
           <div className="text-[10px] uppercase tracking-wider opacity-80">{subject.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'}</div>
           <div className="font-display font-extrabold text-xl mt-0.5">{subject.name}</div>
-          <div className="text-xs opacity-80">{subjectGrades.filter(g => !g.isPending).length} Noten · Schnitt {formatAverage(avg, subject.system)}</div>
+          <div className="text-xs opacity-80">{subjectGrades.filter(g => !g.isPending).length} Noten · Schnitt {formatAverage(avg, subject.system, digits)}</div>
         </div>
         <div className="size-16 relative">
           {distribution.length > 0 && (

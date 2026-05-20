@@ -9,8 +9,9 @@ import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, defaultWeight, formatAverage, gradeTrend, KIND_WEIGHTS, subjectAverage } from '@/lib/grading';
+import { average, defaultWeight, formatAverage, getSystemMeta, gradeTrend, KIND_LABEL, subjectAverage } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
+import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Grade } from '@/types';
 
 export function SubjectDetailPage() {
@@ -20,6 +21,9 @@ export function SubjectDetailPage() {
   const grades = useStore(s => s.grades);
   const tasks = useStore(s => s.tasks);
   const lessons = useStore(s => s.lessons);
+  const settings = useStore(s => s.settings);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const digits = settings?.averageDigits ?? 2;
 
   const subject = subjects.find(s => s.id === subjectId);
   const [gradeDialog, setGradeDialog] = useState<{ open: boolean; grade?: Grade }>({ open: false });
@@ -28,23 +32,32 @@ export function SubjectDetailPage() {
   const subjectGrades = useMemo(() => subject ? grades.filter(g => g.subjectId === subject.id).sort((a, b) => a.date - b.date) : [], [grades, subject]);
   const realGrades = subjectGrades.filter(g => !g.isPending);
   const pendingGrades = subjectGrades.filter(g => g.isPending);
-  const avg = subject ? subjectAverage(grades, subject) : null;
-  const trend = useMemo(() => gradeTrend(subjectGrades), [subjectGrades]);
+  const avg = subject ? subjectAverage(grades, subject, config) : null;
+  const trend = useMemo(() => gradeTrend(subjectGrades, () => subject, config, settings?.trendThreshold ?? 0.2), [subjectGrades, subject, config, settings?.trendThreshold]);
+  const meta = subject ? getSystemMeta(subject.system, config) : null;
 
   const byKind = useMemo(() => {
+    if (!subject) return [];
     const m: Record<string, Grade[]> = {};
     for (const g of realGrades) (m[g.kind] ??= []).push(g);
-    return Object.entries(m).map(([kind, gs]) => ({ kind, count: gs.length, avg: average(gs), weight: defaultWeight(kind, subject?.system ?? 'bayern', subject?.category ?? 'neben') }));
-  }, [realGrades, subject]);
+    return Object.entries(m).map(([kind, gs]) => ({
+      kind,
+      count: gs.length,
+      avg: average(gs, () => subject, config),
+      weight: defaultWeight(kind as Grade['kind'], subject.system, subject.category, config),
+    }));
+  }, [realGrades, subject, config]);
 
   const lineData = useMemo(() => {
+    if (!subject) return [];
     let sum = 0, w = 0;
     return realGrades.map(g => {
-      sum += g.value * (g.weight || 1);
-      w += (g.weight || 1);
+      const ww = (config.oberstufe.allowPerGradeWeight && subject.system === 'oberstufe' && g.weightMultiplier) ? (g.weight || 1) * g.weightMultiplier : (g.weight || 1);
+      sum += g.value * ww;
+      w += ww;
       return { date: formatDate(g.date, { day: '2-digit', month: '2-digit' }), value: g.value, avg: +(sum / w).toFixed(2) };
     });
-  }, [realGrades]);
+  }, [realGrades, subject, config]);
 
   const lessonCount = subject ? lessons.filter(l => l.subjectId === subject.id).length : 0;
   const openTasks = subject ? tasks.filter(t => t.subjectId === subject.id && !t.done) : [];
@@ -79,13 +92,13 @@ export function SubjectDetailPage() {
             <div className="flex items-center gap-3">
               <div className="size-16 rounded-3xl bg-white/20 grid place-items-center font-display font-extrabold text-2xl">{subject.short}</div>
               <div>
-                <div className="text-xs opacity-80 uppercase tracking-wider">{subject.system === 'bayern' ? 'Bayerisches System' : 'Oberstufe'}</div>
+                <div className="text-xs opacity-80 uppercase tracking-wider">{meta?.label}</div>
                 <div className="font-display font-bold text-xl">{subject.name}</div>
               </div>
             </div>
             <div className="mt-6">
               <div className="text-xs opacity-80">Aktueller Schnitt</div>
-              <div className="font-display font-extrabold text-5xl mt-1">{formatAverage(avg, subject.system)}</div>
+              <div className="font-display font-extrabold text-5xl mt-1">{formatAverage(avg, subject.system, digits)}</div>
               <div className="mt-2 inline-flex items-center gap-1 text-sm font-semibold">
                 {trend === 'up' ? <><TrendingUp className="size-4" />Trend: besser</> : trend === 'down' ? <><TrendingDown className="size-4" />Trend: schlechter</> : 'Stabil'}
               </div>
@@ -94,7 +107,7 @@ export function SubjectDetailPage() {
               <div className="mt-6 grid grid-cols-1 gap-1.5 text-sm">
                 {subject.teacher && <div className="flex items-center gap-2 opacity-90"><User className="size-3.5" />{subject.teacher}</div>}
                 {subject.room && <div className="flex items-center gap-2 opacity-90"><MapPin className="size-3.5" />Raum {subject.room}</div>}
-                {subject.targetAverage && <div className="flex items-center gap-2 opacity-90"><Target className="size-3.5" />Ziel {formatAverage(subject.targetAverage, subject.system)}</div>}
+                {subject.targetAverage && <div className="flex items-center gap-2 opacity-90"><Target className="size-3.5" />Ziel {formatAverage(subject.targetAverage, subject.system, digits)}</div>}
               </div>
             )}
           </div>
@@ -103,7 +116,7 @@ export function SubjectDetailPage() {
         <Card delay={0.05} className="col-span-12 md:col-span-7 lg:col-span-8">
           <div className="flex items-center justify-between mb-2">
             <h3 className="h3">Verlauf & Schnitt</h3>
-            {subject.targetAverage && <span className="chip">Zielnote: {formatAverage(subject.targetAverage, subject.system)}</span>}
+            {subject.targetAverage && <span className="chip">Zielnote: {formatAverage(subject.targetAverage, subject.system, digits)}</span>}
           </div>
           <div className="h-64">
             {lineData.length > 0 ? (
@@ -111,7 +124,7 @@ export function SubjectDetailPage() {
                 <LineChart data={lineData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis reversed={subject.system === 'bayern'} domain={subject.system === 'bayern' ? [1, 6] : [0, 15]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
+                  <YAxis reversed={meta?.goodIsLow} domain={meta ? [meta.min, meta.max] : [1, 6]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
                   {subject.targetAverage && <ReferenceLine y={subject.targetAverage} stroke="#ec4899" strokeDasharray="4 4" label={{ value: 'Ziel', fill: '#ec4899', fontSize: 10 }} />}
                   <Line type="monotone" dataKey="value" stroke={subject.color} strokeWidth={1.5} dot={{ r: 3 }} strokeOpacity={0.6} />
@@ -133,7 +146,7 @@ export function SubjectDetailPage() {
               {byKind.map(b => (
                 <li key={b.kind} className="flex items-center gap-3 rounded-2xl p-2 bg-white/60">
                   <div className="flex-1">
-                    <div className="font-semibold text-ink-800">{KIND_WEIGHTS[b.kind]?.label ?? b.kind}</div>
+                    <div className="font-semibold text-ink-800">{KIND_LABEL[b.kind as Grade['kind']] ?? b.kind}</div>
                     <div className="text-xs text-ink-500">{b.count} Noten · Gewicht {b.weight}</div>
                   </div>
                   <GradeBadge value={b.avg ?? 0} system={subject.system} size="sm" />
@@ -156,7 +169,7 @@ export function SubjectDetailPage() {
                   <GradeBadge value={0} system={subject.system} size="sm" pending />
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-ink-800 truncate">{g.title ?? 'Ausstehende Note'}</div>
-                    <div className="text-xs text-ink-500">{KIND_WEIGHTS[g.kind]?.label} · {relativeDate(g.date)}</div>
+                    <div className="text-xs text-ink-500">{KIND_LABEL[g.kind]} · {relativeDate(g.date)}</div>
                   </div>
                 </li>
               ))}
@@ -184,7 +197,7 @@ export function SubjectDetailPage() {
                   className="rounded-2xl bg-white/70 hover:bg-white p-3 text-left transition shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <GradeBadge value={g.value} system={subject.system} size="sm" />
-                    <span className="chip">{KIND_WEIGHTS[g.kind]?.label}</span>
+                    <span className="chip">{KIND_LABEL[g.kind]}</span>
                   </div>
                   <div className="font-semibold text-sm text-ink-800 truncate">{g.title ?? 'Note'}</div>
                   <div className="text-xs text-ink-500">{formatDate(g.date)}</div>

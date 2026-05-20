@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy, ArrowLeft } from 'lucide-react';
+import { ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy, ArrowLeft, Flag, Settings as SettingsIcon } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { installDemo } from '@/lib/demo';
 import { SUBJECT_COLORS } from '@/types';
@@ -59,7 +59,7 @@ export function Onboarding() {
     for (const s of subjects) {
       await addSubject({ ...s, system });
     }
-    await setSettings({ name: name.trim() || undefined, system, onboarded: true, demo: false, theme: 'auto', schoolStart: '08:00', weekStart: 1 });
+    await setSettings({ name: name.trim() || undefined, system, onboarded: true, demo: false });
     await load();
   }
 
@@ -209,18 +209,34 @@ function SystemStep({ system, setSystem, next, back }: { system: GradingSystem; 
         <SystemCard
           active={system === 'bayern'}
           onClick={() => setSystem('bayern')}
-          title="Bayerisches System"
-          subtitle="Noten 1–6, mit Haupt- und Nebenfächern"
+          title="Bayern"
+          subtitle="Ganze Noten 1–6, Haupt- & Nebenfächer"
           icon={<BookOpen className="size-6" />}
           accent="from-indigo-500 to-violet-500"
         />
         <SystemCard
           active={system === 'oberstufe'}
           onClick={() => setSystem('oberstufe')}
-          title="Oberstufe"
-          subtitle="Punktesystem 0–15"
+          title="Oberstufe / Abitur"
+          subtitle="Punkte 0–15, mit Gewichtung pro Note"
           icon={<Trophy className="size-6" />}
           accent="from-emerald-500 to-teal-500"
+        />
+        <SystemCard
+          active={system === 'austria'}
+          onClick={() => setSystem('austria')}
+          title="Österreich"
+          subtitle="Noten 1–5, Sehr gut bis Nicht genügend"
+          icon={<Flag className="size-6" />}
+          accent="from-rose-500 to-pink-500"
+        />
+        <SystemCard
+          active={system === 'custom'}
+          onClick={() => setSystem('custom')}
+          title="Frei konfigurierbar"
+          subtitle="Min, Max, Schrittweite frei wählbar"
+          icon={<SettingsIcon className="size-6" />}
+          accent="from-amber-500 to-orange-500"
         />
       </div>
       <button onClick={next} className="btn-primary mt-6 w-full py-3 text-base">
@@ -288,7 +304,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, fini
                 <div className="size-9 rounded-xl grid place-items-center text-white font-display font-bold text-sm" style={{ background: s.color }}>{s.short}</div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-ink-800 truncate">{s.name}</div>
-                  <div className="text-xs text-ink-500">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? '1–6' : '0–15'}</div>
+                  <div className="text-xs text-ink-500">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? '1–6' : system === 'oberstufe' ? '0–15' : system === 'austria' ? '1–5' : 'Frei'}</div>
                 </div>
                 <button onClick={() => removeSubject(s.name)} className="size-9 grid place-items-center rounded-full hover:bg-rose-100 text-ink-400 hover:text-rose-500"><Trash2 className="size-4" /></button>
               </div>

@@ -1,6 +1,36 @@
 import { create } from 'zustand';
 import { db, uid } from '@/lib/db';
-import type { Subject, Grade, AppTask, Lesson, AppSettings } from '@/types';
+import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig } from '@/types';
+
+function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
+  const base: AppSettings = { ...DEFAULT_SETTINGS, id: 'app' };
+  if (!stored) return base;
+  const merged: AppSettings = { ...base, ...stored, id: 'app' };
+  merged.gradingConfig = mergeGradingConfig(stored.gradingConfig);
+  if (!merged.quickButtons || !Array.isArray(merged.quickButtons) || merged.quickButtons.length === 0) {
+    merged.quickButtons = DEFAULT_SETTINGS.quickButtons;
+  }
+  return merged;
+}
+
+function mergeGradingConfig(stored: Partial<GradingSystemConfig> | undefined): GradingSystemConfig {
+  const def = DEFAULT_GRADING_CONFIG;
+  if (!stored) return cloneCfg(def);
+  return {
+    bayern: { kindWeights: { ...def.bayern.kindWeights, ...(stored.bayern?.kindWeights ?? {}) } },
+    oberstufe: {
+      kindWeights: { ...def.oberstufe.kindWeights, ...(stored.oberstufe?.kindWeights ?? {}) },
+      allowPerGradeWeight: stored.oberstufe?.allowPerGradeWeight ?? def.oberstufe.allowPerGradeWeight,
+    },
+    austria: { kindWeights: { ...def.austria.kindWeights, ...(stored.austria?.kindWeights ?? {}) } },
+    custom: { ...def.custom, ...(stored.custom ?? {}), kindWeights: { ...def.custom.kindWeights, ...(stored.custom?.kindWeights ?? {}) } },
+  };
+}
+
+function cloneCfg(c: GradingSystemConfig): GradingSystemConfig {
+  return typeof structuredClone === 'function' ? structuredClone(c) : JSON.parse(JSON.stringify(c));
+}
 
 interface State {
   loaded: boolean;
@@ -12,6 +42,7 @@ interface State {
 
   load: () => Promise<void>;
   setSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  setGradingConfig: (patch: Partial<GradingSystemConfig>) => Promise<void>;
 
   addSubject: (s: Omit<Subject, 'id' | 'createdAt'>) => Promise<Subject>;
   updateSubject: (id: string, patch: Partial<Subject>) => Promise<void>;
@@ -40,16 +71,17 @@ export const useStore = create<State>((set, get) => ({
   lessons: [],
 
   async load() {
-    const [settings, subjects, grades, tasks, lessons] = await Promise.all([
+    const [storedSettings, subjects, grades, tasks, lessons] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
       db.tasks.toArray(),
       db.lessons.toArray(),
     ]);
+    const settings = storedSettings ? mergeSettings(storedSettings) : null;
     set({
       loaded: true,
-      settings: settings ?? null,
+      settings,
       subjects: subjects.sort((a, b) => a.name.localeCompare(b.name, 'de')),
       grades,
       tasks: tasks.sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
@@ -58,16 +90,16 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async setSettings(patch) {
-    const current = get().settings ?? {
-      id: 'app' as const,
-      system: 'bayern' as const,
-      onboarded: false,
-      demo: false,
-      theme: 'auto' as const,
-      schoolStart: '08:00',
-      weekStart: 1 as const,
-    };
-    const next: AppSettings = { ...current, ...patch, id: 'app' };
+    const current = get().settings ?? mergeSettings(undefined);
+    const next: AppSettings = mergeSettings({ ...current, ...patch });
+    await db.settings.put(next);
+    set({ settings: next });
+  },
+
+  async setGradingConfig(patch) {
+    const current = get().settings ?? mergeSettings(undefined);
+    const merged: GradingSystemConfig = mergeGradingConfig({ ...current.gradingConfig, ...patch });
+    const next: AppSettings = { ...current, gradingConfig: merged };
     await db.settings.put(next);
     set({ settings: next });
   },

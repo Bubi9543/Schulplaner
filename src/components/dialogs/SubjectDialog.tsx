@@ -83,7 +83,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
-            <div className="text-xs opacity-80">{category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? 'Bayern' : 'Oberstufe'}</div>
+            <div className="text-xs opacity-80">{category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? 'Bayern (1–6)' : system === 'oberstufe' ? 'Oberstufe (0–15)' : system === 'austria' ? 'Österreich (1–5)' : 'Frei'}</div>
           </div>
         </div>
 
@@ -124,11 +124,11 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
           </div>
           <div>
             <label className="label">Notensystem</label>
-            <div className="flex gap-2">
-              {(['bayern', 'oberstufe'] as const).map(s => (
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['bayern', 'oberstufe', 'austria', 'custom'] as const).map(s => (
                 <button key={s} type="button" onClick={() => setSystem(s)}
-                  className={`flex-1 btn ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
-                  {s === 'bayern' ? '1–6' : '0–15'}
+                  className={`btn text-xs px-2 py-2 ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
+                  {s === 'bayern' ? 'Bayern' : s === 'oberstufe' ? 'Oberstufe' : s === 'austria' ? 'Österreich' : 'Frei'}
                 </button>
               ))}
             </div>
@@ -148,7 +148,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
 
         <div>
           <label className="label">Zielnote (optional)</label>
-          <input className="input" placeholder={system === 'bayern' ? 'z.B. 2,5' : 'z.B. 10'} value={targetAverage} onChange={e => setTargetAverage(e.target.value)} />
+          <input className="input" placeholder={system === 'bayern' ? 'z.B. 2,5' : system === 'oberstufe' ? 'z.B. 10' : system === 'austria' ? 'z.B. 2' : 'z.B. 2,5'} value={targetAverage} onChange={e => setTargetAverage(e.target.value)} />
         </div>
       </div>
     </Modal>

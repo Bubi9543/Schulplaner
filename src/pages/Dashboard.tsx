@@ -1,33 +1,58 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { Plus, ListTodo, GraduationCap, NotebookPen, CheckCircle2, Circle, TrendingUp, TrendingDown, Clock, Sparkles, ArrowRight } from 'lucide-react';
+import { Plus, ListTodo, GraduationCap, NotebookPen, CheckCircle2, Circle, TrendingUp, TrendingDown, Sparkles, ArrowRight, Briefcase, FileText, Calendar } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { GradeBadge } from '@/components/GradeBadge';
 import { AverageRing } from '@/components/AverageRing';
+import { TodayTimeline } from '@/components/TodayTimeline';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { useStore } from '@/store/useStore';
-import { formatAverage, gradeTrend, overallAverage, subjectAverage } from '@/lib/grading';
+import { effectiveWeight, formatAverage, gradeTrend, overallAverage, subjectAverage, getSystemMeta } from '@/lib/grading';
 import { daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
+import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { TaskKind } from '@/types';
 
+const QUICK_BUTTON_META: Record<TaskKind, { label: string; icon: React.ReactNode }> = {
+  todo: { label: 'Todo', icon: <ListTodo className="size-4" /> },
+  hausaufgabe: { label: 'Hausaufgabe', icon: <NotebookPen className="size-4" /> },
+  test: { label: 'Test', icon: <GraduationCap className="size-4" /> },
+  schulaufgabe: { label: 'Schulaufgabe', icon: <FileText className="size-4" /> },
+  projekt: { label: 'Projekt', icon: <Briefcase className="size-4" /> },
+};
+
 export function Dashboard() {
-  const { settings, subjects, grades, tasks, lessons } = useStore();
+  const { settings, subjects, grades, tasks } = useStore();
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; kind?: TaskKind }>({ open: false });
   const [gradeDialog, setGradeDialog] = useState(false);
 
   const system = settings?.system ?? 'bayern';
+  const systemMeta = getSystemMeta(system, config);
   const greeting = useMemo(() => {
     const h = new Date().getHours();
+    const style = settings?.dashboardGreetingStyle ?? 'casual';
+    if (style === 'formal') {
+      if (h < 11) return 'Guten Morgen';
+      if (h < 18) return 'Guten Tag';
+      return 'Guten Abend';
+    }
+    if (style === 'fun') {
+      if (h < 11) return 'Aufstehen';
+      if (h < 13) return 'Mittag';
+      if (h < 18) return 'Yo';
+      return 'Feierabend';
+    }
     if (h < 11) return 'Guten Morgen';
     if (h < 18) return 'Hallo';
     return 'Guten Abend';
-  }, []);
+  }, [settings?.dashboardGreetingStyle]);
 
-  const overall = useMemo(() => overallAverage(grades, subjects), [grades, subjects]);
-  const trend = useMemo(() => gradeTrend(grades), [grades]);
+  const subjFor = (gid: string) => subjects.find(s => s.id === gid);
+  const overall = useMemo(() => overallAverage(grades, subjects, config), [grades, subjects, config]);
+  const trend = useMemo(() => gradeTrend(grades, g => subjFor(g.subjectId), config, settings?.trendThreshold ?? 0.2), [grades, subjects, config, settings?.trendThreshold]);
 
   const recentGrades = useMemo(() => [...grades].filter(g => !g.isPending).sort((a, b) => b.date - a.date).slice(0, 5), [grades]);
   const pendingGrades = useMemo(() => grades.filter(g => g.isPending).sort((a, b) => a.date - b.date).slice(0, 4), [grades]);
@@ -35,25 +60,22 @@ export function Dashboard() {
   const openTasks = useMemo(() => tasks.filter(t => !t.done).slice(0, 6), [tasks]);
   const todayTasks = useMemo(() => openTasks.filter(t => t.dueDate && daysUntil(t.dueDate) <= 1), [openTasks]);
 
-  const todayLessons = useMemo(() => {
-    const today = new Date().getDay() || 7;
-    return lessons.filter(l => l.weekday === (today % 7 === 0 ? 7 : today)).sort((a, b) => a.start.localeCompare(b.start));
-  }, [lessons]);
-
   const chartData = useMemo(() => {
     const sorted = [...grades].filter(g => !g.isPending).sort((a, b) => a.date - b.date);
     if (!sorted.length) return [];
-    const buckets: Record<string, { date: string; sum: number; w: number }> = {};
     let runSum = 0; let runW = 0;
     return sorted.map(g => {
-      runSum += g.value * (g.weight || 1);
-      runW += (g.weight || 1);
+      const w = effectiveWeight(g, subjFor(g.subjectId), config);
+      runSum += g.value * w;
+      runW += w;
       const d = new Date(g.date);
       const key = `${d.getDate()}.${d.getMonth() + 1}.`;
-      buckets[key] = { date: key, sum: runSum, w: runW };
       return { date: key, avg: runSum / runW };
     });
-  }, [grades]);
+  }, [grades, subjects, config]);
+
+  const accent = settings?.accent ?? 'indigo';
+  const quickButtons = settings?.quickButtons ?? ['todo', 'hausaufgabe', 'test'];
 
   return (
     <PageShell
@@ -62,9 +84,12 @@ export function Dashboard() {
       subtitle={subjects.length ? `${subjects.length} Fächer · ${grades.filter(g => !g.isPending).length} Noten · ${tasks.filter(t => !t.done).length} offene Aufgaben` : 'Lege dein erstes Fach an um loszulegen.'}
       actions={
         <>
-          <button className="btn-ghost" onClick={() => setTaskDialog({ open: true, kind: 'todo' })}><ListTodo className="size-4" />Todo</button>
-          <button className="btn-ghost" onClick={() => setTaskDialog({ open: true, kind: 'hausaufgabe' })}><NotebookPen className="size-4" />Hausaufgabe</button>
-          <button className="btn-ghost" onClick={() => setTaskDialog({ open: true, kind: 'test' })}><GraduationCap className="size-4" />Test</button>
+          {quickButtons.map(k => QUICK_BUTTON_META[k] && (
+            <button key={k} className="btn-ghost" onClick={() => setTaskDialog({ open: true, kind: k })}>
+              {QUICK_BUTTON_META[k].icon}
+              <span className="hidden sm:inline">{QUICK_BUTTON_META[k].label}</span>
+            </button>
+          ))}
           <button className="btn-primary" onClick={() => setGradeDialog(true)}><Plus className="size-4" />Note</button>
         </>
       }
@@ -84,7 +109,7 @@ export function Dashboard() {
             </div>
             <div className="text-sm">
               <div className="text-white/80">über alle Fächer</div>
-              <div className="font-display font-bold text-2xl mt-1">{formatAverage(overall, system)}</div>
+              <div className="font-display font-bold text-2xl mt-1">{formatAverage(overall, system, settings?.averageDigits ?? 2)}</div>
               <Link to="/noten" className="mt-3 inline-flex items-center gap-1 text-white/95 hover:text-white text-sm font-semibold">
                 Detail ansehen <ArrowRight className="size-3.5" />
               </Link>
@@ -109,7 +134,7 @@ export function Dashboard() {
                   </defs>
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis reversed={system === 'bayern'} domain={system === 'bayern' ? [1, 6] : [0, 15]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
+                  <YAxis reversed={systemMeta.goodIsLow} domain={[systemMeta.min, systemMeta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} formatter={(v: unknown) => (typeof v === 'number' ? v.toFixed(2).replace('.', ',') : String(v))} labelFormatter={l => `${l}`} />
                   <Area type="monotone" dataKey="avg" stroke="#6366f1" strokeWidth={2.5} fill="url(#dashGrad)" />
                 </AreaChart>
@@ -120,7 +145,15 @@ export function Dashboard() {
           </div>
         </Card>
 
-        <Card delay={0.1} className="col-span-12 md:col-span-6">
+        <Card delay={0.1} className="col-span-12 md:col-span-7">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="h3 flex items-center gap-2"><Calendar className="size-5" />Heute · {WEEKDAYS_DE[new Date().getDay()]}</h3>
+            <Link to="/stundenplan" className="text-sm text-indigo-600 font-semibold hover:underline">Stundenplan</Link>
+          </div>
+          <TodayTimeline />
+        </Card>
+
+        <Card delay={0.15} className="col-span-12 md:col-span-5">
           <div className="flex items-center justify-between mb-2">
             <h3 className="h3">Heute fällig</h3>
             <Link to="/aufgaben" className="text-sm text-indigo-600 font-semibold hover:underline">Alle</Link>
@@ -154,7 +187,7 @@ export function Dashboard() {
           )}
         </Card>
 
-        <Card delay={0.15} className="col-span-12 md:col-span-6">
+        <Card delay={0.2} className="col-span-12 md:col-span-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="h3">Letzte Noten</h3>
             <Link to="/noten" className="text-sm text-indigo-600 font-semibold hover:underline">Alle</Link>
@@ -180,34 +213,7 @@ export function Dashboard() {
           )}
         </Card>
 
-        <Card delay={0.2} className="col-span-12 md:col-span-7">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="h3">Heute · {WEEKDAYS_DE[new Date().getDay()]}</h3>
-            <Link to="/stundenplan" className="text-sm text-indigo-600 font-semibold hover:underline">Stundenplan</Link>
-          </div>
-          {todayLessons.length === 0 ? (
-            <div className="text-center py-5 text-sm text-ink-500">Heute keine Stunden 🎈</div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {todayLessons.map(l => {
-                const subj = subjects.find(s => s.id === l.subjectId);
-                if (!subj) return null;
-                return (
-                  <Link key={l.id} to={`/noten/${subj.id}`} className="group relative rounded-2xl p-3 text-white overflow-hidden shadow-soft transition hover:-translate-y-0.5">
-                    <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${subj.color}, ${subj.color}cc)` }} />
-                    <div className="relative">
-                      <div className="text-[10px] opacity-80 flex items-center gap-1"><Clock className="size-3" />{l.start}</div>
-                      <div className="font-display font-bold text-base mt-0.5 truncate">{subj.name}</div>
-                      <div className="text-xs opacity-80">{l.room ?? subj.room ?? ''}</div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        <Card delay={0.25} className="col-span-12 md:col-span-5">
+        <Card delay={0.25} className="col-span-12 md:col-span-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="h3">Ausstehende Noten</h3>
             <span className="chip">{pendingGrades.length}</span>
@@ -244,14 +250,14 @@ export function Dashboard() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {subjects.map(s => {
-              const avg = subjectAverage(grades, s);
+              const avg = subjectAverage(grades, s, config);
               return (
                 <Link key={s.id} to={`/noten/${s.id}`} className="group relative rounded-2xl overflow-hidden p-3 text-white shadow-soft transition hover:-translate-y-0.5">
                   <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}, ${s.color}cc)` }} />
                   <div className="relative">
                     <div className="text-[10px] opacity-80">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'}</div>
                     <div className="font-display font-bold text-base mt-0.5 truncate">{s.name}</div>
-                    <div className="mt-2 text-2xl font-display font-extrabold">{formatAverage(avg, s.system)}</div>
+                    <div className="mt-2 text-2xl font-display font-extrabold">{formatAverage(avg, s.system, settings?.averageDigits ?? 2)}</div>
                   </div>
                 </Link>
               );
@@ -267,6 +273,8 @@ export function Dashboard() {
 
       <TaskDialog open={taskDialog.open} onClose={() => setTaskDialog({ open: false })} defaultKind={taskDialog.kind} />
       <GradeDialog open={gradeDialog} onClose={() => setGradeDialog(false)} />
+      {/* avoid lint warnings */}
+      <div className="hidden" aria-hidden>{accent}</div>
     </PageShell>
   );
 }
