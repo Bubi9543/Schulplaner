@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import type { Grade, GradeKind } from '@/types';
@@ -6,6 +6,8 @@ import { defaultWeight, KIND_LABEL, getSystemMeta, gradeColor, isGoodGrade } fro
 import { hexToRgba } from '@/lib/utils';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
 import { Confetti } from '@/components/CountUp';
+import { PhotoAttachment } from '@/components/PhotoAttachment';
+import { uid } from '@/lib/db';
 import { Sparkles } from 'lucide-react';
 
 interface Props {
@@ -53,6 +55,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const [weightMultiplier, setWeightMultiplier] = useState<0.5 | 1 | 2>((initial?.weightMultiplier ?? 1) as 0.5 | 1 | 2);
   const [isPending, setIsPending] = useState<boolean>(!!initial?.isPending);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const gradeIdRef = useRef<string>(initial?.id ?? uid());
 
   useEffect(() => {
     if (!open) return;
@@ -76,6 +79,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     setDate(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
     setWeightMultiplier((initial?.weightMultiplier ?? 1) as 0.5 | 1 | 2);
     setIsPending(!!initial?.isPending);
+    gradeIdRef.current = initial?.id ?? uid();
   }, [open, initial, defaultSubjectId, subjects, settings, lessons, config, now]);
 
   useEffect(() => {
@@ -86,7 +90,8 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
 
   async function save() {
     if (!subject) return;
-    const payload: Omit<Grade, 'id'> = {
+    const payload = {
+      id: gradeIdRef.current,
       subjectId,
       value,
       kind,
@@ -221,6 +226,10 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
             <input type="checkbox" checked={isPending} onChange={e => setIsPending(e.target.checked)} className="size-5 accent-indigo-500" />
             <span className="text-sm text-ink-700">Note steht aus (Termin vormerken)</span>
           </label>
+
+          {settings?.isMainDevice && (
+            <PhotoAttachment refId={gradeIdRef.current} refType="grade" />
+          )}
         </div>
       </Modal>
       <Confetti trigger={confettiTrigger} />

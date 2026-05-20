@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
+import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { KIND_LABEL } from '@/lib/grading';
@@ -433,6 +434,105 @@ function SubjectsSection() {
   );
 }
 
+function SyncCard() {
+  const authUser = useStore(s => s.authUser);
+  const syncStatus = useStore(s => s.syncStatus);
+  const lastSyncedAt = useStore(s => s.lastSyncedAt);
+  const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
+  const { signIn, signUp, signInWithGoogle, signOut, syncNow, pullFromCloud } = useStore();
+
+  const [mode, setMode] = useState<'idle' | 'login' | 'signup'>('idle');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [pullMsg, setPullMsg] = useState('');
+
+  if (!supabase) {
+    return (
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><CloudOff className="size-5 text-ink-400" />Cloud Sync</h3>
+        <p className="text-sm text-ink-500">Sync ist noch nicht eingerichtet. Folge der Anleitung im Über-Bereich.</p>
+      </Card>
+    );
+  }
+
+  async function submit() {
+    setError(''); setLoading(true);
+    const err = mode === 'login' ? await signIn(email, password) : await signUp(email, password);
+    setLoading(false);
+    if (err) setError(err); else setMode('idle');
+  }
+
+  async function handlePull() {
+    const pulled = await pullFromCloud();
+    setPullMsg(pulled ? 'Daten vom Server geladen!' : 'Keine Cloud-Daten gefunden.');
+    setTimeout(() => setPullMsg(''), 3000);
+  }
+
+  if (authUser) {
+    return (
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Cloud className="size-5 text-emerald-500" />Cloud Sync</h3>
+        <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 mb-3">
+          <div className="text-sm font-semibold text-emerald-800">Eingeloggt als {authUser.email}</div>
+          {lastSyncedAt && <div className="text-xs text-emerald-600">Zuletzt synchronisiert: {new Date(lastSyncedAt).toLocaleTimeString('de-DE')}</div>}
+        </div>
+        <Row label="Daten hochladen" hint="Lokale Daten in die Cloud schreiben.">
+          <button onClick={syncNow} disabled={syncStatus === 'syncing'} className="btn-ghost">
+            <Cloud className="size-4" />{syncStatus === 'syncing' ? 'Synchronisiert…' : 'Jetzt sync'}
+          </button>
+        </Row>
+        <Row label="Daten herunterladen" hint="Cloud-Daten auf dieses Gerät laden (überschreibt lokale Daten).">
+          <button onClick={handlePull} disabled={syncStatus === 'syncing'} className="btn-ghost">
+            <RefreshCw className="size-4" />Von Cloud laden
+          </button>
+          {pullMsg && <span className="text-xs text-emerald-600">{pullMsg}</span>}
+        </Row>
+        <Row label="Dieses Gerät ist Hauptgerät" hint="Auf dem Hauptgerät können Fotos an Noten und Aufgaben angehängt werden.">
+          <Toggle checked={settings.isMainDevice} onChange={v => setSettings({ isMainDevice: v })} />
+        </Row>
+        <Row label="Abmelden">
+          <button onClick={signOut} className="btn-soft text-rose-600"><LogOut className="size-4" />Abmelden</button>
+        </Row>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <h3 className="h3 mb-3 flex items-center gap-2"><Cloud className="size-5 text-indigo-500" />Cloud Sync</h3>
+      <p className="text-sm text-ink-600 mb-3">Melde dich an, um deine Daten zwischen Geräten zu synchronisieren. Fotos bleiben immer nur lokal.</p>
+
+      {mode === 'idle' ? (
+        <div className="space-y-2">
+          <button onClick={() => setMode('login')} className="btn-primary w-full"><LogIn className="size-4" />Anmelden</button>
+          <button onClick={() => setMode('signup')} className="btn-ghost w-full"><Plus className="size-4" />Neu registrieren</button>
+          <button onClick={signInWithGoogle} className="btn-ghost w-full">
+            <svg className="size-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Mit Google anmelden
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="text-sm font-semibold text-ink-700">{mode === 'login' ? 'Anmelden' : 'Registrieren'}</div>
+          <input className="input" type="email" placeholder="E-Mail" value={email} onChange={e => setEmail(e.target.value)} autoFocus />
+          <input className="input" type="password" placeholder="Passwort" value={password} onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()} />
+          {error && <div className="text-xs text-rose-600">{error}</div>}
+          <div className="flex gap-2">
+            <button onClick={() => setMode('idle')} className="btn-ghost flex-1">Zurück</button>
+            <button onClick={submit} disabled={loading || !email || !password} className="btn-primary flex-1">
+              {loading ? 'Bitte warten…' : mode === 'login' ? 'Anmelden' : 'Registrieren'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function DataSection() {
   const settings = useStore(s => s.settings)!;
   const subjects = useStore(s => s.subjects);
@@ -501,6 +601,8 @@ function DataSection() {
   }
 
   return (
+    <div className="space-y-4">
+    <SyncCard />
     <Card>
       <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-rose-500" />Daten</h3>
       <Row label="Export" hint="Als JSON-Datei sichern.">
@@ -523,16 +625,39 @@ function DataSection() {
         <button onClick={reset} className="btn-soft text-rose-600"><Trash2 className="size-4" />Zurücksetzen</button>
       </Row>
     </Card>
+    </div>
   );
 }
 
 function AboutSection() {
+  const [showSql, setShowSql] = useState(false);
+  const sql = `-- Einmalig im Supabase SQL-Editor ausführen:
+create table subjects (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
+alter table subjects enable row level security;
+create policy "own" on subjects for all using (auth.uid() = user_id);
+
+create table grades (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
+alter table grades enable row level security;
+create policy "own" on grades for all using (auth.uid() = user_id);
+
+create table tasks (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
+alter table tasks enable row level security;
+create policy "own" on tasks for all using (auth.uid() = user_id);
+
+create table lessons (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
+alter table lessons enable row level security;
+create policy "own" on lessons for all using (auth.uid() = user_id);
+
+create table user_settings (user_id uuid references auth.users primary key, data jsonb not null, updated_at timestamptz default now());
+alter table user_settings enable row level security;
+create policy "own" on user_settings for all using (auth.uid() = user_id);`;
+
   return (
     <Card>
       <h3 className="h3 mb-3 flex items-center gap-2"><Info className="size-5 text-slate-500" />Über</h3>
       <div className="space-y-3 text-sm text-ink-700">
-        <p><strong>Schulplaner / Notenapp</strong> – dein persönliches Schul-Tool. Alle Daten bleiben lokal in deinem Browser, nichts wandert ins Netz.</p>
-        <p>Die App funktioniert offline und kann auf iPad/Android über „Zum Home-Bildschirm" wie eine echte App installiert werden.</p>
+        <p><strong>Schulplaner / Notenapp</strong> – dein persönliches Schul-Tool.</p>
+        <p>Die App funktioniert offline und kann auf iPad/Android über „Zum Home-Bildschirm" installiert werden.</p>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="rounded-2xl p-3 bg-white/60">
             <div className="font-bold text-ink-800">Notensysteme</div>
@@ -540,9 +665,28 @@ function AboutSection() {
           </div>
           <div className="rounded-2xl p-3 bg-white/60">
             <div className="font-bold text-ink-800">Speicher</div>
-            <div className="text-ink-500">Lokal (IndexedDB)</div>
+            <div className="text-ink-500">Lokal + Cloud (optional)</div>
           </div>
         </div>
+
+        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+          <div className="font-semibold text-ink-800 mb-1 flex items-center gap-2"><Smartphone className="size-4" />Cloud Sync einrichten</div>
+          <ol className="text-xs text-ink-600 space-y-1 list-decimal list-inside">
+            <li>Auf <strong>supabase.com</strong> kostenloses Konto erstellen</li>
+            <li>Neues Projekt anlegen</li>
+            <li>Im SQL-Editor das Script unten ausführen</li>
+            <li>Unter Settings → API: URL und anon key kopieren</li>
+            <li>In Vercel als Umgebungsvariablen eintragen:<br/><code className="bg-white px-1 rounded">VITE_SUPABASE_URL</code> und <code className="bg-white px-1 rounded">VITE_SUPABASE_ANON_KEY</code></li>
+            <li>Neu deployen → in Daten-Tab anmelden</li>
+          </ol>
+          <button onClick={() => setShowSql(s => !s)} className="btn-ghost text-xs mt-2">
+            {showSql ? 'SQL ausblenden' : 'SQL anzeigen'}
+          </button>
+          {showSql && (
+            <pre className="mt-2 text-[10px] bg-slate-800 text-slate-200 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap">{sql}</pre>
+          )}
+        </div>
+
         <a href="https://github.com/Bubi9543/Schulplaner" target="_blank" rel="noopener noreferrer" className="btn-ghost inline-flex">
           <SettingsIcon className="size-4" />Quellcode auf GitHub
         </a>

@@ -94,6 +94,14 @@ export type AnimationLevel = 'rich' | 'reduced' | 'minimal';
 export type GreetingStyle = 'casual' | 'formal' | 'fun';
 export type DashboardLayout = 'rich' | 'list';
 
+export interface Photo {
+  id: string;
+  refId: string;
+  refType: 'grade' | 'task';
+  dataUrl: string;
+  createdAt: number;
+}
+
 export interface AppSettings {
   id: 'app';
   name?: string;
@@ -103,6 +111,7 @@ export interface AppSettings {
   system: GradingSystem;
   onboarded: boolean;
   demo: boolean;
+  isMainDevice: boolean;
   theme: ThemeMode;
   accent: AccentName;
   density: DensityMode;
@@ -183,6 +192,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   averageDigits: 2,
   trendThreshold: 0.2,
   gradingConfig: DEFAULT_GRADING_CONFIG,
+  isMainDevice: false,
 };
 
 function structuredCloneSafe<T>(v: T): T {
