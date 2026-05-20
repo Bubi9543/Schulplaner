@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
+import { PhotoAttachment } from '@/components/PhotoAttachment';
+import { uid } from '@/lib/db';
 import type { AppTask, TaskKind } from '@/types';
 import { Sparkles } from 'lucide-react';
 
@@ -30,6 +32,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const now = useTimeNow(30000);
 
   const editing = !!initial?.id;
+  const taskIdRef = useRef<string>(initial?.id ?? uid());
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [kind, setKind] = useState<TaskKind>(initial?.kind ?? defaultKind ?? 'hausaufgabe');
@@ -53,11 +56,13 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
     setAutoChosen(auto);
     setDueDate(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
     setPriority((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
+    taskIdRef.current = initial?.id ?? uid();
   }, [open, initial, defaultKind, editing, settings, lessons, subjects, now]);
 
   async function save() {
     if (!title.trim()) return;
     const payload = {
+      id: taskIdRef.current,
       title: title.trim(),
       description: description.trim() || undefined,
       kind,
@@ -140,6 +145,10 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <label className="label">Notizen (optional)</label>
           <textarea className="input min-h-[80px]" value={description} onChange={e => setDescription(e.target.value)} />
         </div>
+
+        {settings?.isMainDevice && (
+          <PhotoAttachment refId={taskIdRef.current} refType="task" />
+        )}
       </div>
     </Modal>
   );

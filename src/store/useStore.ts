@@ -65,7 +65,7 @@ interface State {
   updateGrade: (id: string, patch: Partial<Grade>) => Promise<void>;
   deleteGrade: (id: string) => Promise<void>;
 
-  addTask: (t: Omit<AppTask, 'id' | 'createdAt'>) => Promise<AppTask>;
+  addTask: (t: Omit<AppTask, 'id' | 'createdAt'> & { id?: string }) => Promise<AppTask>;
   updateTask: (id: string, patch: Partial<AppTask>) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -261,7 +261,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async addTask(t) {
-    const task: AppTask = { ...t, id: uid(), createdAt: Date.now() };
+    const task: AppTask = { ...t, id: t.id ?? uid(), createdAt: Date.now() } as AppTask;
     await db.tasks.add(task);
     set(state => ({ tasks: [...state.tasks, task].sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)) }));
     const { authUser } = get();
