@@ -223,6 +223,30 @@
     border-color: var(--theme-primary);
   }
 
+  .widget-content {
+    container-type: inline-size;
+  }
+  .widget-pad {
+    padding: clamp(0.5rem, 3cqi, 1rem);
+  }
+  .widget-content .h3 {
+    font-size: clamp(0.875rem, 4.2cqi, 1.125rem);
+    line-height: 1.2;
+  }
+  .widget-content .chip {
+    font-size: clamp(0.55rem, 2.4cqi, 0.7rem);
+    padding: 0.18rem clamp(0.45rem, 1.6cqi, 0.7rem);
+    gap: clamp(0.15rem, 0.8cqi, 0.35rem);
+  }
+  .widget-content .chip svg {
+    width: clamp(0.7rem, 2.8cqi, 0.875rem);
+    height: clamp(0.7rem, 2.8cqi, 0.875rem);
+  }
+  .widget-content [data-w="title"] { font-size: clamp(0.875rem, 4.2cqi, 1.125rem); line-height: 1.2; }
+  .widget-content [data-w="text"]  { font-size: clamp(0.7rem, 2.8cqi, 0.875rem); }
+  .widget-content [data-w="meta"]  { font-size: clamp(0.6rem, 2.4cqi, 0.75rem); }
+  .widget-content [data-w="link"]  { font-size: clamp(0.7rem, 2.8cqi, 0.875rem); }
+
   .page-veil {
     background: linear-gradient(to bottom right,
       rgba(255,255,255,0.40),

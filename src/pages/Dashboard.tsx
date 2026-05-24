@@ -117,7 +117,7 @@ function WidgetShell({
           </button>
         </div>
       )}
-      <div className="flex-1 overflow-hidden p-4" style={{ containerType: 'inline-size' }}>
+      <div className="flex-1 overflow-hidden widget-content">
         {children}
       </div>
     </div>
@@ -137,7 +137,7 @@ function GradeOverviewWidget() {
   const gradeCount = grades.filter(g => !g.isPending).length;
 
   return (
-    <div className="h-full -m-4 flex flex-col theme-gradient text-white rounded-b-[inherit] p-4 relative overflow-hidden" style={{ containerType: 'inline-size' }}>
+    <div className="h-full w-full flex flex-col theme-gradient text-white widget-pad relative overflow-hidden">
       <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-20 -left-10 size-40 rounded-full bg-black/15 blur-3xl pointer-events-none" />
       <div className="flex items-center justify-between flex-shrink-0 relative">
@@ -156,14 +156,14 @@ function GradeOverviewWidget() {
         </div>
         <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
           <div>
-            <div className="font-display font-bold text-[clamp(1rem,6.5cqi,1.5rem)] leading-tight">
+            <div className="font-display font-bold text-[clamp(0.95rem,5.5cqi,1.5rem)] leading-tight">
               {subjects.length} {subjects.length === 1 ? 'Fach' : 'Fächer'}
             </div>
-            <div className="text-white/70 text-[clamp(0.625rem,3.5cqi,0.875rem)] mt-0.5">
+            <div className="text-white/70 text-[clamp(0.6rem,3cqi,0.875rem)] mt-0.5 leading-tight">
               {gradeCount} {gradeCount === 1 ? 'Note' : 'Noten'} erfasst
             </div>
           </div>
-          <Link to="/noten" className="inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,3cqi,0.875rem)] font-semibold w-fit border-b border-white/40 hover:border-white/80 pb-0.5">
+          <Link to="/noten" className="inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,2.8cqi,0.875rem)] font-semibold w-fit border-b border-white/40 hover:border-white/80 pb-0.5">
             Alle Details <ArrowRight className="size-3.5" />
           </Link>
         </div>
@@ -192,7 +192,7 @@ function GradeTrendWidget() {
   }, [grades, subjects, config]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Notenverlauf</h3>
         <span className="chip">Laufender Schnitt</span>
@@ -227,7 +227,7 @@ function GradeTrendWidget() {
 
 function TimelineWidget() {
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3 flex items-center gap-2"><Calendar className="size-5" />Heute · {WEEKDAYS_DE[new Date().getDay()]}</h3>
         <Link to="/stundenplan" className="text-sm text-theme-deep font-semibold hover:underline">Stundenplan</Link>
@@ -246,7 +246,7 @@ function TasksTodayWidget() {
     [tasks]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Heute fällig</h3>
         <Link to="/aufgaben" className="text-sm text-theme-deep font-semibold hover:underline">Alle</Link>
@@ -293,7 +293,7 @@ function RecentGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }
     [grades]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Letzte Noten</h3>
         <Link to="/noten" className="text-sm text-theme-deep font-semibold hover:underline">Alle</Link>
@@ -335,7 +335,7 @@ function PendingGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void 
     [grades]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Ausstehende Noten</h3>
         <span className="chip">{pendingGrades.length}</span>
@@ -397,7 +397,7 @@ function GradeDistributionWidget() {
   }, [grades, system, config, systemMeta]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <h3 className="h3 mb-2 flex-shrink-0">Notenverteilung</h3>
       <div className="flex-1 min-h-0">
         {pieData.length === 0 ? (
@@ -437,7 +437,7 @@ function SubjectsWidget() {
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col widget-pad">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Fächer</h3>
         <Link to="/noten" className="text-sm text-theme-deep font-semibold hover:underline">Alle Noten</Link>
