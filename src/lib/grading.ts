@@ -10,6 +10,18 @@ export const KIND_LABEL: Record<GradeKind, string> = {
   sonstige:     'Sonstige',
 };
 
+export const CATEGORY_LABEL: Record<SubjectCategory, string> = {
+  'hauptfach':        'Hauptfach',
+  'hauptfach-1zu1':   'Hauptfach (1:1)',
+  'nebenfach':        'Nebenfach',
+};
+
+export const CATEGORY_DESCRIPTION: Record<SubjectCategory, string> = {
+  'hauptfach':        'Schulaufgaben zählen doppelt: (SA × 2 + Rest) / 3',
+  'hauptfach-1zu1':   'Schulaufgaben 1:1 mit Rest: (SA + Rest) / 2',
+  'nebenfach':        'Einfacher gewichteter Mittelwert aller Noten',
+};
+
 export interface SystemMeta {
   min: number;
   max: number;
@@ -59,24 +71,102 @@ export function getSystemMeta(system: GradingSystem, config: GradingSystemConfig
   }
 }
 
-export function getKindWeight(system: GradingSystem, config: GradingSystemConfig, kind: GradeKind, category: SubjectCategory): number {
-  switch (system) {
-    case 'bayern': return config.bayern.kindWeights[kind][category];
-    case 'oberstufe': return config.oberstufe.kindWeights[kind][category];
-    case 'austria': return config.austria.kindWeights[kind][category];
-    case 'custom': return config.custom.kindWeights[kind][category];
+/** Gibt true zurück, wenn die Notenart als „Schulaufgabe / Klausur" gilt (vs. „kleine LN / Rest"). */
+export function isLargeAssessmentKind(kind: GradeKind): boolean {
+  return kind === 'schulaufgabe' || kind === 'klausur';
+}
+
+/** Effektives Gewicht einer einzelnen Note: weightMultiplier (default 1). */
+export function gradeWeight(g: Grade): number {
+  const m = g.weightMultiplier;
+  if (typeof m === 'number' && m > 0 && Number.isFinite(m)) return m;
+  return 1;
+}
+
+/** Gewichteter Mittelwert einer Notengruppe (nutzt nur weightMultiplier). */
+function weightedMean(grades: Grade[]): number | null {
+  if (!grades.length) return null;
+  let sum = 0, w = 0;
+  for (const g of grades) {
+    const m = gradeWeight(g);
+    sum += g.value * m;
+    w += m;
   }
+  if (w <= 0) return null;
+  return sum / w;
 }
 
-export function defaultWeight(kind: GradeKind, system: GradingSystem, category: SubjectCategory, config: GradingSystemConfig): number {
-  return getKindWeight(system, config, kind, category);
+/** Berechnet den Schnitt eines Fachs nach Bayern-Logik (Kategorie + per-Note-Multiplikator). */
+export function subjectAverage(grades: Grade[], subject: Subject, _config?: GradingSystemConfig): number | null {
+  void _config;
+  const valid = grades.filter(g => g.subjectId === subject.id && !g.isPending && typeof g.value === 'number');
+  if (!valid.length) return null;
+
+  // Nebenfach + Oberstufe ohne Kategorie-Logik: einfacher gewichteter Mittelwert
+  if (subject.category === 'nebenfach') {
+    return weightedMean(valid);
+  }
+
+  // Hauptfach (mit oder ohne 1:1): Split in Schulaufgaben / Rest
+  const sa   = valid.filter(g => isLargeAssessmentKind(g.kind));
+  const rest = valid.filter(g => !isLargeAssessmentKind(g.kind));
+
+  const saMean   = weightedMean(sa);
+  const restMean = weightedMean(rest);
+
+  // Edge Cases: nur eine der beiden Gruppen vorhanden
+  if (saMean === null && restMean === null) return null;
+  if (saMean === null) return restMean;
+  if (restMean === null) return saMean;
+
+  if (subject.category === 'hauptfach-1zu1') {
+    return (saMean + restMean) / 2;
+  }
+  // hauptfach: Schulaufgaben doppelt → (SA × 2 + Rest) / 3
+  return (saMean * 2 + restMean) / 3;
 }
 
-export function effectiveWeight(grade: Grade, subject: Subject | undefined, config: GradingSystemConfig): number {
-  const baseFromKind = subject ? getKindWeight(subject.system, config, grade.kind, subject.category) : grade.weight;
-  const base = baseFromKind ?? grade.weight ?? 1;
-  const mul = subject?.system === 'oberstufe' && config.oberstufe.allowPerGradeWeight && grade.weightMultiplier ? grade.weightMultiplier : 1;
-  return base * mul;
+/** Generischer Mittelwert über mehrere Fächer (für Gesamtschnitt-Anzeigen). */
+export function average(grades: Grade[], subjectFor: (g: Grade) => Subject | undefined, config: GradingSystemConfig): number | null {
+  const bySubject = new Map<string, Grade[]>();
+  for (const g of grades) {
+    if (g.isPending) continue;
+    const s = subjectFor(g);
+    if (!s) continue;
+    if (!bySubject.has(s.id)) bySubject.set(s.id, []);
+    bySubject.get(s.id)!.push(g);
+  }
+  const subjAverages: number[] = [];
+  for (const [sid, gs] of bySubject) {
+    const subj = subjectFor(gs[0]);
+    if (!subj || subj.id !== sid) continue;
+    const a = subjectAverage(gs, subj, config);
+    if (a !== null) subjAverages.push(a);
+  }
+  if (!subjAverages.length) return null;
+  return subjAverages.reduce((a, b) => a + b, 0) / subjAverages.length;
+}
+
+export function overallAverage(grades: Grade[], subjects: Subject[], config: GradingSystemConfig): number | null {
+  const sums: number[] = [];
+  for (const s of subjects) {
+    const avg = subjectAverage(grades, s, config);
+    if (avg !== null) sums.push(avg);
+  }
+  if (!sums.length) return null;
+  return sums.reduce((a, b) => a + b, 0) / sums.length;
+}
+
+/** Wird noch von älteren Stellen (Tabellen-Anzeige etc.) aufgerufen. Liefert das per-Note Gewicht zurück. */
+export function effectiveWeight(grade: Grade, _subject: Subject | undefined, _config?: GradingSystemConfig): number {
+  void _subject; void _config;
+  return gradeWeight(grade);
+}
+
+/** Default-Multiplikator beim Anlegen einer neuen Note. */
+export function defaultWeight(_kind: GradeKind, _system: GradingSystem, _category: SubjectCategory, _config?: GradingSystemConfig): number {
+  void _kind; void _system; void _category; void _config;
+  return 1;
 }
 
 export function gradeColor(value: number, system: GradingSystem, config?: GradingSystemConfig): string {
@@ -110,34 +200,6 @@ export function gradeColor(value: number, system: GradingSystem, config?: Gradin
   if (value <= 3.5) return '#f59e0b';
   if (value <= 4.5) return '#f97316';
   return '#ef4444';
-}
-
-export function average(grades: Grade[], subjectFor: (g: Grade) => Subject | undefined, config: GradingSystemConfig): number | null {
-  const valid = grades.filter(g => !g.isPending && typeof g.value === 'number');
-  if (!valid.length) return null;
-  let sum = 0, w = 0;
-  for (const g of valid) {
-    const subj = subjectFor(g);
-    const weight = effectiveWeight(g, subj, config);
-    sum += g.value * weight;
-    w += weight;
-  }
-  if (!w) return null;
-  return sum / w;
-}
-
-export function subjectAverage(grades: Grade[], subject: Subject, config: GradingSystemConfig): number | null {
-  return average(grades.filter(g => g.subjectId === subject.id), () => subject, config);
-}
-
-export function overallAverage(grades: Grade[], subjects: Subject[], config: GradingSystemConfig): number | null {
-  const sums: number[] = [];
-  for (const s of subjects) {
-    const avg = subjectAverage(grades, s, config);
-    if (avg !== null) sums.push(avg);
-  }
-  if (!sums.length) return null;
-  return sums.reduce((a, b) => a + b, 0) / sums.length;
 }
 
 export function gradeTrend(grades: Grade[], subjectFor: (g: Grade) => Subject | undefined, config: GradingSystemConfig, threshold = 0.2): 'up' | 'down' | 'flat' {

@@ -1,6 +1,20 @@
 export type GradingSystem = 'bayern' | 'oberstufe' | 'austria' | 'custom';
 
-export type SubjectCategory = 'haupt' | 'neben';
+/**
+ * Fachkategorie - bestimmt die Notenberechnung in Bayern.
+ * - hauptfach: Schulaufgaben zählen doppelt → (SA-Schnitt × 2 + Rest-Schnitt) / 3
+ * - hauptfach-1zu1: Schulaufgaben 1:1 mit Rest → (SA-Schnitt + Rest-Schnitt) / 2 (z.B. Physik/Chemie)
+ * - nebenfach: einfacher Schnitt aller Noten
+ */
+export type SubjectCategory = 'hauptfach' | 'hauptfach-1zu1' | 'nebenfach';
+
+/** Migriert Legacy-Kategorien ('haupt' | 'neben') zu neuen Werten. */
+export function normalizeSubjectCategory(input: unknown): SubjectCategory {
+  if (input === 'hauptfach' || input === 'hauptfach-1zu1' || input === 'nebenfach') return input;
+  if (input === 'haupt') return 'hauptfach';
+  if (input === 'neben') return 'nebenfach';
+  return 'nebenfach';
+}
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -48,6 +62,9 @@ export interface Subject {
   createdAt: number;
 }
 
+/** Standard-Gewichtsoptionen für einzelne Noten - "custom" erlaubt beliebigen Wert via weightMultiplier. */
+export type GradeWeightPreset = 0.5 | 1 | 1.5 | 2;
+
 export interface Grade {
   id: string;
   subjectId: string;
@@ -55,8 +72,10 @@ export interface Grade {
   kind: GradeKind;
   title?: string;
   date: number;
+  /** Legacy-Feld (älteres Kind-Gewicht). Wird vom neuen System ignoriert. */
   weight: number;
-  weightMultiplier?: 0.5 | 1 | 2;
+  /** Per-Note Gewichts-Multiplikator. Default 1. Erlaubt 0.5/1/1.5/2 oder beliebige Zahl. */
+  weightMultiplier?: number;
   isPending?: boolean;
 }
 

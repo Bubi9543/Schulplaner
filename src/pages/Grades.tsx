@@ -10,7 +10,7 @@ import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage } from '@/lib/grading';
+import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject } from '@/types';
 
@@ -222,7 +222,7 @@ function SubjectRow({ subject }: { subject: Subject }) {
       <div className="absolute -right-6 -top-6 size-32 rounded-full bg-white/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-wider opacity-80">{subject.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'}</div>
+          <div className="text-[10px] uppercase tracking-wider opacity-80">{CATEGORY_LABEL[subject.category]}</div>
           <div className="font-display font-extrabold text-xl mt-0.5">{subject.name}</div>
           <div className="text-xs opacity-80">{subjectGrades.filter(g => !g.isPending).length} Noten · Schnitt {formatAverage(avg, subject.system, digits)}</div>
         </div>

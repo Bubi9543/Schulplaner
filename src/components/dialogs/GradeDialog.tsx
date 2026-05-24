@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import type { Grade, GradeKind } from '@/types';
-import { defaultWeight, KIND_LABEL, getSystemMeta, gradeColor, isGoodGrade } from '@/lib/grading';
+import { KIND_LABEL, getSystemMeta, gradeColor, isGoodGrade, isLargeAssessmentKind } from '@/lib/grading';
 import { hexToRgba } from '@/lib/utils';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
 import { Confetti } from '@/components/CountUp';
@@ -18,6 +18,17 @@ interface Props {
 }
 
 const KIND_OPTIONS: GradeKind[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
+
+const WEIGHT_PRESETS: Array<{ value: number; label: string }> = [
+  { value: 0.5, label: '×½' },
+  { value: 1,   label: '×1' },
+  { value: 1.5, label: '×1,5' },
+  { value: 2,   label: '×2' },
+];
+
+function isPreset(v: number): boolean {
+  return WEIGHT_PRESETS.some(p => Math.abs(p.value - v) < 1e-6);
+}
 
 export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props) {
   const subjects = useStore(s => s.subjects);
@@ -51,8 +62,10 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const [kind, setKind] = useState<GradeKind>(initial?.kind ?? 'schulaufgabe');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [date, setDate] = useState<string>(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
-  const [weight, setWeight] = useState<number>(initial?.weight ?? (config && subject ? defaultWeight(kind, subject.system, subject.category, config) : 1));
-  const [weightMultiplier, setWeightMultiplier] = useState<0.5 | 1 | 2>((initial?.weightMultiplier ?? 1) as 0.5 | 1 | 2);
+  const [weightMultiplier, setWeightMultiplier] = useState<number>(initial?.weightMultiplier ?? 1);
+  const [customWeightInput, setCustomWeightInput] = useState<string>(
+    initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : ''
+  );
   const [isPending, setIsPending] = useState<boolean>(!!initial?.isPending);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
   const gradeIdRef = useRef<string>(initial?.id ?? uid());
@@ -77,14 +90,12 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     setKind(initial?.kind ?? 'schulaufgabe');
     setTitle(initial?.title ?? '');
     setDate(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
-    setWeightMultiplier((initial?.weightMultiplier ?? 1) as 0.5 | 1 | 2);
+    setWeightMultiplier(initial?.weightMultiplier ?? 1);
+    setCustomWeightInput(initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : '');
     setIsPending(!!initial?.isPending);
     gradeIdRef.current = initial?.id ?? uid();
-  }, [open, initial, defaultSubjectId, subjects, settings, lessons, config, now]);
-
-  useEffect(() => {
-    if (!editing && subject && config) setWeight(defaultWeight(kind, subject.system, subject.category, config));
-  }, [kind, subject, editing, config]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial, defaultSubjectId]);
 
   if (!subject || !meta || !config) return null;
 
@@ -97,8 +108,8 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
       kind,
       title: title.trim() || undefined,
       date: new Date(date).getTime(),
-      weight,
-      weightMultiplier: subject.system === 'oberstufe' && config!.oberstufe.allowPerGradeWeight ? weightMultiplier : undefined,
+      weight: 1,
+      weightMultiplier: weightMultiplier !== 1 ? weightMultiplier : undefined,
       isPending,
     };
     if (editing && initial?.id) {
@@ -121,7 +132,19 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     }
   }
 
+  function applyCustomWeight(raw: string) {
+    setCustomWeightInput(raw);
+    const cleaned = raw.replace(',', '.').trim();
+    const parsed = parseFloat(cleaned);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setWeightMultiplier(parsed);
+    }
+  }
+
   const color = gradeColor(value, system, config);
+  const customActive = !isPreset(weightMultiplier);
+  const isLargeKind = isLargeAssessmentKind(kind);
+  const showCategoryHint = subject.system === 'bayern' && subject.category !== 'nebenfach';
 
   return (
     <>
@@ -189,20 +212,41 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
                 </button>
               ))}
             </div>
+            {showCategoryHint && (
+              <div className="subtle mt-1.5 text-xs">
+                {isLargeKind
+                  ? `Schulaufgabe/Klausur zählt ${subject.category === 'hauptfach' ? 'doppelt' : '1:1'} mit dem Rest.`
+                  : 'Wird zum Schnitt der kleinen Leistungen verrechnet.'}
+              </div>
+            )}
           </div>
 
-          {subject.system === 'oberstufe' && config.oberstufe.allowPerGradeWeight && !isPending && (
+          {!isPending && (
             <div>
               <label className="label">Gewichtung dieser Note</label>
-              <div className="grid grid-cols-3 gap-2">
-                {([0.5, 1, 2] as const).map(m => (
-                  <button key={m} type="button" onClick={() => setWeightMultiplier(m)}
-                    className={`btn ${weightMultiplier === m ? 'btn-primary' : 'btn-ghost'}`}>
-                    {m === 0.5 ? '×½' : m === 1 ? '×1' : '×2'}
+              <div className="grid grid-cols-4 gap-2">
+                {WEIGHT_PRESETS.map(p => (
+                  <button key={p.value} type="button"
+                    onClick={() => { setWeightMultiplier(p.value); setCustomWeightInput(''); }}
+                    className={`btn ${!customActive && Math.abs(weightMultiplier - p.value) < 1e-6 ? 'btn-primary' : 'btn-ghost'}`}>
+                    {p.label}
                   </button>
                 ))}
               </div>
-              <div className="subtle mt-1">Multipliziert die Notenart-Gewichtung.</div>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Custom (z.B. 0,75)"
+                  className={`input ${customActive ? 'border-theme' : ''}`}
+                  value={customWeightInput}
+                  onChange={e => applyCustomWeight(e.target.value)}
+                />
+                <span className="text-xs text-ink-500 whitespace-nowrap">aktuell ×{weightMultiplier.toString().replace('.', ',')}</span>
+              </div>
+              <div className="subtle mt-1.5 text-xs">
+                Wirkt innerhalb der Gruppe (Schulaufgaben oder Rest). ×2 bedeutet, diese Note zählt doppelt.
+              </div>
             </div>
           )}
 
@@ -210,10 +254,6 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
             <div>
               <label className="label">Datum</label>
               <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Gewicht (Basis)</label>
-              <input type="number" min={0.5} step={0.5} className="input" value={weight} onChange={e => setWeight(parseFloat(e.target.value) || 1)} />
             </div>
           </div>
 

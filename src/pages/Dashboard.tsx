@@ -23,7 +23,7 @@ import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { useStore } from '@/store/useStore';
 import {
   effectiveWeight, formatAverage, gradeTrend, overallAverage,
-  subjectAverage, getSystemMeta, gradeColor,
+  subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL,
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
@@ -451,7 +451,7 @@ function SubjectsWidget() {
                 className="relative rounded-2xl overflow-hidden p-3 text-white shadow-soft transition hover:-translate-y-0.5">
                 <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${s.color}, ${s.color}cc)` }} />
                 <div className="relative">
-                  <div className="text-[10px] opacity-80">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'}</div>
+                  <div className="text-[10px] opacity-80">{CATEGORY_LABEL[s.category]}</div>
                   <div className="font-display font-bold text-sm mt-0.5 truncate">{s.name}</div>
                   <div className="mt-1 text-xl font-display font-extrabold">{formatAverage(avg, s.system, settings?.averageDigits ?? 2)}</div>
                 </div>

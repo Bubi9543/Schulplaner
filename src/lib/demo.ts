@@ -4,18 +4,18 @@ import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, Weekday, GradeKind } from '@/types';
 
 const SUBJECTS_DEMO: Array<Omit<Subject, 'id' | 'createdAt'>> = [
-  { name: 'Mathematik', short: 'M', color: '#6366f1', category: 'haupt', system: 'bayern', teacher: 'Frau Bauer', room: 'B204', targetAverage: 2.5 },
-  { name: 'Deutsch', short: 'D', color: '#ec4899', category: 'haupt', system: 'bayern', teacher: 'Herr Vogel', room: 'A112', targetAverage: 2.5 },
-  { name: 'Englisch', short: 'E', color: '#06b6d4', category: 'haupt', system: 'bayern', teacher: 'Frau Hofer', room: 'A203', targetAverage: 2.0 },
-  { name: 'Latein', short: 'L', color: '#a855f7', category: 'haupt', system: 'bayern', teacher: 'Herr Stein', room: 'A210', targetAverage: 2.5 },
-  { name: 'Physik', short: 'Ph', color: '#3b82f6', category: 'neben', system: 'bayern', teacher: 'Frau Roth', room: 'C101' },
-  { name: 'Chemie', short: 'Ch', color: '#14b8a6', category: 'neben', system: 'bayern', teacher: 'Herr Klein', room: 'C103' },
-  { name: 'Biologie', short: 'Bi', color: '#10b981', category: 'neben', system: 'bayern', teacher: 'Frau Berg', room: 'C202' },
-  { name: 'Geschichte', short: 'G', color: '#f59e0b', category: 'neben', system: 'bayern', teacher: 'Herr Mayer', room: 'A305' },
-  { name: 'Geographie', short: 'Geo', color: '#84cc16', category: 'neben', system: 'bayern', teacher: 'Frau Albers', room: 'A301' },
-  { name: 'Kunst', short: 'Ku', color: '#f43f5e', category: 'neben', system: 'bayern', teacher: 'Herr Eder', room: 'K1' },
-  { name: 'Sport', short: 'Sp', color: '#f97316', category: 'neben', system: 'bayern', teacher: 'Frau Lang', room: 'Halle' },
-  { name: 'Musik', short: 'Mu', color: '#8b5cf6', category: 'neben', system: 'bayern', teacher: 'Herr Wolf', room: 'Mu1' },
+  { name: 'Mathematik', short: 'M', color: '#6366f1', category: 'hauptfach', system: 'bayern', teacher: 'Frau Bauer', room: 'B204', targetAverage: 2.5 },
+  { name: 'Deutsch', short: 'D', color: '#ec4899', category: 'hauptfach', system: 'bayern', teacher: 'Herr Vogel', room: 'A112', targetAverage: 2.5 },
+  { name: 'Englisch', short: 'E', color: '#06b6d4', category: 'hauptfach', system: 'bayern', teacher: 'Frau Hofer', room: 'A203', targetAverage: 2.0 },
+  { name: 'Latein', short: 'L', color: '#a855f7', category: 'hauptfach', system: 'bayern', teacher: 'Herr Stein', room: 'A210', targetAverage: 2.5 },
+  { name: 'Physik', short: 'Ph', color: '#3b82f6', category: 'hauptfach-1zu1', system: 'bayern', teacher: 'Frau Roth', room: 'C101' },
+  { name: 'Chemie', short: 'Ch', color: '#14b8a6', category: 'hauptfach-1zu1', system: 'bayern', teacher: 'Herr Klein', room: 'C103' },
+  { name: 'Biologie', short: 'Bi', color: '#10b981', category: 'nebenfach', system: 'bayern', teacher: 'Frau Berg', room: 'C202' },
+  { name: 'Geschichte', short: 'G', color: '#f59e0b', category: 'nebenfach', system: 'bayern', teacher: 'Herr Mayer', room: 'A305' },
+  { name: 'Geographie', short: 'Geo', color: '#84cc16', category: 'nebenfach', system: 'bayern', teacher: 'Frau Albers', room: 'A301' },
+  { name: 'Kunst', short: 'Ku', color: '#f43f5e', category: 'nebenfach', system: 'bayern', teacher: 'Herr Eder', room: 'K1' },
+  { name: 'Sport', short: 'Sp', color: '#f97316', category: 'nebenfach', system: 'bayern', teacher: 'Frau Lang', room: 'Halle' },
+  { name: 'Musik', short: 'Mu', color: '#8b5cf6', category: 'nebenfach', system: 'bayern', teacher: 'Herr Wolf', room: 'Mu1' },
 ];
 
 function pick<T>(arr: T[]) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -35,9 +35,10 @@ function daysFromNow(n: number, hour = 8) {
 }
 
 function genGradesFor(subject: Subject): Grade[] {
-  const count = subject.category === 'haupt' ? 6 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 3);
+  const isHaupt = subject.category !== 'nebenfach';
+  const count = isHaupt ? 6 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 3);
   const grades: Grade[] = [];
-  const kinds = subject.category === 'haupt'
+  const kinds = isHaupt
     ? ['schulaufgabe', 'schulaufgabe', 'muendlich', 'stegreif', 'muendlich', 'sonstige'] as const
     : ['stegreif', 'muendlich', 'projekt', 'muendlich', 'sonstige'] as const;
   for (let i = 0; i < count; i++) {

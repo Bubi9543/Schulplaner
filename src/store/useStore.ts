@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll } from '@/lib/sync';
-import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
+import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
@@ -114,10 +114,22 @@ export const useStore = create<State>((set, get) => ({
       applyTheme('indigo');
     }
     bindAutoModeWatcher(() => get().settings);
+
+    // Migration: alte Kategorien ('haupt' | 'neben') auf neue umstellen
+    const migratedSubjects: Subject[] = subjects.map(s => {
+      const cat = normalizeSubjectCategory(s.category);
+      if (cat !== s.category) {
+        const migrated = { ...s, category: cat };
+        db.subjects.put(migrated).catch(() => {});
+        return migrated;
+      }
+      return s;
+    });
+
     set({
       loaded: true,
       settings,
-      subjects: subjects.sort((a, b) => a.name.localeCompare(b.name, 'de')),
+      subjects: migratedSubjects.sort((a, b) => a.name.localeCompare(b.name, 'de')),
       grades,
       tasks: tasks.sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons,

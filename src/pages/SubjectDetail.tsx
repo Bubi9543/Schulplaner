@@ -9,7 +9,7 @@ import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, defaultWeight, formatAverage, getSystemMeta, gradeTrend, KIND_LABEL, subjectAverage } from '@/lib/grading';
+import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, KIND_LABEL, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Grade } from '@/types';
@@ -44,7 +44,7 @@ export function SubjectDetailPage() {
       kind,
       count: gs.length,
       avg: average(gs, () => subject, config),
-      weight: defaultWeight(kind as Grade['kind'], subject.system, subject.category, config),
+      weight: 1,
     }));
   }, [realGrades, subject, config]);
 
@@ -52,12 +52,12 @@ export function SubjectDetailPage() {
     if (!subject) return [];
     let sum = 0, w = 0;
     return realGrades.map(g => {
-      const ww = (config.oberstufe.allowPerGradeWeight && subject.system === 'oberstufe' && g.weightMultiplier) ? (g.weight || 1) * g.weightMultiplier : (g.weight || 1);
+      const ww = gradeWeight(g);
       sum += g.value * ww;
       w += ww;
       return { date: formatDate(g.date, { day: '2-digit', month: '2-digit' }), value: g.value, avg: +(sum / w).toFixed(2) };
     });
-  }, [realGrades, subject, config]);
+  }, [realGrades, subject]);
 
   const lessonCount = subject ? lessons.filter(l => l.subjectId === subject.id).length : 0;
   const openTasks = subject ? tasks.filter(t => t.subjectId === subject.id && !t.done) : [];
@@ -73,7 +73,7 @@ export function SubjectDetailPage() {
   }
 
   return (
-    <PageShell title={subject.name} subtitle={`${subject.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
+    <PageShell title={subject.name} subtitle={`${CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
       actions={
         <>
           <button onClick={() => nav('/noten')} className="btn-ghost"><ArrowLeft className="size-4" />Zurück</button>

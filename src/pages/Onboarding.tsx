@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
 import { SUBJECT_COLORS } from '@/types';
 import type { GradingSystem, Subject } from '@/types';
+import { CATEGORY_LABEL } from '@/lib/grading';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
@@ -16,26 +17,27 @@ const ONBOARDING_PENDING_KEY = 'onboarding_pending';
 const MAX_STEP = 5;
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
-  { name: 'Mathematik', short: 'M',   category: 'haupt' },
-  { name: 'Deutsch',    short: 'D',   category: 'haupt' },
-  { name: 'Englisch',   short: 'E',   category: 'haupt' },
-  { name: 'Latein',     short: 'L',   category: 'haupt' },
-  { name: 'Französisch',short: 'F',   category: 'haupt' },
-  { name: 'Physik',     short: 'Ph',  category: 'neben' },
-  { name: 'Chemie',     short: 'Ch',  category: 'neben' },
-  { name: 'Biologie',   short: 'Bi',  category: 'neben' },
-  { name: 'Geschichte', short: 'G',   category: 'neben' },
-  { name: 'Geographie', short: 'Geo', category: 'neben' },
-  { name: 'Kunst',      short: 'Ku',  category: 'neben' },
-  { name: 'Musik',      short: 'Mu',  category: 'neben' },
-  { name: 'Sport',      short: 'Sp',  category: 'neben' },
-  { name: 'Religion',   short: 'Rel', category: 'neben' },
-  { name: 'Ethik',      short: 'Eth', category: 'neben' },
-  { name: 'Informatik',  short: 'Inf', category: 'neben' },
-  { name: 'Wirtschaft',  short: 'Wi',  category: 'neben' },
-  { name: 'WiB',         short: 'WiB', category: 'neben' },
-  { name: 'PUG',         short: 'PUG', category: 'neben' },
-  { name: 'Sozialkunde', short: 'Sk',  category: 'neben' },
+  { name: 'Mathematik', short: 'M',   category: 'hauptfach' },
+  { name: 'Deutsch',    short: 'D',   category: 'hauptfach' },
+  { name: 'Englisch',   short: 'E',   category: 'hauptfach' },
+  { name: 'Latein',     short: 'L',   category: 'hauptfach' },
+  { name: 'Französisch',short: 'F',   category: 'hauptfach' },
+  // Physik & Chemie: in Bayern Schulaufgabe 1:1 mit Rest
+  { name: 'Physik',     short: 'Ph',  category: 'hauptfach-1zu1' },
+  { name: 'Chemie',     short: 'Ch',  category: 'hauptfach-1zu1' },
+  { name: 'Biologie',   short: 'Bi',  category: 'nebenfach' },
+  { name: 'Geschichte', short: 'G',   category: 'nebenfach' },
+  { name: 'Geographie', short: 'Geo', category: 'nebenfach' },
+  { name: 'Kunst',      short: 'Ku',  category: 'nebenfach' },
+  { name: 'Musik',      short: 'Mu',  category: 'nebenfach' },
+  { name: 'Sport',      short: 'Sp',  category: 'nebenfach' },
+  { name: 'Religion',   short: 'Rel', category: 'nebenfach' },
+  { name: 'Ethik',      short: 'Eth', category: 'nebenfach' },
+  { name: 'Informatik',  short: 'Inf', category: 'nebenfach' },
+  { name: 'Wirtschaft',  short: 'Wi',  category: 'nebenfach' },
+  { name: 'WiB',         short: 'WiB', category: 'nebenfach' },
+  { name: 'PUG',         short: 'PUG', category: 'nebenfach' },
+  { name: 'Sozialkunde', short: 'Sk',  category: 'nebenfach' },
 ];
 
 // Per-step visual theme: gradient colors + blob colors
@@ -117,7 +119,7 @@ export function Onboarding() {
     const n = prompt('Wie heißt das Fach?');
     if (!n?.trim()) return;
     const color = SUBJECT_COLORS[subjects.length % SUBJECT_COLORS.length];
-    setSubjects(prev => [...prev, { name: n.trim(), short: n.trim().slice(0, 2), color, category: 'neben', system }]);
+    setSubjects(prev => [...prev, { name: n.trim(), short: n.trim().slice(0, 2), color, category: 'nebenfach', system }]);
   }
 
   async function finishWithData(n: string, sys: GradingSystem, subjs: Draft[], mainDevice: boolean) {
@@ -537,7 +539,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
                   <div className="size-8 rounded-xl grid place-items-center text-white text-xs font-bold flex-shrink-0" style={{ background: s.color }}>{s.short}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-ink-800 truncate">{s.name}</div>
-                    <div className="text-xs text-ink-400">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {systemLabel}</div>
+                    <div className="text-xs text-ink-400">{CATEGORY_LABEL[s.category]} · {systemLabel}</div>
                   </div>
                   <button onClick={() => removeSubject(s.name)} className="size-7 rounded-full hover:bg-rose-100 text-ink-400 hover:text-rose-500 grid place-items-center transition flex-shrink-0">
                     <Trash2 className="size-3.5" />

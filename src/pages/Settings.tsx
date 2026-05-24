@@ -9,8 +9,9 @@ import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
-import { KIND_LABEL } from '@/lib/grading';
-import { DEFAULT_GRADING_CONFIG, DEFAULT_KIND_WEIGHTS } from '@/types';
+import { KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
+import { DEFAULT_GRADING_CONFIG } from '@/types';
+import { CATEGORY_DESCRIPTION } from '@/lib/grading';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
@@ -279,7 +280,7 @@ function GradingSection() {
   return (
     <div className="space-y-4">
       <Card>
-        <h3 className="h3 mb-3 flex items-center gap-2"><GraduationCap className="size-5 text-emerald-500" />Standard für neue Fächer</h3>
+        <h3 className="h3 mb-3 flex items-center gap-2"><GraduationCap className="size-5 text-theme" />Standard für neue Fächer</h3>
         <Row label="Notensystem">
           <Segmented<GradingSystem> value={settings.system} options={[
             { value: 'bayern', label: 'Bayern' }, { value: 'oberstufe', label: 'Oberstufe' }, { value: 'austria', label: 'Österreich' }, { value: 'custom', label: 'Frei' },
@@ -311,42 +312,31 @@ function GradingSection() {
       </Card>
 
       <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="h3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-indigo-500" />Bayern (1–6)</h3>
-          <button className="btn-soft text-xs" onClick={() => setGradingConfig({ bayern: { kindWeights: { ...DEFAULT_KIND_WEIGHTS } } })}>
-            <RotateCcw className="size-3" /> Standard
-          </button>
+        <h3 className="h3 mb-2 flex items-center gap-2"><GraduationCap className="size-5 text-theme" />So wird gerechnet</h3>
+        <p className="subtle mb-4">Die Berechnung folgt der Fach-Kategorie. Du kannst pro Note ein individuelles Gewicht (×½ / ×1 / ×1,5 / ×2 oder custom) im Notendialog setzen.</p>
+        <div className="space-y-2 text-sm">
+          <div className="rounded-2xl border border-theme-soft bg-theme-soft/30 p-3">
+            <div className="font-semibold text-ink-800">{CATEGORY_LABEL['hauptfach']}</div>
+            <div className="text-xs text-ink-600 mt-0.5">{CATEGORY_DESCRIPTION['hauptfach']}</div>
+            <code className="block text-[11px] mt-1.5 text-ink-500">(Schnitt Schulaufgaben × 2 + Schnitt Rest) / 3</code>
+          </div>
+          <div className="rounded-2xl border border-theme-soft bg-theme-soft/30 p-3">
+            <div className="font-semibold text-ink-800">{CATEGORY_LABEL['hauptfach-1zu1']}</div>
+            <div className="text-xs text-ink-600 mt-0.5">{CATEGORY_DESCRIPTION['hauptfach-1zu1']}</div>
+            <code className="block text-[11px] mt-1.5 text-ink-500">(Schnitt Schulaufgaben + Schnitt Rest) / 2</code>
+            <div className="text-[11px] text-ink-500 mt-1">Typisch für Physik/Chemie in Bayern.</div>
+          </div>
+          <div className="rounded-2xl border border-theme-soft bg-theme-soft/30 p-3">
+            <div className="font-semibold text-ink-800">{CATEGORY_LABEL['nebenfach']}</div>
+            <div className="text-xs text-ink-600 mt-0.5">{CATEGORY_DESCRIPTION['nebenfach']}</div>
+            <code className="block text-[11px] mt-1.5 text-ink-500">Σ(Note × Gewicht) / Σ(Gewicht)</code>
+          </div>
         </div>
-        <div className="text-xs text-ink-500 mb-2">Gewicht pro Notenart und Fach-Typ. Höher = zählt stärker im Schnitt.</div>
-        <WeightMatrix
-          kindWeights={cfg.bayern.kindWeights}
-          onChange={kw => setGradingConfig({ bayern: { kindWeights: kw } })}
-        />
-      </Card>
-
-      <Card>
-        <h3 className="h3 mb-3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-emerald-500" />Oberstufe (0–15)</h3>
-        <Row label="Gewichtung pro Note erlauben" hint="Bei jeder Note kannst du dann ×½ / ×1 / ×2 wählen.">
-          <Toggle checked={cfg.oberstufe.allowPerGradeWeight}
-            onChange={v => setGradingConfig({ oberstufe: { ...cfg.oberstufe, allowPerGradeWeight: v } })} />
-        </Row>
-        <div className="text-xs text-ink-500 mt-2 mb-2">Gewicht pro Notenart:</div>
-        <WeightMatrix
-          kindWeights={cfg.oberstufe.kindWeights}
-          onChange={kw => setGradingConfig({ oberstufe: { ...cfg.oberstufe, kindWeights: kw } })}
-        />
-      </Card>
-
-      <Card>
-        <h3 className="h3 mb-3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-rose-500" />Österreich (1–5)</h3>
-        <WeightMatrix
-          kindWeights={cfg.austria.kindWeights}
-          onChange={kw => setGradingConfig({ austria: { kindWeights: kw } })}
-        />
       </Card>
 
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-amber-500" />Frei konfigurierbar</h3>
+        <p className="subtle mb-3">Eigenes Notensystem (z.B. Punkteskala). Nutzt einfachen gewichteten Schnitt mit den per-Note Gewichten.</p>
         <Row label="Bezeichnung">
           <input className="input max-w-[200px]" value={cfg.custom.label}
             onChange={e => setGradingConfig({ custom: { ...cfg.custom, label: e.target.value } })} />
@@ -370,56 +360,13 @@ function GradingSection() {
           <Toggle checked={cfg.custom.goodIsLow}
             onChange={v => setGradingConfig({ custom: { ...cfg.custom, goodIsLow: v } })} />
         </Row>
-        <WeightMatrix
-          kindWeights={cfg.custom.kindWeights}
-          onChange={kw => setGradingConfig({ custom: { ...cfg.custom, kindWeights: kw } })}
-        />
       </Card>
     </div>
   );
 }
 
-function WeightMatrix({ kindWeights, onChange }: { kindWeights: Record<GradeKind, { haupt: number; neben: number }>; onChange: (kw: Record<GradeKind, { haupt: number; neben: number }>) => void }) {
-  const kinds: GradeKind[] = ['schulaufgabe', 'stegreif', 'muendlich', 'projekt', 'sonstige'];
-  function set(k: GradeKind, cat: 'haupt' | 'neben', v: number) {
-    onChange({ ...kindWeights, [k]: { ...kindWeights[k], [cat]: v } });
-  }
-  const sumH = kinds.reduce((acc, k) => acc + kindWeights[k].haupt, 0);
-  const sumN = kinds.reduce((acc, k) => acc + kindWeights[k].neben, 0);
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs uppercase text-ink-500">
-            <th className="text-left py-1.5">Notenart</th>
-            <th className="text-center w-32">Hauptfach</th>
-            <th className="text-center w-32">Nebenfach</th>
-          </tr>
-        </thead>
-        <tbody>
-          {kinds.map(k => (
-            <tr key={k} className="border-t border-white/40">
-              <td className="py-2 font-medium text-ink-800">{KIND_LABEL[k]}</td>
-              <td>
-                <NumberStepper value={kindWeights[k].haupt} onChange={v => set(k, 'haupt', v)} />
-              </td>
-              <td>
-                <NumberStepper value={kindWeights[k].neben} onChange={v => set(k, 'neben', v)} />
-              </td>
-            </tr>
-          ))}
-          <tr className="border-t border-white/40 text-xs text-ink-500">
-            <td className="py-2 font-semibold">Summe / Division</td>
-            <td className="text-center font-bold">÷ {sumH}</td>
-            <td className="text-center font-bold">÷ {sumN}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function NumberStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+// _NumberStepper: ehemals für die Kind-Weight-Matrix benutzt - entfernt
+function _UnusedNumberStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const options = [0.5, 1, 1.5, 2, 2.5, 3];
   return (
     <div className="flex justify-center">
@@ -450,7 +397,7 @@ function SubjectsSection() {
               <div className="size-11 rounded-xl grid place-items-center text-white font-display font-extrabold" style={{ background: s.color }}>{s.short}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-ink-800 truncate">{s.name}</div>
-                <div className="text-xs text-ink-500">{s.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {s.system === 'bayern' ? 'Bayern' : s.system === 'oberstufe' ? 'Oberstufe' : s.system === 'austria' ? 'Österreich' : 'Frei'}</div>
+                <div className="text-xs text-ink-500">{CATEGORY_LABEL[s.category]} · {s.system === 'bayern' ? 'Bayern' : s.system === 'oberstufe' ? 'Oberstufe' : s.system === 'austria' ? 'Österreich' : 'Frei'}</div>
               </div>
               <button onClick={() => setSubjDialog({ open: true, subject: s })} className="size-9 grid place-items-center rounded-full hover:bg-white"><Pencil className="size-4" /></button>
             </motion.li>

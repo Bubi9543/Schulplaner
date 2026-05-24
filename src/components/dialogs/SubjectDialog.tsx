@@ -3,6 +3,7 @@ import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import { SUBJECT_COLORS } from '@/types';
 import type { Subject, SubjectCategory, GradingSystem } from '@/types';
+import { CATEGORY_LABEL, CATEGORY_DESCRIPTION } from '@/lib/grading';
 
 interface Props {
   open: boolean;
@@ -20,7 +21,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
   const [name, setName] = useState(initial?.name ?? '');
   const [short, setShort] = useState(initial?.short ?? '');
   const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]);
-  const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'neben');
+  const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'nebenfach');
   const [system, setSystem] = useState<GradingSystem>(initial?.system ?? defaultSystem);
   const [teacher, setTeacher] = useState(initial?.teacher ?? '');
   const [room, setRoom] = useState(initial?.room ?? '');
@@ -31,13 +32,18 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
       setName(initial?.name ?? '');
       setShort(initial?.short ?? '');
       setColor(initial?.color ?? SUBJECT_COLORS[0]);
-      setCategory(initial?.category ?? 'neben');
+      setCategory(initial?.category ?? 'nebenfach');
       setSystem(initial?.system ?? defaultSystem);
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
       setTargetAverage(initial?.targetAverage?.toString() ?? '');
     }
   }, [open, initial, defaultSystem]);
+
+  // Bei Wechsel zu Nicht-Bayern: 1:1-Variante auf normales Hauptfach normalisieren
+  useEffect(() => {
+    if (system !== 'bayern' && category === 'hauptfach-1zu1') setCategory('hauptfach');
+  }, [system, category]);
 
   async function save() {
     if (!name.trim()) return;
@@ -83,7 +89,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
-            <div className="text-xs opacity-80">{category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · {system === 'bayern' ? 'Bayern (1–6)' : system === 'oberstufe' ? 'Oberstufe (0–15)' : system === 'austria' ? 'Österreich (1–5)' : 'Frei'}</div>
+            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · {system === 'bayern' ? 'Bayern (1–6)' : system === 'oberstufe' ? 'Oberstufe (0–15)' : system === 'austria' ? 'Österreich (1–5)' : 'Frei'}</div>
           </div>
         </div>
 
@@ -110,28 +116,31 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Kategorie</label>
-            <div className="flex gap-2">
-              {(['haupt', 'neben'] as const).map(c => (
-                <button key={c} type="button" onClick={() => setCategory(c)}
-                  className={`flex-1 btn ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
-                  {c === 'haupt' ? 'Hauptfach' : 'Nebenfach'}
-                </button>
-              ))}
-            </div>
+        <div>
+          <label className="label">Notensystem</label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {(['bayern', 'oberstufe', 'austria', 'custom'] as const).map(s => (
+              <button key={s} type="button" onClick={() => setSystem(s)}
+                className={`btn text-xs px-2 py-2 ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
+                {s === 'bayern' ? 'Bayern' : s === 'oberstufe' ? 'Oberstufe' : s === 'austria' ? 'Österreich' : 'Frei'}
+              </button>
+            ))}
           </div>
-          <div>
-            <label className="label">Notensystem</label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(['bayern', 'oberstufe', 'austria', 'custom'] as const).map(s => (
-                <button key={s} type="button" onClick={() => setSystem(s)}
-                  className={`btn text-xs px-2 py-2 ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
-                  {s === 'bayern' ? 'Bayern' : s === 'oberstufe' ? 'Oberstufe' : s === 'austria' ? 'Österreich' : 'Frei'}
-                </button>
-              ))}
-            </div>
+        </div>
+
+        <div>
+          <label className="label">Kategorie</label>
+          <div className={`grid gap-2 ${system === 'bayern' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
+            {(system === 'bayern'
+              ? (['hauptfach', 'hauptfach-1zu1', 'nebenfach'] as const)
+              : (['hauptfach', 'nebenfach'] as const)
+            ).map(c => (
+              <button key={c} type="button" onClick={() => setCategory(c)}
+                className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
+                <span className="font-semibold text-sm">{CATEGORY_LABEL[c]}</span>
+                <span className={`text-[10px] mt-0.5 leading-tight font-normal ${category === c ? 'text-white/85' : 'text-ink-500'}`}>{CATEGORY_DESCRIPTION[c]}</span>
+              </button>
+            ))}
           </div>
         </div>
 
