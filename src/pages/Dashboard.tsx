@@ -134,29 +134,37 @@ function GradeOverviewWidget() {
   const trend = useMemo(() =>
     gradeTrend(grades, g => subjects.find(s => s.id === g.subjectId), config, settings?.trendThreshold ?? 0.2),
     [grades, subjects, config, settings?.trendThreshold]);
+  const gradeCount = grades.filter(g => !g.isPending).length;
 
   return (
-    <div className="h-full -m-4 flex flex-col theme-gradient text-white rounded-b-[inherit] p-4" style={{ containerType: 'inline-size' }}>
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="text-[clamp(0.625rem,3.5cqi,0.75rem)] uppercase tracking-wider text-white/80">Gesamtschnitt</div>
-        <span className={cn('chip', trend === 'up'
-          ? 'bg-emerald-400/30 text-white border-emerald-200/40'
-          : trend === 'down'
-          ? 'bg-rose-400/30 text-white border-rose-200/40'
-          : 'bg-white/15 text-white border-white/20')}>
+    <div className="h-full -m-4 flex flex-col theme-gradient text-white rounded-b-[inherit] p-4 relative overflow-hidden" style={{ containerType: 'inline-size' }}>
+      <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-20 -left-10 size-40 rounded-full bg-black/15 blur-3xl pointer-events-none" />
+      <div className="flex items-center justify-between flex-shrink-0 relative">
+        <div className="text-[clamp(0.625rem,3.5cqi,0.75rem)] uppercase tracking-[0.12em] font-semibold text-white/80">Gesamtschnitt</div>
+        <span className={cn('chip',
+          trend === 'up' ? 'bg-emerald-400/30 text-white border-emerald-200/40' :
+          trend === 'down' ? 'bg-rose-400/30 text-white border-rose-200/40' :
+          'bg-white/20 text-white border-white/25')}>
           {trend === 'up' ? <TrendingUp className="size-3.5" /> : trend === 'down' ? <TrendingDown className="size-3.5" /> : <Sparkles className="size-3.5" />}
           {trend === 'up' ? 'Besser' : trend === 'down' ? 'Schlechter' : 'Stabil'}
         </span>
       </div>
-      <div className="flex-1 flex items-center gap-3 mt-2 min-h-0 min-w-0">
-        <div className="bg-white/15 rounded-3xl p-2 h-full aspect-square flex-shrink-0 max-h-full">
-          <AverageRing value={overall} system={system} />
+      <div className="flex-1 flex items-center gap-4 mt-2 min-h-0 min-w-0 relative">
+        <div className="h-full aspect-square flex-shrink-0 max-h-full">
+          <AverageRing value={overall} system={system} tone="invert" />
         </div>
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
-          <div className="text-white/80 text-[clamp(0.625rem,3.5cqi,0.875rem)]">alle Fächer</div>
-          <div className="font-display font-bold text-[clamp(1.25rem,9cqi,2rem)] mt-1 leading-tight">{formatAverage(overall, system, settings?.averageDigits ?? 2)}</div>
-          <Link to="/noten" className="mt-2 inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,3cqi,0.875rem)] font-semibold">
-            Details <ArrowRight className="size-3.5" />
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
+          <div>
+            <div className="font-display font-bold text-[clamp(1rem,6.5cqi,1.5rem)] leading-tight">
+              {subjects.length} {subjects.length === 1 ? 'Fach' : 'Fächer'}
+            </div>
+            <div className="text-white/70 text-[clamp(0.625rem,3.5cqi,0.875rem)] mt-0.5">
+              {gradeCount} {gradeCount === 1 ? 'Note' : 'Noten'} erfasst
+            </div>
+          </div>
+          <Link to="/noten" className="inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,3cqi,0.875rem)] font-semibold w-fit border-b border-white/40 hover:border-white/80 pb-0.5">
+            Alle Details <ArrowRight className="size-3.5" />
           </Link>
         </div>
       </div>

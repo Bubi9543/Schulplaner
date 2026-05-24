@@ -111,7 +111,7 @@ export function GradesPage() {
         <Card delay={0} className="col-span-12 md:col-span-4 lg:col-span-3 text-center theme-gradient !text-white border-0">
           <div className="text-xs uppercase tracking-wider opacity-90">Gesamtschnitt</div>
           <div className="mt-3 mx-auto bg-white/15 rounded-3xl p-3 inline-block">
-            <AverageRing value={overall} system={system} size={140} />
+            <AverageRing value={overall} system={system} size={140} tone="invert" />
           </div>
           <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold">
             {trend === 'up' ? <><TrendingUp className="size-4" />Trend: besser</> : trend === 'down' ? <><TrendingDown className="size-4" />Trend: schlechter</> : 'Stabil'}
