@@ -39,6 +39,26 @@ function cloneCfg(c: GradingSystemConfig): GradingSystemConfig {
   return typeof structuredClone === 'function' ? structuredClone(c) : JSON.parse(JSON.stringify(c));
 }
 
+function suggestYearName(): string {
+  const d = new Date();
+  const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}/${String(y + 1).slice(2)}`;
+}
+
+function suggestYearStart(): number {
+  const d = new Date();
+  const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
+  return new Date(y, 8, 1).getTime();
+}
+
+export interface NewYearOptions {
+  name: string;
+  startDate: number;
+  endDate?: number;
+  copySubjectsFromYearId?: string;
+  copyLessonsFromYearId?: string;
+}
+
 interface State {
   loaded: boolean;
   settings: AppSettings | null;
@@ -47,6 +67,8 @@ interface State {
   tasks: AppTask[];
   lessons: Lesson[];
   schoolYears: SchoolYear[];
+  /** Aktive Schuljahr-ID. Wenn null, gibt es noch keine. */
+  activeSchoolYearId: string | null;
   authUser: SupabaseUser | null;
   syncStatus: 'idle' | 'syncing' | 'error';
   lastSyncedAt: number | null;
@@ -79,10 +101,65 @@ interface State {
   updateLesson: (id: string, patch: Partial<Lesson>) => Promise<void>;
   deleteLesson: (id: string) => Promise<void>;
 
-  addSchoolYear: (y: Omit<SchoolYear, 'id' | 'createdAt'>) => Promise<SchoolYear>;
+  addSchoolYear: (opts: NewYearOptions) => Promise<SchoolYear>;
   updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
-  deleteSchoolYear: (id: string) => Promise<void>;
+  deleteSchoolYear: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
   setActiveSchoolYear: (id: string) => Promise<void>;
+}
+
+/** Liest gespeicherte active-Year-ID. Beim ersten Aufruf wird Default-Jahr erzeugt + alle Daten zugeordnet. */
+async function ensureSchoolYears(allYears: SchoolYear[], allSubjects: Subject[], allGrades: Grade[], allTasks: AppTask[], allLessons: Lesson[]): Promise<{ years: SchoolYear[]; activeId: string | null }> {
+  let years = [...allYears];
+  let active = years.find(y => y.active);
+
+  // Hat der User Daten aber keine Schuljahre? → Default-Jahr erzeugen und alles zuordnen
+  const hasContent = allSubjects.length > 0 || allGrades.length > 0 || allTasks.length > 0 || allLessons.length > 0;
+  if (years.length === 0 && hasContent) {
+    const defaultYear: SchoolYear = {
+      id: uid(),
+      name: suggestYearName(),
+      startDate: suggestYearStart(),
+      active: true,
+      createdAt: Date.now(),
+    };
+    await db.schoolYears.add(defaultYear);
+    years = [defaultYear];
+    active = defaultYear;
+  }
+
+  // Hat Years aber keinen aktiven? → erstes aktivieren
+  if (years.length > 0 && !active) {
+    active = years[0];
+    const next = { ...active, active: true };
+    await db.schoolYears.put(next);
+    years = years.map(y => y.id === next.id ? next : { ...y, active: false });
+  }
+
+  // Migration: Alle Subjects/Grades/Tasks/Lessons ohne schoolYearId → aktivem Jahr zuordnen
+  if (active) {
+    const yid = active.id;
+    const orphanSubjects = allSubjects.filter(s => !s.schoolYearId);
+    const orphanGrades = allGrades.filter(g => !g.schoolYearId);
+    const orphanTasks = allTasks.filter(t => !t.schoolYearId);
+    const orphanLessons = allLessons.filter(l => !l.schoolYearId);
+    if (orphanSubjects.length || orphanGrades.length || orphanTasks.length || orphanLessons.length) {
+      await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons], async () => {
+        await Promise.all([
+          ...orphanSubjects.map(s => db.subjects.put({ ...s, schoolYearId: yid })),
+          ...orphanGrades.map(g => db.grades.put({ ...g, schoolYearId: yid })),
+          ...orphanTasks.map(t => db.tasks.put({ ...t, schoolYearId: yid })),
+          ...orphanLessons.map(l => db.lessons.put({ ...l, schoolYearId: yid })),
+        ]);
+      });
+      // Update in-memory representation
+      orphanSubjects.forEach(s => { s.schoolYearId = yid; });
+      orphanGrades.forEach(g => { g.schoolYearId = yid; });
+      orphanTasks.forEach(t => { t.schoolYearId = yid; });
+      orphanLessons.forEach(l => { l.schoolYearId = yid; });
+    }
+  }
+
+  return { years, activeId: active?.id ?? null };
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -93,12 +170,13 @@ export const useStore = create<State>((set, get) => ({
   tasks: [],
   lessons: [],
   schoolYears: [],
+  activeSchoolYearId: null,
   authUser: null,
   syncStatus: 'idle',
   lastSyncedAt: null,
 
   async load() {
-    const [storedSettings, subjects, grades, tasks, lessons, schoolYears] = await Promise.all([
+    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
@@ -116,7 +194,7 @@ export const useStore = create<State>((set, get) => ({
     bindAutoModeWatcher(() => get().settings);
 
     // Migration: alte Kategorien ('haupt' | 'neben') auf neue umstellen
-    const migratedSubjects: Subject[] = subjects.map(s => {
+    const migratedSubjects: Subject[] = allSubjects.map(s => {
       const cat = normalizeSubjectCategory(s.category);
       if (cat !== s.category) {
         const migrated = { ...s, category: cat };
@@ -126,14 +204,21 @@ export const useStore = create<State>((set, get) => ({
       return s;
     });
 
+    // Schuljahre sicherstellen + Migration für orphaned Data
+    const { years, activeId } = await ensureSchoolYears(allYears, migratedSubjects, allGrades, allTasks, allLessons);
+
+    // Filter nach aktivem Schuljahr
+    const subjFilter = (s: { schoolYearId?: string }) => !activeId || s.schoolYearId === activeId;
+
     set({
       loaded: true,
       settings,
-      subjects: migratedSubjects.sort((a, b) => a.name.localeCompare(b.name, 'de')),
-      grades,
-      tasks: tasks.sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
-      lessons,
-      schoolYears: schoolYears.sort((a, b) => b.startDate - a.startDate),
+      activeSchoolYearId: activeId,
+      schoolYears: years.sort((a, b) => b.startDate - a.startDate),
+      subjects: migratedSubjects.filter(subjFilter).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+      grades: allGrades.filter(subjFilter),
+      tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
+      lessons: allLessons.filter(subjFilter),
     });
 
     if (supabase) {
@@ -234,9 +319,12 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async addSubject(s) {
-    const subj: Subject = { ...s, id: uid(), createdAt: Date.now() };
+    const yid = get().activeSchoolYearId ?? undefined;
+    const subj: Subject = { ...s, id: uid(), createdAt: Date.now(), schoolYearId: s.schoolYearId ?? yid };
     await db.subjects.add(subj);
-    set(state => ({ subjects: [...state.subjects, subj].sort((a, b) => a.name.localeCompare(b.name, 'de')) }));
+    if (!yid || subj.schoolYearId === yid) {
+      set(state => ({ subjects: [...state.subjects, subj].sort((a, b) => a.name.localeCompare(b.name, 'de')) }));
+    }
     const { authUser } = get();
     if (authUser) syncRow('subjects', subj.id, subj, authUser.id);
     return subj;
@@ -273,7 +361,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async addGrade(g) {
-    const grade: Grade = { ...g, id: g.id ?? uid() } as Grade;
+    const subj = get().subjects.find(s => s.id === g.subjectId);
+    const yid = subj?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const grade: Grade = { ...g, id: g.id ?? uid(), schoolYearId: g.schoolYearId ?? yid } as Grade;
     await db.grades.add(grade);
     set(state => ({ grades: [...state.grades, grade] }));
     const { authUser } = get();
@@ -295,7 +385,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async addTask(t) {
-    const task: AppTask = { ...t, id: t.id ?? uid(), createdAt: Date.now() } as AppTask;
+    const subj = t.subjectId ? get().subjects.find(s => s.id === t.subjectId) : undefined;
+    const yid = subj?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const task: AppTask = { ...t, id: t.id ?? uid(), createdAt: Date.now(), schoolYearId: t.schoolYearId ?? yid } as AppTask;
     await db.tasks.add(task);
     set(state => ({ tasks: [...state.tasks, task].sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)) }));
     const { authUser } = get();
@@ -323,7 +415,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async addLesson(l) {
-    const lesson: Lesson = { ...l, id: uid() };
+    const subj = get().subjects.find(s => s.id === l.subjectId);
+    const yid = subj?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const lesson: Lesson = { ...l, id: uid(), schoolYearId: l.schoolYearId ?? yid };
     await db.lessons.add(lesson);
     set(state => ({ lessons: [...state.lessons, lesson] }));
     const { authUser } = get();
@@ -344,23 +438,85 @@ export const useStore = create<State>((set, get) => ({
     if (authUser) deleteRow('lessons', id);
   },
 
-  async addSchoolYear(y) {
-    const year: SchoolYear = { ...y, id: uid(), createdAt: Date.now() };
-    await db.schoolYears.add(year);
-    set(state => ({ schoolYears: [year, ...state.schoolYears] }));
+  async addSchoolYear(opts) {
+    const year: SchoolYear = {
+      id: uid(),
+      name: opts.name.trim() || suggestYearName(),
+      startDate: opts.startDate,
+      endDate: opts.endDate,
+      active: true, // neues Jahr direkt aktiv
+      createdAt: Date.now(),
+    };
+    // Alle anderen Jahre deaktivieren
+    const existing = await db.schoolYears.toArray();
+    await db.transaction('rw', db.schoolYears, async () => {
+      await db.schoolYears.bulkPut(existing.map(y => ({ ...y, active: false })));
+      await db.schoolYears.add(year);
+    });
+
+    // Optional: Fächer (und damit Stundenplan) aus anderem Jahr kopieren
+    if (opts.copySubjectsFromYearId) {
+      const sourceYearId = opts.copySubjectsFromYearId;
+      const sourceSubjects = await db.subjects.where('schoolYearId').equals(sourceYearId).toArray();
+      const idMap = new Map<string, string>();
+      const newSubjects: Subject[] = sourceSubjects.map(s => {
+        const newId = uid();
+        idMap.set(s.id, newId);
+        return { ...s, id: newId, schoolYearId: year.id, createdAt: Date.now() };
+      });
+      if (newSubjects.length) await db.subjects.bulkAdd(newSubjects);
+
+      if (opts.copyLessonsFromYearId) {
+        const sourceLessons = await db.lessons.where('schoolYearId').equals(sourceYearId).toArray();
+        const newLessons: Lesson[] = [];
+        for (const l of sourceLessons) {
+          const newSubjId = idMap.get(l.subjectId);
+          if (!newSubjId) continue;
+          newLessons.push({ ...l, id: uid(), subjectId: newSubjId, schoolYearId: year.id });
+        }
+        if (newLessons.length) await db.lessons.bulkAdd(newLessons);
+      }
+    }
+
+    // Reload um neuen Filter-State herzustellen
+    await get().load();
     return year;
   },
   async updateSchoolYear(id, patch) {
     await db.schoolYears.update(id, patch);
     set(state => ({ schoolYears: state.schoolYears.map(y => y.id === id ? { ...y, ...patch } : y) }));
   },
-  async deleteSchoolYear(id) {
-    await db.schoolYears.delete(id);
-    set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
+  async deleteSchoolYear(id, mode = 'wipe') {
+    const wasActive = get().activeSchoolYearId === id;
+    if (mode === 'wipe') {
+      await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.schoolYears], async () => {
+        await db.subjects.where('schoolYearId').equals(id).delete();
+        await db.grades.where('schoolYearId').equals(id).delete();
+        await db.tasks.where('schoolYearId').equals(id).delete();
+        await db.lessons.where('schoolYearId').equals(id).delete();
+        await db.schoolYears.delete(id);
+      });
+    } else {
+      await db.schoolYears.delete(id);
+    }
+    if (wasActive) {
+      // Anderes Jahr aktivieren
+      const remaining = await db.schoolYears.toArray();
+      if (remaining.length > 0) {
+        await get().setActiveSchoolYear(remaining[0].id);
+      } else {
+        set({ schoolYears: [], activeSchoolYearId: null, subjects: [], grades: [], tasks: [], lessons: [] });
+      }
+    } else {
+      set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
+    }
   },
   async setActiveSchoolYear(id) {
     const years = get().schoolYears;
-    await db.schoolYears.bulkPut(years.map(y => ({ ...y, active: y.id === id })));
-    set(state => ({ schoolYears: state.schoolYears.map(y => ({ ...y, active: y.id === id })) }));
+    const updated = years.map(y => ({ ...y, active: y.id === id }));
+    await db.schoolYears.bulkPut(updated);
+    set({ activeSchoolYearId: id, schoolYears: updated });
+    // Re-load all data filtered by new active year
+    await get().load();
   },
 }));

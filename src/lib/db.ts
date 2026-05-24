@@ -58,6 +58,16 @@ export class NotenDB extends Dexie {
       photos: 'id, refId, refType, createdAt',
       schoolYears: 'id, active, startDate, createdAt',
     });
+
+    this.version(5).stores({
+      subjects: 'id, name, system, category, schoolYearId, createdAt',
+      grades: 'id, subjectId, schoolYearId, date, kind, isPending',
+      tasks: 'id, subjectId, schoolYearId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, schoolYearId, weekday, start',
+      settings: 'id',
+      photos: 'id, refId, refType, createdAt',
+      schoolYears: 'id, active, startDate, createdAt',
+    });
   }
 }
 

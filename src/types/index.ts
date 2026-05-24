@@ -60,6 +60,8 @@ export interface Subject {
   room?: string;
   targetAverage?: number;
   createdAt: number;
+  /** Zugehöriges Schuljahr. Wenn nicht gesetzt, gehört das Fach zum aktuellen Jahr (Migration). */
+  schoolYearId?: string;
 }
 
 /** Standard-Gewichtsoptionen für einzelne Noten - "custom" erlaubt beliebigen Wert via weightMultiplier. */
@@ -77,6 +79,8 @@ export interface Grade {
   /** Per-Note Gewichts-Multiplikator. Default 1. Erlaubt 0.5/1/1.5/2 oder beliebige Zahl. */
   weightMultiplier?: number;
   isPending?: boolean;
+  /** Zugehöriges Schuljahr. Wird vom Subject geerbt beim Anlegen. */
+  schoolYearId?: string;
 }
 
 export type TaskKind = 'hausaufgabe' | 'test' | 'schulaufgabe' | 'projekt' | 'todo';
@@ -93,6 +97,8 @@ export interface AppTask {
   doneAt?: number;
   priority: 1 | 2 | 3;
   createdAt: number;
+  /** Zugehöriges Schuljahr. */
+  schoolYearId?: string;
 }
 
 export interface Lesson {
@@ -103,6 +109,8 @@ export interface Lesson {
   end: string;
   room?: string;
   weekParity?: 'A' | 'B' | 'ALL';
+  /** Zugehöriges Schuljahr. Wird vom Subject geerbt beim Anlegen. */
+  schoolYearId?: string;
 }
 
 export type ColorThemeId = 'indigo' | 'ocean' | 'sunset' | 'forest' | 'rose' | 'crimson' | 'sunshine' | 'mono' | 'rainbow';

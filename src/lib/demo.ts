@@ -122,23 +122,36 @@ function genTasks(subjects: Subject[]): AppTask[] {
 }
 
 export async function installDemo() {
-  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings], async () => {
+  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
     await db.subjects.clear();
     await db.grades.clear();
     await db.tasks.clear();
     await db.lessons.clear();
+    await db.schoolYears.clear();
 
-    const subjects: Subject[] = SUBJECTS_DEMO.map(s => ({ ...s, id: uid(), createdAt: Date.now() }));
+    // Default Schuljahr für Demo
+    const yearId = uid();
+    const now = new Date();
+    const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+    await db.schoolYears.add({
+      id: yearId,
+      name: `${y}/${String(y + 1).slice(2)}`,
+      startDate: new Date(y, 8, 1).getTime(),
+      active: true,
+      createdAt: Date.now(),
+    });
+
+    const subjects: Subject[] = SUBJECTS_DEMO.map(s => ({ ...s, id: uid(), createdAt: Date.now(), schoolYearId: yearId }));
     await db.subjects.bulkAdd(subjects);
 
     const allGrades: Grade[] = [];
-    for (const s of subjects) allGrades.push(...genGradesFor(s));
+    for (const s of subjects) allGrades.push(...genGradesFor(s).map(g => ({ ...g, schoolYearId: yearId })));
     await db.grades.bulkAdd(allGrades);
 
-    const lessons = genSchedule(subjects);
+    const lessons = genSchedule(subjects).map(l => ({ ...l, schoolYearId: yearId }));
     await db.lessons.bulkAdd(lessons);
 
-    const tasks = genTasks(subjects);
+    const tasks = genTasks(subjects).map(t => ({ ...t, schoolYearId: yearId }));
     await db.tasks.bulkAdd(tasks);
 
     const settings: AppSettings = {
@@ -154,11 +167,12 @@ export async function installDemo() {
 }
 
 export async function resetAll() {
-  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings], async () => {
+  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
     await db.subjects.clear();
     await db.grades.clear();
     await db.tasks.clear();
     await db.lessons.clear();
+    await db.schoolYears.clear();
     await db.settings.clear();
   });
 }

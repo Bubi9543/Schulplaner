@@ -512,8 +512,11 @@ function SyncCard() {
 
 function SchoolYearsSection() {
   const schoolYears = useStore(s => s.schoolYears);
+  const activeId = useStore(s => s.activeSchoolYearId);
+  const subjects = useStore(s => s.subjects);
+  const grades = useStore(s => s.grades);
+  const lessons = useStore(s => s.lessons);
   const addSchoolYear = useStore(s => s.addSchoolYear);
-  const updateSchoolYear = useStore(s => s.updateSchoolYear);
   const deleteSchoolYear = useStore(s => s.deleteSchoolYear);
   const setActiveSchoolYear = useStore(s => s.setActiveSchoolYear);
 
@@ -521,9 +524,11 @@ function SchoolYearsSection() {
   const [newName, setNewName] = useState('');
   const [newStart, setNewStart] = useState(() => {
     const d = new Date();
-    const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1;
+    const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
     return `${y}-09-01`;
   });
+  const [copySubjects, setCopySubjects] = useState(true);
+  const [copyLessons, setCopyLessons] = useState(true);
 
   function suggestName() {
     const [y] = newStart.split('-').map(Number);
@@ -532,7 +537,12 @@ function SchoolYearsSection() {
 
   async function create() {
     const name = newName.trim() || suggestName();
-    await addSchoolYear({ name, startDate: new Date(newStart).getTime(), active: true });
+    await addSchoolYear({
+      name,
+      startDate: new Date(newStart).getTime(),
+      copySubjectsFromYearId: copySubjects && activeId ? activeId : undefined,
+      copyLessonsFromYearId: copyLessons && copySubjects && activeId ? activeId : undefined,
+    });
     setShowForm(false);
     setNewName('');
   }
@@ -545,7 +555,7 @@ function SchoolYearsSection() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-display font-bold text-lg text-ink-900">Schuljahre</h3>
-            <p className="text-sm text-ink-500 mt-0.5">Deine Noten und Daten bleiben bei jedem Schuljahr erhalten.</p>
+            <p className="text-sm text-ink-500 mt-0.5">Jedes Schuljahr ist ein eigener Schulplaner – mit eigenen Fächern, Noten, Stundenplan und Aufgaben.</p>
           </div>
           <button onClick={() => setShowForm(v => !v)} className="btn-primary">
             <Plus className="size-4" /> Neues Schuljahr
@@ -564,9 +574,24 @@ function SchoolYearsSection() {
                 <input className="input" placeholder={suggestName()} value={newName} onChange={e => setNewName(e.target.value)} />
               </div>
             </div>
+            {activeId && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2.5 cursor-pointer text-sm">
+                  <input type="checkbox" checked={copySubjects} onChange={e => setCopySubjects(e.target.checked)} className="size-4 accent-theme" />
+                  <span className="text-ink-700">Fächer aus aktuellem Schuljahr übernehmen (ohne Noten)</span>
+                </label>
+                <label className={`flex items-center gap-2.5 cursor-pointer text-sm ${!copySubjects ? 'opacity-50' : ''}`}>
+                  <input type="checkbox" checked={copyLessons && copySubjects} disabled={!copySubjects} onChange={e => setCopyLessons(e.target.checked)} className="size-4 accent-theme" />
+                  <span className="text-ink-700">Stundenplan auch übernehmen</span>
+                </label>
+                <div className="text-xs text-ink-500 pl-6.5">
+                  Sonst startest du mit einem leeren Planer (eigenes Onboarding).
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowForm(false)} className="btn-ghost">Abbrechen</button>
-              <button onClick={create} className="btn-primary">Erstellen</button>
+              <button onClick={create} className="btn-primary">Erstellen & wechseln</button>
             </div>
           </div>
         )}
@@ -578,39 +603,52 @@ function SchoolYearsSection() {
           </div>
         ) : (
           <div className="space-y-2">
-            {schoolYears.map(y => (
-              <div key={y.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition ${y.active ? 'border-teal-300 bg-teal-50' : 'border-ink-100 bg-white/60'}`}>
-                <div className={`size-9 rounded-xl grid place-items-center flex-shrink-0 ${y.active ? 'bg-teal-500' : 'bg-ink-200'}`}>
-                  {y.active ? <Check className="size-4 text-white" strokeWidth={3} /> : <Calendar className="size-4 text-ink-500" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-ink-900">{y.name}</div>
-                  <div className="text-xs text-ink-500">
-                    ab {fmtDate(y.startDate)}{y.endDate ? ` · bis ${fmtDate(y.endDate)}` : ' · laufend'}
+            {schoolYears.map(y => {
+              const isActive = y.id === activeId;
+              const stats = isActive
+                ? `${subjects.length} Fächer · ${grades.filter(g => !g.isPending).length} Noten · ${lessons.length} Stunden`
+                : '';
+              return (
+                <div key={y.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition ${isActive ? 'border-theme bg-theme-soft/30' : 'border-white/40 bg-white/60'}`}>
+                  <div className={`size-10 rounded-xl grid place-items-center flex-shrink-0 ${isActive ? 'theme-gradient' : 'bg-ink-200'}`}>
+                    {isActive ? <Check className="size-4 text-white" strokeWidth={3} /> : <Calendar className="size-4 text-ink-500" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-ink-900 flex items-center gap-2 flex-wrap">
+                      {y.name}
+                      {isActive && <span className="text-[10px] uppercase tracking-wider font-bold text-theme-deep px-1.5 py-0.5 rounded-md bg-theme-soft">Aktiv</span>}
+                    </div>
+                    <div className="text-xs text-ink-500">
+                      ab {fmtDate(y.startDate)}{y.endDate ? ` · bis ${fmtDate(y.endDate)}` : ''}
+                      {isActive && stats && ` · ${stats}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {!isActive && (
+                      <button
+                        onClick={() => setActiveSchoolYear(y.id)}
+                        className="text-xs px-3 py-1.5 rounded-lg theme-gradient text-white font-semibold hover:opacity-90 transition"
+                      >
+                        Wechseln
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (schoolYears.length === 1) {
+                          alert('Mindestens ein Schuljahr muss vorhanden bleiben.');
+                          return;
+                        }
+                        if (confirm(`Schuljahr "${y.name}" inkl. aller zugehörigen Fächer, Noten, Aufgaben und Stunden wirklich löschen?`))
+                          deleteSchoolYear(y.id, 'wipe');
+                      }}
+                      className="size-8 rounded-xl grid place-items-center text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {!y.active && (
-                    <button
-                      onClick={() => setActiveSchoolYear(y.id)}
-                      className="text-xs px-2.5 py-1.5 rounded-lg bg-teal-100 text-teal-700 hover:bg-teal-200 transition font-medium"
-                    >
-                      Aktiv setzen
-                    </button>
-                  )}
-                  {y.active && <span className="text-xs text-teal-600 font-semibold">Aktiv</span>}
-                  <button
-                    onClick={() => {
-                      if (confirm(`Schuljahr "${y.name}" wirklich löschen? Deine Noten bleiben erhalten.`))
-                        deleteSchoolYear(y.id);
-                    }}
-                    className="size-8 rounded-xl grid place-items-center text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
