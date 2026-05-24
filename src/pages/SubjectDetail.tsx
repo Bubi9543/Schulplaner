@@ -64,7 +64,7 @@ export function SubjectDetailPage() {
 
   if (!subject) {
     return (
-      <PageShell accent="green" title="Fach nicht gefunden">
+      <PageShell title="Fach nicht gefunden">
         <Card>
           <Empty icon={Target} title="Dieses Fach existiert nicht" action={<Link to="/noten" className="btn-primary"><ArrowLeft className="size-4" />Zurück</Link>} />
         </Card>
@@ -72,10 +72,8 @@ export function SubjectDetailPage() {
     );
   }
 
-  const accent = pickAccent(subject.color);
-
   return (
-    <PageShell accent={accent} title={subject.name} subtitle={`${subject.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
+    <PageShell title={subject.name} subtitle={`${subject.category === 'haupt' ? 'Hauptfach' : 'Nebenfach'} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
       actions={
         <>
           <button onClick={() => nav('/noten')} className="btn-ghost"><ArrowLeft className="size-4" />Zurück</button>
@@ -126,7 +124,7 @@ export function SubjectDetailPage() {
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis reversed={meta?.goodIsLow} domain={meta ? [meta.min, meta.max] : [1, 6]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
-                  {subject.targetAverage && <ReferenceLine y={subject.targetAverage} stroke="#ec4899" strokeDasharray="4 4" label={{ value: 'Ziel', fill: '#ec4899', fontSize: 10 }} />}
+                  {subject.targetAverage && <ReferenceLine y={subject.targetAverage} stroke="var(--theme-secondary)" strokeDasharray="4 4" label={{ value: 'Ziel', fill: 'var(--theme-secondary)', fontSize: 10 }} />}
                   <Line type="monotone" dataKey="value" stroke={subject.color} strokeWidth={1.5} dot={{ r: 3 }} strokeOpacity={0.6} />
                   <Line type="monotone" dataKey="avg" stroke={subject.color} strokeWidth={3} dot={false} />
                 </LineChart>
@@ -214,12 +212,3 @@ export function SubjectDetailPage() {
   );
 }
 
-function pickAccent(color: string): 'blue' | 'green' | 'orange' | 'violet' | 'rose' {
-  const h = color.toLowerCase();
-  if (/(#6|#3|#0|#1).*/.test(h)) return 'blue';
-  if (/#(10|14|22|84)/.test(h)) return 'green';
-  if (/#(a8|8b|c0|6c)/.test(h)) return 'violet';
-  if (/#(ec|f4|fb|f5|f9)/.test(h)) return 'rose';
-  if (/#(f9|f5|fa|fb)/.test(h)) return 'orange';
-  return 'violet';
-}

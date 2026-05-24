@@ -11,21 +11,21 @@ import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { KIND_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_KIND_WEIGHTS } from '@/types';
-import type { Subject, GradingSystem, GradeKind, AccentName, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
-import { ACCENT_HEX } from '@/types';
+import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
+import { THEME_LIST } from '@/lib/themes';
 
 type SectionId = 'profile' | 'appearance' | 'animations' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'data' | 'about';
 
-const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }>; tint: string }> = [
-  { id: 'profile', label: 'Profil', icon: User, tint: 'from-indigo-500 to-violet-500' },
-  { id: 'appearance', label: 'Erscheinung', icon: Palette, tint: 'from-fuchsia-500 to-pink-500' },
-  { id: 'animations', label: 'Animationen', icon: Sparkles, tint: 'from-amber-400 to-orange-500' },
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, tint: 'from-sky-500 to-indigo-500' },
-  { id: 'grading', label: 'Noten & Aufgaben', icon: GraduationCap, tint: 'from-emerald-500 to-teal-500' },
-  { id: 'subjects',    label: 'Fächer',       icon: BookOpen,  tint: 'from-violet-500 to-purple-500' },
-  { id: 'schoolyears', label: 'Schuljahre',   icon: Calendar,  tint: 'from-teal-500 to-cyan-500' },
-  { id: 'data',        label: 'Daten',        icon: Database,  tint: 'from-rose-500 to-pink-600' },
-  { id: 'about', label: 'Über', icon: Info, tint: 'from-slate-500 to-slate-700' },
+const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: 'profile', label: 'Profil', icon: User },
+  { id: 'appearance', label: 'Erscheinung', icon: Palette },
+  { id: 'animations', label: 'Animationen', icon: Sparkles },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'grading', label: 'Noten & Aufgaben', icon: GraduationCap },
+  { id: 'subjects',    label: 'Fächer',       icon: BookOpen },
+  { id: 'schoolyears', label: 'Schuljahre',   icon: Calendar },
+  { id: 'data',        label: 'Daten',        icon: Database },
+  { id: 'about', label: 'Über', icon: Info },
 ];
 
 export function SettingsPage() {
@@ -35,7 +35,7 @@ export function SettingsPage() {
   if (!settings) return null;
 
   return (
-    <PageShell accent="rose" title="Einstellungen" subtitle="Profil, Aussehen, Notensysteme und mehr – alles personalisierbar.">
+    <PageShell title="Einstellungen" subtitle="Profil, Aussehen, Notensysteme und mehr – alles personalisierbar.">
       <div className="grid grid-cols-12 gap-4 md:gap-5">
         <Card className="col-span-12 md:col-span-3 lg:col-span-3 !p-2 md:sticky md:top-4 md:self-start">
           <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible no-scrollbar">
@@ -45,7 +45,7 @@ export function SettingsPage() {
               return (
                 <button key={s.id} onClick={() => setSection(s.id)}
                   className={`relative shrink-0 md:shrink flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm font-semibold transition text-left ${active ? 'text-white' : 'text-ink-700 hover:bg-white/70'}`}>
-                  {active && <motion.span layoutId="settings-active" className={`absolute inset-0 rounded-2xl bg-gradient-to-r ${s.tint}`} />}
+                  {active && <motion.span layoutId="settings-active" className="absolute inset-0 rounded-2xl theme-gradient" />}
                   <span className="relative flex items-center gap-2 w-full">
                     <Icon className="size-4" />
                     {s.label}
@@ -94,7 +94,7 @@ function Segmented<T extends string | number>({ value, options, onChange }: { va
       {options.map(opt => (
         <button key={String(opt.value)} onClick={() => onChange(opt.value)}
           className={`relative px-3 py-1.5 rounded-xl text-xs font-semibold transition ${value === opt.value ? 'text-white' : 'text-ink-700'}`}>
-          {value === opt.value && <motion.span layoutId={`seg-${opt.label}-${String(opt.value)}`} className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-500 to-fuchsia-500" />}
+          {value === opt.value && <motion.span layoutId={`seg-${opt.label}-${String(opt.value)}`} className="absolute inset-0 rounded-xl theme-gradient" />}
           <span className="relative">{opt.label}</span>
         </button>
       ))}
@@ -124,7 +124,7 @@ function ProfileSection() {
 
   return (
     <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><User className="size-5 text-indigo-500" />Profil</h3>
+      <h3 className="h3 mb-3 flex items-center gap-2"><User className="size-5 text-theme" />Profil</h3>
       <Row label="Name" hint="Wird für die Begrüßung im Dashboard verwendet.">
         <input className="input max-w-[260px]" value={name} onChange={e => setName(e.target.value)} onBlur={save} placeholder="Dein Name" />
       </Row>
@@ -142,36 +142,62 @@ function AppearanceSection() {
   const settings = useStore(s => s.settings)!;
   const setSettings = useStore(s => s.setSettings);
   return (
-    <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Palette className="size-5 text-fuchsia-500" />Erscheinung</h3>
-      <Row label="Theme" hint="Hell oder dunkel? Auto folgt dem System.">
-        <Segmented<ThemeMode> value={settings.theme} options={[
-          { value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }, { value: 'auto', label: 'Auto' },
-        ]} onChange={v => setSettings({ theme: v })} />
-      </Row>
-      <Row label="Akzentfarbe" hint="Farbe für Highlights und Buttons.">
-        <div className="flex gap-1.5">
-          {(['indigo', 'rose', 'emerald', 'amber', 'sky', 'violet'] as AccentName[]).map(a => (
-            <button key={a} onClick={() => setSettings({ accent: a })}
-              className={`size-8 rounded-xl transition ${settings.accent === a ? 'ring-4 ring-white scale-110' : ''}`}
-              style={{ background: ACCENT_HEX[a] }} aria-label={a} />
-          ))}
+    <div className="space-y-4">
+      <Card>
+        <h3 className="h3 mb-1 flex items-center gap-2"><Palette className="size-5 text-theme" />Farbtheme</h3>
+        <p className="subtle mb-4">Wähle das Theme – Hintergründe, Buttons und Akzente passen sich automatisch an.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {THEME_LIST.map(t => {
+            const active = settings.colorTheme === t.id;
+            return (
+              <button key={t.id} onClick={() => setSettings({ colorTheme: t.id })}
+                className={`group relative rounded-2xl overflow-hidden border transition-all text-left ${active ? 'ring-2 ring-offset-2 ring-offset-white scale-[1.02] border-transparent' : 'border-white/70 hover:scale-[1.01]'}`}
+                style={active ? { '--tw-ring-color': t.primary } as React.CSSProperties : undefined}
+              >
+                <div className="h-20 relative" style={{
+                  background: `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientVia} 55%, ${t.gradientTo})`,
+                }}>
+                  <div className="absolute inset-0" style={{
+                    background: `radial-gradient(circle at 30% 25%, rgb(${t.aurora1Rgb} / 0.45) 0, transparent 55%), radial-gradient(circle at 75% 80%, rgb(${t.aurora2Rgb} / 0.4) 0, transparent 55%)`,
+                  }} />
+                  {active && (
+                    <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md">
+                      <Check className="size-3.5" style={{ color: t.primary }} />
+                    </div>
+                  )}
+                </div>
+                <div className="bg-white/90 px-3 py-2">
+                  <div className="font-display font-bold text-sm text-ink-900">{t.name}</div>
+                  <div className="text-[11px] text-ink-500">{t.description}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      </Row>
-      <Row label="Schriftgröße">
-        <Segmented<FontScale> value={settings.fontScale} options={[
-          { value: 0.9, label: 'Klein' }, { value: 1, label: 'Normal' }, { value: 1.1, label: 'Groß' },
-        ]} onChange={v => setSettings({ fontScale: v })} />
-      </Row>
-      <Row label="Dichte" hint="Mehr Inhalt auf weniger Platz?">
-        <Segmented<DensityMode> value={settings.density} options={[
-          { value: 'comfortable', label: 'Komfortabel' }, { value: 'compact', label: 'Kompakt' },
-        ]} onChange={v => setSettings({ density: v })} />
-      </Row>
-      <Row label="Glaseffekte" hint="Milchglas-Look auf Karten.">
-        <Toggle checked={settings.glassEffects} onChange={v => setSettings({ glassEffects: v })} />
-      </Row>
-    </Card>
+      </Card>
+
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Sparkles className="size-5 text-theme" />Darstellung</h3>
+        <Row label="Theme-Modus" hint="Hell oder dunkel? Auto folgt dem System.">
+          <Segmented<ThemeMode> value={settings.theme} options={[
+            { value: 'light', label: 'Hell' }, { value: 'dark', label: 'Dunkel' }, { value: 'auto', label: 'Auto' },
+          ]} onChange={v => setSettings({ theme: v })} />
+        </Row>
+        <Row label="Schriftgröße">
+          <Segmented<FontScale> value={settings.fontScale} options={[
+            { value: 0.9, label: 'Klein' }, { value: 1, label: 'Normal' }, { value: 1.1, label: 'Groß' },
+          ]} onChange={v => setSettings({ fontScale: v })} />
+        </Row>
+        <Row label="Dichte" hint="Mehr Inhalt auf weniger Platz?">
+          <Segmented<DensityMode> value={settings.density} options={[
+            { value: 'comfortable', label: 'Komfortabel' }, { value: 'compact', label: 'Kompakt' },
+          ]} onChange={v => setSettings({ density: v })} />
+        </Row>
+        <Row label="Glaseffekte" hint="Milchglas-Look auf Karten.">
+          <Toggle checked={settings.glassEffects} onChange={v => setSettings({ glassEffects: v })} />
+        </Row>
+      </Card>
+    </div>
   );
 }
 
@@ -233,7 +259,7 @@ function DashboardSection() {
               <button key={k} onClick={() => {
                 const next = active ? settings.quickButtons.filter(x => x !== k) : [...settings.quickButtons, k];
                 setSettings({ quickButtons: next });
-              }} className={`chip ${active ? 'bg-indigo-500 text-white border-indigo-500' : ''}`}>
+              }} className={`chip ${active ? 'chip-active' : ''}`}>
                 {k === 'todo' ? 'Todo' : k === 'hausaufgabe' ? 'Hausaufgabe' : k === 'test' ? 'Test' : k === 'schulaufgabe' ? 'Schulaufgabe' : 'Projekt'}
               </button>
             );
@@ -266,7 +292,7 @@ function GradingSection() {
         </Row>
         <Row label="Trend-Schwelle" hint="Wie groß muss der Unterschied sein, um als 'besser/schlechter' zu zählen?">
           <input type="range" min="0.1" max="0.5" step="0.05" value={settings.trendThreshold}
-            onChange={e => setSettings({ trendThreshold: parseFloat(e.target.value) })} className="w-32 accent-indigo-500" />
+            onChange={e => setSettings({ trendThreshold: parseFloat(e.target.value) })} className="w-32 accent-theme" />
           <span className="text-xs font-bold text-ink-700 w-10 text-right">{settings.trendThreshold.toFixed(2).replace('.', ',')}</span>
         </Row>
         <Row label="Auto-Vorauswahl aktuelles Fach" hint="Im Hausaufgaben-/Notendialog automatisch das gerade laufende Fach wählen.">
@@ -274,7 +300,7 @@ function GradingSection() {
         </Row>
         <Row label="Vorlauf in Minuten" hint="So viele Minuten vor Stundenbeginn gilt das nächste Fach schon als aktiv.">
           <input type="range" min="0" max="30" step="5" value={settings.activeSubjectThresholdMin}
-            onChange={e => setSettings({ activeSubjectThresholdMin: parseInt(e.target.value) })} className="w-32 accent-indigo-500" />
+            onChange={e => setSettings({ activeSubjectThresholdMin: parseInt(e.target.value) })} className="w-32 accent-theme" />
           <span className="text-xs font-bold text-ink-700 w-10 text-right">{settings.activeSubjectThresholdMin}min</span>
         </Row>
         <Row label="Standard-Priorität neuer Aufgaben">
@@ -412,7 +438,7 @@ function SubjectsSection() {
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="h3 flex items-center gap-2"><BookOpen className="size-5 text-violet-500" />Fächer ({subjects.length})</h3>
+        <h3 className="h3 flex items-center gap-2"><BookOpen className="size-5 text-theme" />Fächer ({subjects.length})</h3>
         <button onClick={() => setSubjDialog({ open: true })} className="btn-primary"><Plus className="size-4" />Fach</button>
       </div>
       {!subjects.length ? (
@@ -504,7 +530,7 @@ function SyncCard() {
 
   return (
     <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Cloud className="size-5 text-indigo-500" />Cloud Sync</h3>
+      <h3 className="h3 mb-3 flex items-center gap-2"><Cloud className="size-5 text-theme" />Cloud Sync</h3>
       <p className="text-sm text-ink-600 mb-3">Melde dich an, um deine Daten zwischen Geräten zu synchronisieren. Fotos bleiben immer nur lokal.</p>
 
       {mode === 'idle' ? (
@@ -580,7 +606,7 @@ function SchoolYearsSection() {
         </div>
 
         {showForm && (
-          <div className="mb-4 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
+          <div className="mb-4 p-4 rounded-2xl bg-theme-soft/40 border border-theme-soft space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Beginn</label>

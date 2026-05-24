@@ -10,6 +10,7 @@ import { SchedulePage } from '@/pages/Schedule';
 import { GradesPage } from '@/pages/Grades';
 import { SubjectDetailPage } from '@/pages/SubjectDetail';
 import { SettingsPage } from '@/pages/Settings';
+import { applyTheme } from '@/lib/themes';
 
 export default function App() {
   const loaded = useStore(s => s.loaded);
@@ -19,9 +20,15 @@ export default function App() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (settings?.colorTheme === 'rainbow') {
+      applyTheme('rainbow', location.pathname);
+    }
+  }, [settings?.colorTheme, location.pathname]);
+
   if (!loaded) {
     return (
-      <div className="h-full grid place-items-center bg-aurora-blue">
+      <div className="h-full grid place-items-center theme-aurora">
         <div className="animate-pulse text-ink-500 font-medium">Lädt …</div>
       </div>
     );

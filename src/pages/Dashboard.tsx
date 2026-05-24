@@ -117,7 +117,7 @@ function WidgetShell({
           </button>
         </div>
       )}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-4" style={{ containerType: 'inline-size' }}>
         {children}
       </div>
     </div>
@@ -136,9 +136,9 @@ function GradeOverviewWidget() {
     [grades, subjects, config, settings?.trendThreshold]);
 
   return (
-    <div className="h-full -m-4 flex flex-col bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 text-white rounded-b-[inherit] p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wider text-white/80">Gesamtschnitt</div>
+    <div className="h-full -m-4 flex flex-col theme-gradient text-white rounded-b-[inherit] p-4" style={{ containerType: 'inline-size' }}>
+      <div className="flex items-center justify-between flex-shrink-0">
+        <div className="text-[clamp(0.625rem,3.5cqi,0.75rem)] uppercase tracking-wider text-white/80">Gesamtschnitt</div>
         <span className={cn('chip', trend === 'up'
           ? 'bg-emerald-400/30 text-white border-emerald-200/40'
           : trend === 'down'
@@ -148,14 +148,14 @@ function GradeOverviewWidget() {
           {trend === 'up' ? 'Besser' : trend === 'down' ? 'Schlechter' : 'Stabil'}
         </span>
       </div>
-      <div className="flex-1 flex items-center gap-4 mt-2 min-h-0">
-        <div className="bg-white/15 rounded-3xl p-3 flex-shrink-0">
-          <AverageRing value={overall} system={system} size={100} />
+      <div className="flex-1 flex items-center gap-3 mt-2 min-h-0 min-w-0">
+        <div className="bg-white/15 rounded-3xl p-2 h-full aspect-square flex-shrink-0 max-h-full">
+          <AverageRing value={overall} system={system} />
         </div>
-        <div className="text-sm min-w-0">
-          <div className="text-white/80">alle Fächer</div>
-          <div className="font-display font-bold text-3xl mt-1">{formatAverage(overall, system, settings?.averageDigits ?? 2)}</div>
-          <Link to="/noten" className="mt-2 inline-flex items-center gap-1 text-white/95 hover:text-white text-sm font-semibold">
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <div className="text-white/80 text-[clamp(0.625rem,3.5cqi,0.875rem)]">alle Fächer</div>
+          <div className="font-display font-bold text-[clamp(1.25rem,9cqi,2rem)] mt-1 leading-tight">{formatAverage(overall, system, settings?.averageDigits ?? 2)}</div>
+          <Link to="/noten" className="mt-2 inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,3cqi,0.875rem)] font-semibold">
             Details <ArrowRight className="size-3.5" />
           </Link>
         </div>
@@ -195,8 +195,8 @@ function GradeTrendWidget() {
             <AreaChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="dashGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--theme-primary)" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="var(--theme-primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
@@ -206,7 +206,7 @@ function GradeTrendWidget() {
                 contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
                 formatter={(v: unknown) => (typeof v === 'number' ? v.toFixed(2).replace('.', ',') : String(v))}
               />
-              <Area type="monotone" dataKey="avg" stroke="#6366f1" strokeWidth={2.5} fill="url(#dashGrad)" />
+              <Area type="monotone" dataKey="avg" stroke="var(--theme-primary)" strokeWidth={2.5} fill="url(#dashGrad)" />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -222,7 +222,7 @@ function TimelineWidget() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3 flex items-center gap-2"><Calendar className="size-5" />Heute · {WEEKDAYS_DE[new Date().getDay()]}</h3>
-        <Link to="/stundenplan" className="text-sm text-indigo-600 font-semibold hover:underline">Stundenplan</Link>
+        <Link to="/stundenplan" className="text-sm text-theme-deep font-semibold hover:underline">Stundenplan</Link>
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         <TodayTimeline />
@@ -241,7 +241,7 @@ function TasksTodayWidget() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Heute fällig</h3>
-        <Link to="/aufgaben" className="text-sm text-indigo-600 font-semibold hover:underline">Alle</Link>
+        <Link to="/aufgaben" className="text-sm text-theme-deep font-semibold hover:underline">Alle</Link>
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         {todayTasks.length === 0 ? (
@@ -288,7 +288,7 @@ function RecentGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Letzte Noten</h3>
-        <Link to="/noten" className="text-sm text-indigo-600 font-semibold hover:underline">Alle</Link>
+        <Link to="/noten" className="text-sm text-theme-deep font-semibold hover:underline">Alle</Link>
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         {recentGrades.length === 0 ? (
@@ -432,7 +432,7 @@ function SubjectsWidget() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <h3 className="h3">Fächer</h3>
-        <Link to="/noten" className="text-sm text-indigo-600 font-semibold hover:underline">Alle Noten</Link>
+        <Link to="/noten" className="text-sm text-theme-deep font-semibold hover:underline">Alle Noten</Link>
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -555,7 +555,6 @@ export function Dashboard() {
 
   return (
     <PageShell
-      accent="blue"
       title={`${greeting}${settings?.name ? `, ${settings.name}` : ''} 👋`}
       subtitle={
         subjects.length

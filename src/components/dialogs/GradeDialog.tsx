@@ -141,7 +141,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             {autoChosen && (
-              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-indigo-600">
+              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-theme-deep">
                 <Sparkles className="size-3" /> Vorausgewählt: aktuelle Stunde
               </div>
             )}
@@ -171,7 +171,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
                   type="range" min={meta.min} max={meta.max} step={meta.step}
                   value={value}
                   onChange={e => setValue(parseFloat(e.target.value))}
-                  className="w-full accent-indigo-500"
+                  className="w-full accent-theme"
                 />
               )}
               <div className="flex justify-between text-xs text-ink-400 mt-1">
@@ -184,7 +184,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
             <label className="label">Art</label>
             <div className="flex flex-wrap gap-2">
               {KIND_OPTIONS.map(k => (
-                <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'bg-indigo-500 text-white border-indigo-500' : ''}`}>
+                <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
                   {KIND_LABEL[k]}
                 </button>
               ))}
@@ -223,7 +223,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
           </div>
 
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={isPending} onChange={e => setIsPending(e.target.checked)} className="size-5 accent-indigo-500" />
+            <input type="checkbox" checked={isPending} onChange={e => setIsPending(e.target.checked)} className="size-5 accent-theme" />
             <span className="text-sm text-ink-700">Note steht aus (Termin vormerken)</span>
           </label>
 

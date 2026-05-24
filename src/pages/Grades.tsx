@@ -86,7 +86,7 @@ export function GradesPage() {
 
   if (!subjects.length) {
     return (
-      <PageShell accent="green" title="Noten">
+      <PageShell title="Noten">
         <Card>
           <Empty icon={Sparkles} title="Noch keine Fächer angelegt"
             description="Lege dein erstes Fach an, um Noten zu erfassen."
@@ -99,7 +99,7 @@ export function GradesPage() {
   }
 
   return (
-    <PageShell accent="green" title="Noten" subtitle={`${grades.filter(g => !g.isPending).length} Noten in ${subjects.length} Fächern`}
+    <PageShell title="Noten" subtitle={`${grades.filter(g => !g.isPending).length} Noten in ${subjects.length} Fächern`}
       actions={
         <>
           <button className="btn-ghost" onClick={() => setSubjectDialog(true)}><Plus className="size-4" />Fach</button>
@@ -108,7 +108,7 @@ export function GradesPage() {
       }
     >
       <div className="grid grid-cols-12 gap-4 md:gap-5">
-        <Card delay={0} className="col-span-12 md:col-span-4 lg:col-span-3 text-center bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 !text-white border-0">
+        <Card delay={0} className="col-span-12 md:col-span-4 lg:col-span-3 text-center theme-gradient !text-white border-0">
           <div className="text-xs uppercase tracking-wider opacity-90">Gesamtschnitt</div>
           <div className="mt-3 mx-auto bg-white/15 rounded-3xl p-3 inline-block">
             <AverageRing value={overall} system={system} size={140} />

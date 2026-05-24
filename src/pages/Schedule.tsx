@@ -39,14 +39,14 @@ export function SchedulePage() {
 
   if (!subjects.length) {
     return (
-      <PageShell accent="violet" title="Stundenplan">
+      <PageShell title="Stundenplan">
         <Card><Empty icon={Clock} title="Noch keine Fächer angelegt" description="Lege erst Fächer in den Einstellungen an, dann kannst du den Stundenplan füllen." /></Card>
       </PageShell>
     );
   }
 
   return (
-    <PageShell accent="violet" title="Stundenplan" subtitle="Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen."
+    <PageShell title="Stundenplan" subtitle="Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen."
       actions={<button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>}
     >
       <Card>

@@ -86,7 +86,7 @@ export interface Lesson {
   weekParity?: 'A' | 'B' | 'ALL';
 }
 
-export type AccentName = 'indigo' | 'rose' | 'emerald' | 'amber' | 'sky' | 'violet';
+export type ColorThemeId = 'indigo' | 'ocean' | 'sunset' | 'forest' | 'rose' | 'crimson' | 'sunshine' | 'mono' | 'rainbow';
 export type ThemeMode = 'light' | 'dark' | 'auto';
 export type DensityMode = 'comfortable' | 'compact';
 export type FontScale = 0.9 | 1 | 1.1;
@@ -113,7 +113,7 @@ export interface AppSettings {
   demo: boolean;
   isMainDevice: boolean;
   theme: ThemeMode;
-  accent: AccentName;
+  colorTheme: ColorThemeId;
   density: DensityMode;
   fontScale: FontScale;
   animationLevel: AnimationLevel;
@@ -140,15 +140,6 @@ export const SUBJECT_COLORS = [
   '#f97316', '#f59e0b', '#10b981', '#14b8a6',
   '#06b6d4', '#3b82f6', '#a855f7', '#84cc16',
 ] as const;
-
-export const ACCENT_HEX: Record<AccentName, string> = {
-  indigo: '#6366f1',
-  rose: '#f43f5e',
-  emerald: '#10b981',
-  amber: '#f59e0b',
-  sky: '#0ea5e9',
-  violet: '#8b5cf6',
-};
 
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
   schulaufgabe: { haupt: 2, neben: 1 },
@@ -183,7 +174,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   onboarded: false,
   demo: false,
   theme: 'auto',
-  accent: 'indigo',
+  colorTheme: 'indigo',
   density: 'comfortable',
   fontScale: 1,
   animationLevel: 'rich',

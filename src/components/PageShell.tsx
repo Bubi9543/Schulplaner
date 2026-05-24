@@ -1,25 +1,16 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 
-type Accent = 'blue' | 'green' | 'orange' | 'violet' | 'rose';
-
-const ACCENT_BG: Record<Accent, string> = {
-  blue: 'bg-aurora-blue',
-  green: 'bg-aurora-green',
-  orange: 'bg-aurora-orange',
-  violet: 'bg-aurora-violet',
-  rose: 'bg-aurora-rose',
-};
-
 interface Props {
-  accent: Accent;
   title: string;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;
+  /** Optional, beibehalten für Backwards-Compat - wird ignoriert. Theme bestimmt die Farbe. */
+  accent?: string;
 }
 
-export function PageShell({ accent, title, subtitle, actions, children }: Props) {
+export function PageShell({ title, subtitle, actions, children }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -28,8 +19,8 @@ export function PageShell({ accent, title, subtitle, actions, children }: Props)
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="relative min-h-full"
     >
-      <div className={`pointer-events-none fixed inset-0 -z-10 ${ACCENT_BG[accent]} opacity-90`} />
-      <div className="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-br from-white/40 via-white/20 to-white/60" />
+      <div className="pointer-events-none fixed inset-0 -z-10 theme-aurora opacity-90 transition-opacity duration-500" />
+      <div className="pointer-events-none fixed inset-0 -z-10 page-veil" />
       <div className="px-5 md:px-8 pt-6 pb-2 flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="h1 text-balance">{title}</h1>

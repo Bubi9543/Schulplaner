@@ -4,11 +4,11 @@ import { motion } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 
 const NAV = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', color: 'from-sky-500 to-indigo-500' },
-  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben', color: 'from-orange-400 to-rose-500' },
-  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan', color: 'from-violet-500 to-fuchsia-500' },
-  { to: '/noten', icon: GraduationCap, label: 'Noten', color: 'from-emerald-500 to-teal-500' },
-  { to: '/einstellungen', icon: Settings, label: 'Einstellungen', color: 'from-slate-500 to-slate-700' },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben' },
+  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan' },
+  { to: '/noten', icon: GraduationCap, label: 'Noten' },
+  { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
 ];
 
 export function Sidebar() {
@@ -16,7 +16,7 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:flex-col w-[240px] shrink-0 p-4 gap-3 sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-2 py-3">
-        <div className="size-10 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-pink-500 grid place-items-center shadow-glow">
+        <div className="size-10 rounded-2xl theme-gradient grid place-items-center shadow-glow">
           <span className="font-display font-extrabold text-white text-lg leading-none">1</span>
         </div>
         <div>
@@ -37,7 +37,7 @@ export function Sidebar() {
   );
 }
 
-function SidebarLink({ to, icon: Icon, label, color }: { to: string; icon: typeof LayoutDashboard; label: string; color: string }) {
+function SidebarLink({ to, icon: Icon, label }: { to: string; icon: typeof LayoutDashboard; label: string }) {
   return (
     <NavLink
       to={to}
@@ -51,7 +51,7 @@ function SidebarLink({ to, icon: Icon, label, color }: { to: string; icon: typeo
           {isActive && (
             <motion.span
               layoutId="sidebar-active"
-              className={`absolute inset-0 rounded-2xl bg-gradient-to-r ${color} shadow-glow`}
+              className="absolute inset-0 rounded-2xl theme-gradient shadow-glow"
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
             />
           )}
@@ -70,7 +70,7 @@ export function MobileTabBar() {
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
       <div className="glass-strong rounded-3xl flex items-center justify-between p-1.5 shadow-soft">
-        {NAV.slice(0, 4).map(item => {
+        {NAV.map(item => {
           const active = item.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(item.to);
           const Icon = item.icon;
           return (
@@ -80,7 +80,7 @@ export function MobileTabBar() {
               className={`relative flex-1 flex flex-col items-center gap-0.5 py-2 rounded-2xl text-[11px] font-semibold transition ${active ? 'text-white' : 'text-ink-600'}`}
             >
               {active && (
-                <motion.span layoutId="tabbar-active" className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${item.color}`} />
+                <motion.span layoutId="tabbar-active" className="absolute inset-0 rounded-2xl theme-gradient" />
               )}
               <span className="relative flex flex-col items-center gap-0.5">
                 <Icon className="size-5" />

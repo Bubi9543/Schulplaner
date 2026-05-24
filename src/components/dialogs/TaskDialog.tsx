@@ -106,7 +106,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <label className="label">Art</label>
           <div className="flex flex-wrap gap-2">
             {(Object.keys(KIND_LABEL) as TaskKind[]).map(k => (
-              <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'bg-indigo-500 text-white border-indigo-500' : ''}`}>
+              <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
                 {KIND_LABEL[k]}
               </button>
             ))}
@@ -120,7 +120,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             {autoChosen && (
-              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-indigo-600">
+              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-theme-deep">
                 <Sparkles className="size-3" /> Vorausgewählt: aktuelle Stunde
               </div>
             )}

@@ -5,11 +5,15 @@ import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll } from '@/lib/
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
+import { applyTheme, resolveThemeId } from '@/lib/themes';
+import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
 
 function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   const base: AppSettings = { ...DEFAULT_SETTINGS, id: 'app' };
   if (!stored) return base;
+  const legacyAccent = (stored as Partial<AppSettings> & { accent?: string }).accent;
   const merged: AppSettings = { ...base, ...stored, id: 'app' };
+  merged.colorTheme = resolveThemeId(stored.colorTheme ?? legacyAccent);
   merged.gradingConfig = mergeGradingConfig(stored.gradingConfig);
   if (!merged.quickButtons || !Array.isArray(merged.quickButtons) || merged.quickButtons.length === 0) {
     merged.quickButtons = DEFAULT_SETTINGS.quickButtons;
@@ -103,6 +107,13 @@ export const useStore = create<State>((set, get) => ({
       db.schoolYears.toArray(),
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
+    if (settings) {
+      applyTheme(settings.colorTheme);
+      applyVisualSettings(settings);
+    } else {
+      applyTheme('indigo');
+    }
+    bindAutoModeWatcher(() => get().settings);
     set({
       loaded: true,
       settings,
@@ -129,6 +140,8 @@ export const useStore = create<State>((set, get) => ({
     const current = get().settings ?? mergeSettings(undefined);
     const next: AppSettings = mergeSettings({ ...current, ...patch });
     await db.settings.put(next);
+    applyTheme(next.colorTheme);
+    applyVisualSettings(next);
     set({ settings: next });
     const { authUser } = get();
     if (authUser) syncSettings(next, authUser.id);

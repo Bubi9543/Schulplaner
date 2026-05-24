@@ -39,7 +39,6 @@ export function TasksPage() {
 
   return (
     <PageShell
-      accent="orange"
       title="Aufgaben"
       subtitle={`${tasks.filter(t => !t.done).length} offen · ${tasks.filter(t => t.done).length} erledigt`}
       actions={
@@ -70,7 +69,7 @@ export function TasksPage() {
             {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <label className="chip cursor-pointer">
-            <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} className="size-3.5 accent-orange-500" />
+            <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} className="size-3.5 accent-theme" />
             erledigte zeigen
           </label>
         </div>
@@ -102,7 +101,7 @@ export function TasksPage() {
 function ViewBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
     <button onClick={onClick} className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${active ? 'text-white' : 'text-ink-600'}`}>
-      {active && <motion.span layoutId="task-view" className="absolute inset-0 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500" />}
+      {active && <motion.span layoutId="task-view" className="absolute inset-0 rounded-xl theme-gradient" />}
       <span className="relative flex items-center gap-1.5">{icon}{label}</span>
     </button>
   );
@@ -155,10 +154,10 @@ function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: 
               key={i}
               onClick={() => onNew(d)}
               className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${
-                isToday ? 'bg-gradient-to-br from-orange-500/20 to-rose-500/20 border-orange-300' : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent'
+                isToday ? 'theme-gradient-soft border-theme-soft' : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent'
               }`}
             >
-              <div className={`text-[11px] font-bold ${isToday ? 'text-orange-600' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
+              <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
               <div className="mt-1 flex flex-col gap-0.5">
                 {day.slice(0, 3).map(t => {
                   const subj = subjects.find(s => s.id === t.subjectId);
