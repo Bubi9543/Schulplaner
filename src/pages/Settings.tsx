@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2, AlertTriangle } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -791,6 +791,213 @@ function SyncCard() {
   );
 }
 
+/* ─── Kalender-Abonnement ─────────────────────────────────────────── */
+
+function CalendarSubscriptionCard() {
+  const authUser = useStore(s => s.authUser);
+  const lessons = useStore(s => s.lessons);
+  const [token, setToken] = useState<import('@/lib/calendarSubscription').CalendarToken | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'url' | 'webcal' | null>(null);
+
+  useEffect(() => {
+    if (!authUser) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    import('@/lib/calendarSubscription').then(async (mod) => {
+      try {
+        const t = await mod.getActiveCalendarToken();
+        if (!cancelled) setToken(t);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [authUser]);
+
+  async function generate() {
+    setBusy(true); setError(null);
+    try {
+      const mod = await import('@/lib/calendarSubscription');
+      const t = await mod.createCalendarToken();
+      setToken(t);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    if (!confirm('Kalender-Link zurückziehen? Bestehende Abos in Google/Apple Kalender werden ungültig.')) return;
+    setBusy(true); setError(null);
+    try {
+      const mod = await import('@/lib/calendarSubscription');
+      await mod.revokeCalendarTokens();
+      setToken(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy(value: string, kind: 'url' | 'webcal') {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
+    } catch { /* ignore */ }
+  }
+
+  if (!supabase) {
+    return null; // wenn keine Cloud, zeigen wir die Karte gar nicht erst
+  }
+
+  if (!authUser) {
+    return (
+      <Card>
+        <h3 className="h3 mb-2 flex items-center gap-2"><Calendar className="size-5 text-theme" />Kalender abonnieren</h3>
+        <p className="text-sm text-ink-500">
+          Logge dich ein, um deinen Stundenplan als Abo-Link für Google/Apple Kalender zu bekommen.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <h3 className="h3 mb-1 flex items-center gap-2">
+        <Calendar className="size-5 text-theme" />
+        Kalender abonnieren
+      </h3>
+      <p className="subtle mb-3">
+        Generiere einen Link, mit dem du deinen Stundenplan in Google Calendar, Apple Kalender oder Outlook
+        abonnieren kannst. Der Kalender aktualisiert sich automatisch, wenn du deinen Stundenplan änderst.
+      </p>
+
+      {loading ? (
+        <div className="rounded-2xl bg-white/60 p-6 grid place-items-center">
+          <Loader2 className="size-5 text-theme animate-spin" />
+        </div>
+      ) : token ? (
+        <CalendarTokenView token={token} onRevoke={revoke} onRegenerate={generate} busy={busy} copied={copied} onCopy={copy} />
+      ) : (
+        <div className="space-y-3">
+          {lessons.length === 0 && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+              Dein Stundenplan ist leer – der Feed wird leer sein, bis du Stunden anlegst.
+            </div>
+          )}
+          <button onClick={generate} disabled={busy} className="btn-primary w-full">
+            {busy ? <><Loader2 className="size-4 animate-spin" />Erstelle …</> : <><KeyRound className="size-4" />Kalender-Link erstellen</>}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 flex items-start gap-2">
+          <AlertTriangle className="size-4 flex-shrink-0 mt-0.5" />
+          {error}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CalendarTokenView({
+  token,
+  onRevoke,
+  onRegenerate,
+  busy,
+  copied,
+  onCopy,
+}: {
+  token: import('@/lib/calendarSubscription').CalendarToken;
+  onRevoke: () => void;
+  onRegenerate: () => void;
+  busy: boolean;
+  copied: 'url' | 'webcal' | null;
+  onCopy: (v: string, k: 'url' | 'webcal') => void;
+}) {
+  const [urls, setUrls] = useState<{ https: string; webcal: string; google: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    import('@/lib/calendarSubscription').then((mod) => {
+      if (cancelled) return;
+      setUrls({
+        https: mod.buildCalendarFeedUrl(token.token),
+        webcal: mod.buildCalendarWebcalUrl(token.token),
+        google: mod.buildGoogleCalendarAddUrl(token.token),
+      });
+    });
+    return () => { cancelled = true; };
+  }, [token.token]);
+
+  if (!urls) return <div className="rounded-2xl bg-white/60 p-6 grid place-items-center"><Loader2 className="size-5 text-theme animate-spin" /></div>;
+
+  const last = token.lastAccessedAt
+    ? new Date(token.lastAccessedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'noch nie';
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+        <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1">
+          Abo-URL
+        </div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 min-w-0 text-xs bg-white/70 rounded-xl px-2 py-1.5 truncate font-mono text-ink-800">
+            {urls.https}
+          </code>
+          <button onClick={() => onCopy(urls.https, 'url')} className="btn-ghost py-1 px-2 text-xs">
+            {copied === 'url' ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+            {copied === 'url' ? 'Kopiert' : 'Kopieren'}
+          </button>
+        </div>
+        <div className="text-[11px] text-ink-500 mt-1.5">
+          Zuletzt abgerufen: {last}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <a href={urls.google} target="_blank" rel="noopener noreferrer" className="btn-ghost justify-center">
+          <ExternalLink className="size-4" />In Google Calendar
+        </a>
+        <a href={urls.webcal} className="btn-ghost justify-center">
+          <ExternalLink className="size-4" />In Apple/Outlook
+        </a>
+      </div>
+
+      <div className="rounded-2xl bg-theme-soft/30 border border-theme-soft p-3 text-[11px] text-ink-700 leading-relaxed">
+        <strong>So abonnierst du:</strong>
+        <ul className="list-disc list-inside mt-1 space-y-0.5">
+          <li><strong>Google Calendar:</strong> Klick „In Google Calendar" oder unter „Andere Kalender hinzufügen → Per URL" einfügen.</li>
+          <li><strong>Apple Kalender (Mac/iOS):</strong> Klick „In Apple/Outlook" oder Datei → Neues Kalenderabonnement → URL einfügen.</li>
+          <li><strong>Outlook:</strong> Kalender importieren → Aus dem Web → URL einfügen.</li>
+        </ul>
+        <div className="mt-1.5 text-ink-500">
+          Refresh-Intervalle sind Sache der jeweiligen App (Apple: ~1h, Google: 4–24h, Outlook: ~3h).
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={onRegenerate} disabled={busy} className="btn-ghost flex-1 text-xs">
+          <RefreshCw className="size-3.5" />Neuen Link erstellen
+        </button>
+        <button onClick={onRevoke} disabled={busy} className="btn-soft flex-1 text-xs text-rose-600">
+          <Trash2 className="size-3.5" />Link zurückziehen
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Schuljahre ────────────────────────────────────────────────────── */
 
 function SchoolYearsSection() {
@@ -1018,6 +1225,7 @@ function DataSection() {
   return (
     <div className="space-y-4">
       <SyncCard />
+      <CalendarSubscriptionCard />
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Sicherung & Import</h3>
 

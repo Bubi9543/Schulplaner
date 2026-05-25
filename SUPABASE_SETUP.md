@@ -78,6 +78,16 @@ create table if not exists user_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Kalender-Abonnement: Tokens, mit denen Edge Function .ics-Feed ausliefert
+create table if not exists calendar_tokens (
+  token text primary key check (char_length(token) >= 24),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  label text,
+  created_at timestamptz not null default now(),
+  last_accessed_at timestamptz
+);
+create index if not exists calendar_tokens_user_idx on calendar_tokens(user_id);
+
 -- Stundenplan-Sharing über 4-stellige Codes
 create table if not exists schedule_shares (
   code text primary key check (char_length(code) between 4 and 12),
@@ -99,6 +109,7 @@ alter table school_years enable row level security;
 alter table photos       enable row level security;
 alter table user_settings enable row level security;
 alter table schedule_shares enable row level security;
+alter table calendar_tokens enable row level security;
 
 -- Policies: User sieht/ändert nur eigene Zeilen
 create policy "own subjects"      on subjects     for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -119,6 +130,11 @@ create policy "owner update" on schedule_shares for update
   to authenticated using (owner_user_id = auth.uid()) with check (owner_user_id = auth.uid());
 create policy "owner delete" on schedule_shares for delete
   to authenticated using (owner_user_id = auth.uid());
+
+-- calendar_tokens: User verwaltet nur eigene Tokens. Der Token-→-User-Lookup
+-- in der Edge Function läuft mit dem Service-Role-Key und umgeht RLS.
+create policy "own calendar tokens" on calendar_tokens for all
+  to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Realtime-Publication: Voraussetzung für Live-Sync zwischen Geräten.
 -- (Ignoriert Fehler, falls Tabellen schon Teil der Publication sind.)
@@ -168,7 +184,35 @@ create policy "own storage delete"
   using (bucket_id = 'photos' and (storage.foldername(name))[1] = auth.uid()::text);
 ```
 
-## 5. Fertig
+## 5. Edge Function: Kalender-Feed
+
+Damit User ihren Stundenplan in Google/Apple Kalender abonnieren können, läuft
+ein iCal-Generator als Supabase Edge Function (`supabase/functions/calendar/`).
+
+**Einmaliges Deployment:**
+
+```bash
+# Supabase CLI installieren (falls noch nicht da)
+brew install supabase/tap/supabase
+
+# Im Projekt-Root einloggen + verlinken
+supabase login
+supabase link --project-ref <DEIN_PROJECT_REF>
+
+# Function deployen – `--no-verify-jwt`, weil Kalender-Apps keine
+# Auth-Header senden. Die Function nutzt intern den Service-Role-Key.
+supabase functions deploy calendar --no-verify-jwt
+```
+
+Die Function ist danach erreichbar unter:
+```
+https://<PROJECT_REF>.supabase.co/functions/v1/calendar/<TOKEN>.ics
+```
+
+Die App generiert pro User einen zufälligen 32-Zeichen-Token (gespeichert
+in `calendar_tokens`) und bietet den Link über die Einstellungen an.
+
+## 6. Fertig
 
 Im Settings → Cloud Sync der App einloggen. Sobald du auf einem zweiten Gerät eingeloggt bist, **synchronisieren sich Änderungen automatisch in Echtzeit** – kein manueller Upload nötig. Fotos werden ab dem Login direkt in den `photos`-Bucket hochgeladen und beim Wechseln auf andere Geräte automatisch heruntergeladen.
 

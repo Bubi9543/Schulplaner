@@ -1,0 +1,7 @@
+# Supabase CLI Konfiguration. Pflichtfeld ist nur `project_id`,
+# alles andere wird vom Hosted-Projekt übernommen.
+
+project_id = "notenapp"
+
+[functions.calendar]
+verify_jwt = false
