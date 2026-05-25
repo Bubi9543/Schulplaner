@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 
 .claude
+
+# Environment-Variablen (Supabase Keys etc.) NIE committen
+.env
+.env.local
+.env.production
+.env.development
