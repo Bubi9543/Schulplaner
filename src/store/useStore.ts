@@ -3,6 +3,7 @@ import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime, stopRealtime, deleteAllCloudData } from '@/lib/sync';
 import type { SyncTable } from '@/lib/sync';
+import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
@@ -136,6 +137,18 @@ interface State {
   addLesson: (l: Omit<Lesson, 'id'>) => Promise<Lesson>;
   updateLesson: (id: string, patch: Partial<Lesson>) => Promise<void>;
   deleteLesson: (id: string) => Promise<void>;
+
+  /**
+   * Übernimmt einen geteilten Stundenplan ins aktive Schuljahr.
+   * - Subjects mit gleichem Namen (case-insensitive) werden gemerged
+   *   (vorhandene Noten bleiben unangetastet).
+   * - Lessons werden je nach Modus ersetzt oder ergänzt.
+   * Gibt Zahlen zurück, was tatsächlich neu/ersetzt wurde.
+   */
+  importSharedSchedule: (
+    payload: SharePayload,
+    mode: 'replace' | 'append',
+  ) => Promise<{ subjectsAdded: number; subjectsMatched: number; lessonsAdded: number; lessonsReplaced: number }>;
 
   addSchoolYear: (opts: NewYearOptions) => Promise<SchoolYear>;
   updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
@@ -596,6 +609,92 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({ lessons: state.lessons.filter(l => l.id !== id) }));
     const { authUser } = get();
     if (authUser) deleteRow('lessons', id);
+  },
+
+  async importSharedSchedule(payload, mode) {
+    const { activeSchoolYearId, authUser } = get();
+    if (!activeSchoolYearId) {
+      throw new Error('Kein aktives Schuljahr – leg erst eines an.');
+    }
+
+    // 1) Vorhandene Subjects im aktiven Jahr laden, Name → ID-Map bauen.
+    const existingSubjects = await db.subjects.where('schoolYearId').equals(activeSchoolYearId).toArray();
+    const byName = new Map<string, Subject>();
+    for (const s of existingSubjects) {
+      byName.set(s.name.toLowerCase().trim(), s);
+    }
+
+    // 2) Geteilte Subjects mergen: Treffer → bestehende ID nutzen, sonst neu anlegen.
+    const subjMapping = new Map<string, string>(); // sharedSubject.id -> local subject.id
+    const newSubjects: Subject[] = [];
+    let subjectsMatched = 0;
+    for (const sharedSubj of payload.subjects) {
+      const key = sharedSubj.name.toLowerCase().trim();
+      const match = byName.get(key);
+      if (match) {
+        subjMapping.set(sharedSubj.id, match.id);
+        subjectsMatched++;
+      } else {
+        const newId = uid();
+        const newSubj: Subject = {
+          id: newId,
+          name: sharedSubj.name,
+          short: sharedSubj.short,
+          color: sharedSubj.color,
+          category: sharedSubj.category,
+          system: sharedSubj.system,
+          teacher: sharedSubj.teacher,
+          room: sharedSubj.room,
+          createdAt: Date.now(),
+          schoolYearId: activeSchoolYearId,
+        };
+        newSubjects.push(newSubj);
+        subjMapping.set(sharedSubj.id, newId);
+      }
+    }
+
+    // 3) Lessons im aktiven Jahr ersetzen (falls Replace-Modus).
+    let lessonsReplaced = 0;
+    if (mode === 'replace') {
+      const oldLessons = await db.lessons.where('schoolYearId').equals(activeSchoolYearId).toArray();
+      lessonsReplaced = oldLessons.length;
+      if (oldLessons.length) {
+        await db.lessons.bulkDelete(oldLessons.map(l => l.id));
+        if (authUser) oldLessons.forEach(l => deleteRow('lessons', l.id));
+      }
+    }
+
+    // 4) Neue Subjects schreiben.
+    if (newSubjects.length) {
+      await db.subjects.bulkAdd(newSubjects);
+      if (authUser) newSubjects.forEach(s => syncRow('subjects', s.id, s, authUser.id));
+    }
+
+    // 5) Geteilte Lessons mit gemappten Subject-IDs + neuen Lesson-IDs schreiben.
+    const newLessons: Lesson[] = payload.lessons.map(l => ({
+      id: uid(),
+      subjectId: subjMapping.get(l.subjectId) ?? l.subjectId,
+      weekday: l.weekday,
+      start: l.start,
+      end: l.end,
+      room: l.room,
+      weekParity: l.weekParity,
+      schoolYearId: activeSchoolYearId,
+    }));
+    if (newLessons.length) {
+      await db.lessons.bulkAdd(newLessons);
+      if (authUser) newLessons.forEach(l => syncRow('lessons', l.id, l, authUser.id));
+    }
+
+    // 6) State neu aus Dexie ziehen.
+    await get().load();
+
+    return {
+      subjectsAdded: newSubjects.length,
+      subjectsMatched,
+      lessonsAdded: newLessons.length,
+      lessonsReplaced,
+    };
   },
 
   async addSchoolYear(opts) {

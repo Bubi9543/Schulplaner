@@ -78,6 +78,18 @@ create table if not exists user_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Stundenplan-Sharing über 4-stellige Codes
+create table if not exists schedule_shares (
+  code text primary key check (char_length(code) between 4 and 12),
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  owner_email text,
+  payload jsonb not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+create index if not exists schedule_shares_owner_idx on schedule_shares(owner_user_id);
+create index if not exists schedule_shares_expires_idx on schedule_shares(expires_at);
+
 -- RLS einschalten
 alter table subjects     enable row level security;
 alter table grades       enable row level security;
@@ -86,6 +98,7 @@ alter table lessons      enable row level security;
 alter table school_years enable row level security;
 alter table photos       enable row level security;
 alter table user_settings enable row level security;
+alter table schedule_shares enable row level security;
 
 -- Policies: User sieht/ändert nur eigene Zeilen
 create policy "own subjects"      on subjects     for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -95,6 +108,17 @@ create policy "own lessons"       on lessons      for all using (user_id = auth.
 create policy "own school_years"  on school_years for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own photos"        on photos       for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own settings"      on user_settings for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- schedule_shares: jeder authentifizierte User darf SELECT (er muss aber den
+-- Code kennen, sonst sieht er nichts Sinnvolles); INSERT/UPDATE/DELETE nur Besitzer.
+create policy "anyone can read by code" on schedule_shares for select
+  to authenticated using (true);
+create policy "owner insert" on schedule_shares for insert
+  to authenticated with check (owner_user_id = auth.uid());
+create policy "owner update" on schedule_shares for update
+  to authenticated using (owner_user_id = auth.uid()) with check (owner_user_id = auth.uid());
+create policy "owner delete" on schedule_shares for delete
+  to authenticated using (owner_user_id = auth.uid());
 
 -- Realtime-Publication: Voraussetzung für Live-Sync zwischen Geräten.
 -- (Ignoriert Fehler, falls Tabellen schon Teil der Publication sind.)

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MapPin, Clock } from 'lucide-react';
+import { Plus, MapPin, Clock, Share2, KeyRound, Download } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { LessonDialog } from '@/components/dialogs/LessonDialog';
+import { ScheduleShareDialog } from '@/components/dialogs/ScheduleShareDialog';
 import { useStore } from '@/store/useStore';
 import { WEEKDAYS_DE } from '@/lib/utils';
 import type { Lesson, Weekday } from '@/types';
@@ -18,6 +19,7 @@ export function SchedulePage() {
   const subjects = useStore(s => s.subjects);
   const nav = useNavigate();
   const [dialog, setDialog] = useState<{ open: boolean; lesson?: Lesson; defaults?: { weekday?: Weekday; start?: string; end?: string } }>({ open: false });
+  const [shareDialog, setShareDialog] = useState<{ open: boolean; tab: 'share' | 'import' }>({ open: false, tab: 'share' });
 
   const byDay = useMemo(() => {
     const m = new Map<number, Lesson[]>();
@@ -39,26 +41,48 @@ export function SchedulePage() {
 
   if (!subjects.length) {
     return (
-      <PageShell title="Stundenplan">
+      <PageShell title="Stundenplan"
+        actions={
+          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })}>
+            <Download className="size-4" />Code eingeben
+          </button>
+        }
+      >
         <Card>
           <Empty
             icon={Clock}
             title="Noch keine Fächer angelegt"
-            description="Lege erst Fächer an, dann kannst du den Stundenplan füllen."
+            description="Lege erst Fächer an, oder übernimm einen Stundenplan per Code von einem Freund."
             action={
-              <button onClick={() => nav('/einstellungen?section=subjects')} className="btn-primary">
-                <Plus className="size-4" /> Fach anlegen
-              </button>
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button onClick={() => nav('/einstellungen?section=subjects')} className="btn-primary">
+                  <Plus className="size-4" /> Fach anlegen
+                </button>
+                <button onClick={() => setShareDialog({ open: true, tab: 'import' })} className="btn-ghost">
+                  <KeyRound className="size-4" /> Code eingeben
+                </button>
+              </div>
             }
           />
         </Card>
+        <ScheduleShareDialog open={shareDialog.open} initialTab={shareDialog.tab} onClose={() => setShareDialog({ open: false, tab: 'share' })} />
       </PageShell>
     );
   }
 
   return (
     <PageShell title="Stundenplan" subtitle="Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen."
-      actions={<button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>}
+      actions={
+        <>
+          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })} title="Stundenplan per Code übernehmen">
+            <Download className="size-4" /><span className="hidden sm:inline">Empfangen</span>
+          </button>
+          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'share' })} title="Stundenplan per Code teilen">
+            <Share2 className="size-4" /><span className="hidden sm:inline">Teilen</span>
+          </button>
+          <button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>
+        </>
+      }
     >
       <Card>
         <div className="grid gap-2 min-w-[640px]" style={{ gridTemplateColumns: '52px repeat(5, 1fr)' }}>
@@ -135,6 +159,7 @@ export function SchedulePage() {
       </Card>
 
       <LessonDialog open={dialog.open} initial={dialog.lesson} defaults={dialog.defaults} onClose={() => setDialog({ open: false })} />
+      <ScheduleShareDialog open={shareDialog.open} initialTab={shareDialog.tab} onClose={() => setShareDialog({ open: false, tab: 'share' })} />
     </PageShell>
   );
 }
