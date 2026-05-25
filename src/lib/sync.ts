@@ -164,3 +164,37 @@ export function stopRealtime(): void {
   }
   channels.length = 0;
 }
+
+/**
+ * Löscht ALLE Cloud-Daten des eingeloggten Users:
+ * - alle Rows in subjects/grades/tasks/lessons/photos/school_years/user_settings
+ * - alle Storage-Objekte im "photos"-Bucket unter `{user_id}/`
+ *
+ * Lokale IndexedDB bleibt unangetastet (Realtime muss vorher gestoppt sein,
+ * damit die DELETE-Events nicht in den Live-Sync-Handlern lokal kaskadieren).
+ */
+export async function deleteAllCloudData(userId: string): Promise<{ rows: number; files: number }> {
+  if (!supabase) return { rows: 0, files: 0 };
+
+  // 1) Tabellen leeren
+  const tableResults = await Promise.all(
+    TABLES.map(t => supabase!.from(t).delete().eq('user_id', userId).select('id')),
+  );
+  const settingsRes = await supabase.from('user_settings').delete().eq('user_id', userId).select('user_id');
+  const rows = tableResults.reduce((acc, r) => acc + (r.data?.length ?? 0), 0) + (settingsRes.data?.length ?? 0);
+
+  // 2) Storage-Bucket leeren (alle Dateien unter "{userId}/")
+  let files = 0;
+  try {
+    const { data: list } = await supabase.storage.from('photos').list(userId, { limit: 1000 });
+    if (list && list.length > 0) {
+      const paths = list.map(f => `${userId}/${f.name}`);
+      const { data: removed } = await supabase.storage.from('photos').remove(paths);
+      files = removed?.length ?? 0;
+    }
+  } catch (e) {
+    console.warn('Storage-Cleanup fehlgeschlagen (nicht kritisch):', e);
+  }
+
+  return { rows, files };
+}

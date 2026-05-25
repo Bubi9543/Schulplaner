@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2 } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2, AlertTriangle } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -415,7 +415,7 @@ function SyncCard() {
   const syncStatus = useStore(s => s.syncStatus);
   const lastSyncedAt = useStore(s => s.lastSyncedAt);
   const liveSync = useStore(s => s.liveSync);
-  const { signIn, signUp, signInWithGoogle, signOut, syncNow, pullFromCloud } = useStore();
+  const { signIn, signUp, signInWithGoogle, signOut, syncNow, pullFromCloud, wipeCloud } = useStore();
 
   const [mode, setMode] = useState<'idle' | 'login' | 'signup'>('idle');
   const [email, setEmail] = useState('');
@@ -424,6 +424,22 @@ function SyncCard() {
   const [loading, setLoading] = useState(false);
   const [pullMsg, setPullMsg] = useState('');
   const [advanced, setAdvanced] = useState(false);
+  const [wipeConfirm, setWipeConfirm] = useState<null | 'asking' | 'wiping' | 'done'>(null);
+  const [wipeTyped, setWipeTyped] = useState('');
+  const [wipeResult, setWipeResult] = useState<{ rows: number; files: number } | null>(null);
+
+  async function handleWipe() {
+    setWipeConfirm('wiping');
+    const result = await wipeCloud();
+    setWipeResult(result);
+    setWipeConfirm('done');
+  }
+
+  function closeWipe() {
+    setWipeConfirm(null);
+    setWipeTyped('');
+    setWipeResult(null);
+  }
 
   if (!supabase) {
     return (
@@ -501,9 +517,100 @@ function SyncCard() {
                 </button>
                 {pullMsg && <span className="text-xs text-emerald-600">{pullMsg}</span>}
               </Row>
+              <Row label="Cloud-Daten löschen" hint="Alle deine Daten vom Server entfernen. Lokale Daten bleiben auf diesem Gerät erhalten.">
+                <button onClick={() => setWipeConfirm('asking')} className="btn-soft text-rose-600">
+                  <Trash2 className="size-4" />Cloud leeren
+                </button>
+              </Row>
             </div>
           )}
         </div>
+
+        {/* Bestätigungs-Modal: alle Cloud-Daten löschen */}
+        <AnimatePresence>
+          {wipeConfirm && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm grid place-items-center p-4"
+              onClick={wipeConfirm === 'wiping' ? undefined : closeWipe}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={e => e.stopPropagation()}
+                className="w-full max-w-md rounded-3xl glass-strong shadow-soft p-5"
+              >
+                {wipeConfirm === 'asking' && (
+                  <>
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="size-10 rounded-2xl bg-rose-100 text-rose-600 grid place-items-center flex-shrink-0">
+                        <AlertTriangle className="size-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-display font-bold text-lg text-ink-900">Alle Cloud-Daten löschen?</h3>
+                        <p className="text-sm text-ink-600 mt-1">
+                          Dadurch werden auf dem Server <strong>alle</strong> deine Fächer, Noten, Aufgaben, Stunden, Schuljahre, Fotos und Einstellungen gelöscht.
+                          Andere Geräte, die eingeloggt sind, verlieren ebenfalls Zugriff auf den Cloud-Stand.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 mb-3">
+                      Deine Daten auf <strong>diesem Gerät</strong> bleiben erhalten. Anschließend wirst du automatisch abgemeldet, damit nicht direkt wieder hochgeladen wird.
+                    </div>
+                    <label className="text-xs font-semibold text-ink-700 block mb-1">Tippe <code className="px-1 py-0.5 rounded bg-white/70 text-rose-600">LÖSCHEN</code> zur Bestätigung:</label>
+                    <input
+                      autoFocus
+                      className="input"
+                      value={wipeTyped}
+                      onChange={e => setWipeTyped(e.target.value)}
+                      placeholder="LÖSCHEN"
+                    />
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={closeWipe} className="btn-ghost flex-1">Abbrechen</button>
+                      <button
+                        onClick={handleWipe}
+                        disabled={wipeTyped.trim() !== 'LÖSCHEN'}
+                        className="btn-primary flex-1 !bg-rose-500 hover:!bg-rose-600 disabled:!bg-rose-300"
+                      >
+                        <Trash2 className="size-4" />Endgültig löschen
+                      </button>
+                    </div>
+                  </>
+                )}
+                {wipeConfirm === 'wiping' && (
+                  <div className="flex flex-col items-center text-center py-4">
+                    <Loader2 className="size-8 text-rose-500 animate-spin mb-3" />
+                    <h3 className="font-display font-bold text-lg text-ink-900">Lösche alle Cloud-Daten …</h3>
+                    <p className="text-sm text-ink-600 mt-1">Datenbank-Zeilen und Foto-Dateien werden entfernt.</p>
+                  </div>
+                )}
+                {wipeConfirm === 'done' && (
+                  <>
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="size-10 rounded-2xl bg-emerald-100 text-emerald-600 grid place-items-center flex-shrink-0">
+                        <Check className="size-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-display font-bold text-lg text-ink-900">Cloud ist leer.</h3>
+                        {wipeResult ? (
+                          <p className="text-sm text-ink-600 mt-1">
+                            {wipeResult.rows} Datenbank-Zeilen und {wipeResult.files} Foto-Dateien gelöscht. Du wurdest abgemeldet.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-ink-600 mt-1">Du wurdest abgemeldet.</p>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={closeWipe} className="btn-primary w-full">Schließen</button>
+                  </>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Card>
     );
   }

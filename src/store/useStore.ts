@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime, stopRealtime } from '@/lib/sync';
+import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime, stopRealtime, deleteAllCloudData } from '@/lib/sync';
 import type { SyncTable } from '@/lib/sync';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo } from '@/types';
@@ -102,6 +102,8 @@ interface State {
   syncNow: () => Promise<void>;
   /** Manuell: Pull Cloud → lokal (überschreibt). */
   pullFromCloud: () => Promise<boolean>;
+  /** Destruktiv: alle Cloud-Daten des Users löschen. Lokale Daten bleiben. */
+  wipeCloud: () => Promise<{ rows: number; files: number } | null>;
 
   addSubject: (s: Omit<Subject, 'id' | 'createdAt'>) => Promise<Subject>;
   updateSubject: (id: string, patch: Partial<Subject>) => Promise<void>;
@@ -414,6 +416,28 @@ export const useStore = create<State>((set, get) => ({
     } catch {
       set({ syncStatus: 'error' });
       return false;
+    }
+  },
+
+  async wipeCloud() {
+    const { authUser } = get();
+    if (!authUser || !supabase) return null;
+
+    // Realtime stoppen, damit DELETE-Events nicht in den Live-Handlern
+    // lokal kaskadieren (lokale Daten sollen bleiben).
+    get().stopAutoSync();
+    set({ syncStatus: 'syncing' });
+    try {
+      const result = await deleteAllCloudData(authUser.id);
+      set({ syncStatus: 'idle', lastSyncedAt: null });
+      // Sicherheit: ausloggen, damit nicht sofort wieder hochgeladen wird.
+      await supabase.auth.signOut();
+      set({ authUser: null });
+      return result;
+    } catch (e) {
+      console.warn('wipeCloud fehlgeschlagen:', e);
+      set({ syncStatus: 'error' });
+      return null;
     }
   },
 
