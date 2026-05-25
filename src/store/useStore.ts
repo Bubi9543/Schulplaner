@@ -20,6 +20,13 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   if (!merged.quickButtons || !Array.isArray(merged.quickButtons) || merged.quickButtons.length === 0) {
     merged.quickButtons = DEFAULT_SETTINGS.quickButtons;
   }
+  if (!Array.isArray(merged.subjectGroups)) {
+    merged.subjectGroups = [];
+  } else {
+    merged.subjectGroups = merged.subjectGroups.filter(g =>
+      g && typeof g === 'object' && typeof g.id === 'string' && typeof g.label === 'string',
+    );
+  }
   return merged;
 }
 
@@ -60,6 +67,18 @@ function suggestYearStart(): number {
   const d = new Date();
   const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
   return new Date(y, 8, 1).getTime();
+}
+
+/**
+ * Sortiert Fächer: erst nach manueller `position` (kleinere zuerst, undefined = ans Ende),
+ * dann alphabetisch nach Name. Gruppen werden nicht hier gehandhabt – Gruppierung
+ * passiert in der View-Layer.
+ */
+export function compareSubjects(a: Subject, b: Subject): number {
+  const ap = typeof a.position === 'number' ? a.position : Number.POSITIVE_INFINITY;
+  const bp = typeof b.position === 'number' ? b.position : Number.POSITIVE_INFINITY;
+  if (ap !== bp) return ap - bp;
+  return a.name.localeCompare(b.name, 'de');
 }
 
 // Kleine, immutable Helfer für In-Memory-State.
@@ -124,6 +143,8 @@ interface State {
   addSubject: (s: Omit<Subject, 'id' | 'createdAt'>) => Promise<Subject>;
   updateSubject: (id: string, patch: Partial<Subject>) => Promise<void>;
   deleteSubject: (id: string) => Promise<void>;
+  /** Verschiebt ein Fach um delta Plätze in der Sortierreihenfolge (innerhalb derselben Gruppe). */
+  moveSubject: (id: string, delta: -1 | 1) => Promise<void>;
 
   addGrade: (g: Omit<Grade, 'id'> & { id?: string }) => Promise<Grade>;
   updateGrade: (id: string, patch: Partial<Grade>) => Promise<void>;
@@ -270,7 +291,7 @@ export const useStore = create<State>((set, get) => ({
       settings,
       activeSchoolYearId: activeId,
       schoolYears: years.sort((a, b) => b.startDate - a.startDate),
-      subjects: migratedSubjects.filter(subjFilter).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+      subjects: migratedSubjects.filter(subjFilter).sort(compareSubjects),
       grades: allGrades.filter(subjFilter),
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
@@ -485,7 +506,7 @@ export const useStore = create<State>((set, get) => ({
     const subj: Subject = { ...s, id: uid(), createdAt: Date.now(), schoolYearId: s.schoolYearId ?? yid };
     await db.subjects.add(subj);
     if (!yid || subj.schoolYearId === yid) {
-      set(state => ({ subjects: [...state.subjects, subj].sort((a, b) => a.name.localeCompare(b.name, 'de')) }));
+      set(state => ({ subjects: [...state.subjects, subj].sort(compareSubjects) }));
     }
     const { authUser } = get();
     if (authUser) syncRow('subjects', subj.id, subj, authUser.id);
@@ -494,7 +515,7 @@ export const useStore = create<State>((set, get) => ({
   async updateSubject(id, patch) {
     await db.subjects.update(id, patch);
     set(state => ({
-      subjects: state.subjects.map(s => s.id === id ? { ...s, ...patch } : s).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+      subjects: state.subjects.map(s => s.id === id ? { ...s, ...patch } : s).sort(compareSubjects),
     }));
     const updated = await db.subjects.get(id);
     const { authUser } = get();
@@ -531,6 +552,40 @@ export const useStore = create<State>((set, get) => ({
       taskIds.forEach(tid => deleteRow('tasks', tid));
       lessonIds.forEach(lid => deleteRow('lessons', lid));
     }
+  },
+
+  async moveSubject(id, delta) {
+    // Innerhalb der gleichen Gruppe um delta Plätze verschieben (Up/Down).
+    // Wir normalisieren alle Positionen der Peer-Gruppe neu (0..n-1),
+    // damit das Sortier-Schema sauber bleibt.
+    const { subjects: stateSubjects, authUser } = get();
+    const target = stateSubjects.find(s => s.id === id);
+    if (!target) return;
+
+    const peers = stateSubjects
+      .filter(s => (s.groupId ?? null) === (target.groupId ?? null))
+      .sort(compareSubjects);
+    const idx = peers.findIndex(s => s.id === id);
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= peers.length) return;
+
+    const reordered = peers.slice();
+    const [moved] = reordered.splice(idx, 1);
+    reordered.splice(newIdx, 0, moved);
+
+    const updates: Subject[] = [];
+    reordered.forEach((s, i) => {
+      if (s.position !== i) updates.push({ ...s, position: i });
+    });
+    if (updates.length === 0) return;
+
+    await db.transaction('rw', db.subjects, async () => {
+      for (const u of updates) await db.subjects.put(u);
+    });
+    set(state => ({
+      subjects: state.subjects.map(s => updates.find(x => x.id === s.id) ?? s).sort(compareSubjects),
+    }));
+    if (authUser) updates.forEach(u => syncRow('subjects', u.id, u, authUser.id));
   },
 
   async addGrade(g) {
@@ -866,7 +921,7 @@ async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, g
       const yid = get().activeSchoolYearId;
       if (!yid || subj.schoolYearId === yid) {
         set(state => ({
-          subjects: upsertById(state.subjects, subj).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+          subjects: upsertById(state.subjects, subj).sort(compareSubjects),
         }));
       } else {
         // Fach gehört zu anderem Jahr; nicht in In-Memory-View aufnehmen, aber falls vorhanden entfernen.

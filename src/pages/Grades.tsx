@@ -12,7 +12,7 @@ import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
 import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
-import type { Subject } from '@/types';
+import type { Subject, SubjectGroup } from '@/types';
 
 export function GradesPage() {
   const { subjects, grades, settings } = useStore();
@@ -186,15 +186,54 @@ export function GradesPage() {
 
         <Card delay={0.2} className="col-span-12">
           <h3 className="h3 mb-3">Alle Fächer</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {subjects.map(s => <SubjectRow key={s.id} subject={s} />)}
-          </div>
+          <SubjectsGrouped subjects={subjects} groups={settings?.subjectGroups ?? []} />
         </Card>
       </div>
 
       <GradeDialog open={gradeDialog} onClose={() => setGradeDialog(false)} />
       <SubjectDialog open={subjectDialog} onClose={() => setSubjectDialog(false)} defaultSystem={system} />
     </PageShell>
+  );
+}
+
+function SubjectsGrouped({ subjects, groups }: { subjects: Subject[]; groups: SubjectGroup[] }) {
+  // Wenn keine Gruppen definiert: einfach alles in einem Grid
+  if (groups.length === 0) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {subjects.map(s => <SubjectRow key={s.id} subject={s} />)}
+      </div>
+    );
+  }
+
+  const sortedGroups = [...groups].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const byGroup = new Map<string | null, Subject[]>();
+  for (const s of subjects) {
+    const k = s.groupId && groups.find(g => g.id === s.groupId) ? s.groupId : null;
+    if (!byGroup.has(k)) byGroup.set(k, []);
+    byGroup.get(k)!.push(s);
+  }
+
+  const blocks: Array<{ title: string | null; items: Subject[] }> = sortedGroups.map(g => ({
+    title: g.label,
+    items: byGroup.get(g.id) ?? [],
+  }));
+  const ungrouped = byGroup.get(null) ?? [];
+  if (ungrouped.length) blocks.push({ title: 'Ohne Kategorie', items: ungrouped });
+
+  return (
+    <div className="space-y-5">
+      {blocks.filter(b => b.items.length > 0).map(b => (
+        <div key={b.title ?? 'none'}>
+          <h4 className="text-xs uppercase tracking-wider font-semibold text-ink-500 mb-2 pl-1">
+            {b.title} <span className="text-ink-400">· {b.items.length}</span>
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {b.items.map(s => <SubjectRow key={s.id} subject={s} />)}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

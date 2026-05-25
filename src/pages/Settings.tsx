@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2 } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -494,33 +494,206 @@ function CustomKindsCard() {
 
 function SubjectsSection() {
   const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
   const subjects = useStore(s => s.subjects);
+  const updateSubject = useStore(s => s.updateSubject);
+  const moveSubject = useStore(s => s.moveSubject);
   const [subjDialog, setSubjDialog] = useState<{ open: boolean; subject?: Subject }>({ open: false });
 
+  const groups = settings.subjectGroups ?? [];
+  const sortedGroups = [...groups].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  // Gruppieren: für jede Gruppe ihre Fächer + die ohne Gruppe als "Ohne Kategorie"
+  const subjectsByGroup = (() => {
+    const m = new Map<string | null, Subject[]>();
+    for (const s of subjects) {
+      const key = s.groupId ?? null;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(s);
+    }
+    return m;
+  })();
+
+  function newGroup() {
+    const label = prompt('Name der Gruppe? (z. B. Naturwissenschaften, Sprachen)');
+    if (!label?.trim()) return;
+    const id = 'grp-' + Math.random().toString(36).slice(2, 9);
+    const next = [...groups, { id, label: label.trim(), position: groups.length }];
+    setSettings({ subjectGroups: next });
+  }
+
+  function renameGroup(id: string) {
+    const g = groups.find(x => x.id === id);
+    if (!g) return;
+    const label = prompt('Neuer Name:', g.label);
+    if (!label?.trim()) return;
+    setSettings({ subjectGroups: groups.map(x => x.id === id ? { ...x, label: label.trim() } : x) });
+  }
+
+  async function deleteGroup(id: string) {
+    const g = groups.find(x => x.id === id);
+    if (!g) return;
+    const inGroup = subjects.filter(s => s.groupId === id);
+    if (inGroup.length && !confirm(`Gruppe „${g.label}" löschen? ${inGroup.length} Fächer landen wieder „Ohne Kategorie".`)) return;
+    // Subject-Group-IDs leeren
+    for (const s of inGroup) await updateSubject(s.id, { groupId: undefined });
+    setSettings({ subjectGroups: groups.filter(x => x.id !== id) });
+  }
+
   return (
-    <Card>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="h3 flex items-center gap-2"><BookOpen className="size-5 text-theme" />Fächer ({subjects.length})</h3>
-        <button onClick={() => setSubjDialog({ open: true })} className="btn-primary"><Plus className="size-4" />Fach</button>
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <h3 className="h3 flex items-center gap-2">
+            <BookOpen className="size-5 text-theme" />
+            Fächer ({subjects.length})
+          </h3>
+          <div className="flex gap-2">
+            <button onClick={newGroup} className="btn-ghost text-xs">
+              <Plus className="size-4" />Gruppe
+            </button>
+            <button onClick={() => setSubjDialog({ open: true })} className="btn-primary">
+              <Plus className="size-4" />Fach
+            </button>
+          </div>
+        </div>
+
+        {!subjects.length ? (
+          <Empty icon={Plus} title="Noch keine Fächer" description="Lege jetzt dein erstes Fach an." />
+        ) : (
+          <div className="space-y-4">
+            {/* Gruppen mit Inhalt */}
+            {sortedGroups.map(g => {
+              const items = (subjectsByGroup.get(g.id) ?? []).sort((a, b) =>
+                (a.position ?? Infinity) - (b.position ?? Infinity) || a.name.localeCompare(b.name, 'de')
+              );
+              return (
+                <SubjectGroupBlock
+                  key={g.id}
+                  title={g.label}
+                  groupId={g.id}
+                  subjects={items}
+                  groups={groups}
+                  onRename={() => renameGroup(g.id)}
+                  onDelete={() => deleteGroup(g.id)}
+                  onEdit={s => setSubjDialog({ open: true, subject: s })}
+                  onMove={moveSubject}
+                  onChangeGroup={(s, newGroupId) => updateSubject(s.id, { groupId: newGroupId })}
+                />
+              );
+            })}
+            {/* Fächer ohne Gruppe */}
+            <SubjectGroupBlock
+              title={sortedGroups.length ? 'Ohne Kategorie' : 'Alle Fächer'}
+              groupId={null}
+              subjects={(subjectsByGroup.get(null) ?? []).sort((a, b) =>
+                (a.position ?? Infinity) - (b.position ?? Infinity) || a.name.localeCompare(b.name, 'de')
+              )}
+              groups={groups}
+              onEdit={s => setSubjDialog({ open: true, subject: s })}
+              onMove={moveSubject}
+              onChangeGroup={(s, newGroupId) => updateSubject(s.id, { groupId: newGroupId })}
+              hideHeaderActions
+            />
+          </div>
+        )}
+
+        <SubjectDialog open={subjDialog.open} initial={subjDialog.subject} onClose={() => setSubjDialog({ open: false })} defaultSystem={settings.system} />
+      </Card>
+    </div>
+  );
+}
+
+function SubjectGroupBlock({
+  title, groupId, subjects, groups, onRename, onDelete, onEdit, onMove, onChangeGroup, hideHeaderActions,
+}: {
+  title: string;
+  groupId: string | null;
+  subjects: Subject[];
+  groups: Array<{ id: string; label: string }>;
+  onRename?: () => void;
+  onDelete?: () => void;
+  onEdit: (s: Subject) => void;
+  onMove: (id: string, delta: -1 | 1) => Promise<void>;
+  onChangeGroup: (s: Subject, newGroupId: string | undefined) => Promise<void>;
+  hideHeaderActions?: boolean;
+}) {
+  if (groupId === null && subjects.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 pl-1">
+        <h4 className="text-xs uppercase tracking-wider font-semibold text-ink-500">
+          {title} <span className="text-ink-400">· {subjects.length}</span>
+        </h4>
+        {!hideHeaderActions && (
+          <div className="flex gap-1">
+            {onRename && (
+              <button onClick={onRename} className="size-7 grid place-items-center rounded-full hover:bg-white/70 text-ink-500" title="Umbenennen">
+                <Pencil className="size-3.5" />
+              </button>
+            )}
+            {onDelete && (
+              <button onClick={onDelete} className="size-7 grid place-items-center rounded-full hover:bg-rose-50 text-ink-400 hover:text-rose-500" title="Gruppe löschen">
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      {!subjects.length ? (
-        <Empty icon={Plus} title="Noch keine Fächer" description="Lege jetzt dein erstes Fach an." />
+      {subjects.length === 0 ? (
+        <div className="text-xs text-ink-400 italic px-3 py-2">Noch keine Fächer in dieser Gruppe.</div>
       ) : (
-        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {subjects.map(s => (
-            <motion.li key={s.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl p-3 bg-white/70 flex items-center gap-3">
-              <div className="size-11 rounded-xl grid place-items-center text-white font-display font-extrabold" style={{ background: s.color }}>{s.short}</div>
+        <ul className="space-y-2">
+          {subjects.map((s, i) => (
+            <motion.li
+              key={s.id}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl p-3 bg-white/70 flex items-center gap-3"
+            >
+              <div className="size-11 rounded-xl grid place-items-center text-white font-display font-extrabold flex-shrink-0" style={{ background: s.color }}>{s.short}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-ink-800 truncate">{s.name}</div>
-                <div className="text-xs text-ink-500">{CATEGORY_LABEL[s.category]} · {s.system === 'bayern' ? 'Bayern' : s.system === 'oberstufe' ? 'Oberstufe' : s.system === 'austria' ? 'Österreich' : 'Frei'}</div>
+                <div className="text-xs text-ink-500">
+                  {CATEGORY_LABEL[s.category]} · {s.system === 'bayern' ? 'Bayern' : s.system === 'oberstufe' ? 'Oberstufe' : s.system === 'austria' ? 'Österreich' : 'Frei'}
+                </div>
               </div>
-              <button onClick={() => setSubjDialog({ open: true, subject: s })} className="size-9 grid place-items-center rounded-full hover:bg-white"><Pencil className="size-4" /></button>
+              <select
+                value={s.groupId ?? ''}
+                onChange={e => onChangeGroup(s, e.target.value || undefined)}
+                className="chip bg-white/80 cursor-pointer text-xs max-w-[140px]"
+                title="Gruppe zuweisen"
+              >
+                <option value="">Ohne Kategorie</option>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+              </select>
+              <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={() => onMove(s.id, -1)}
+                  disabled={i === 0}
+                  className="size-6 grid place-items-center rounded-md hover:bg-white text-ink-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Nach oben"
+                >
+                  <ChevronUp className="size-3.5" />
+                </button>
+                <button
+                  onClick={() => onMove(s.id, 1)}
+                  disabled={i === subjects.length - 1}
+                  className="size-6 grid place-items-center rounded-md hover:bg-white text-ink-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Nach unten"
+                >
+                  <ChevronDown className="size-3.5" />
+                </button>
+              </div>
+              <button onClick={() => onEdit(s)} className="size-9 grid place-items-center rounded-full hover:bg-white" title="Bearbeiten">
+                <Pencil className="size-4" />
+              </button>
             </motion.li>
           ))}
         </ul>
       )}
-      <SubjectDialog open={subjDialog.open} initial={subjDialog.subject} onClose={() => setSubjDialog({ open: false })} defaultSystem={settings.system} />
-    </Card>
+    </div>
   );
 }
 

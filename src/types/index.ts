@@ -84,6 +84,22 @@ export interface Subject {
   createdAt: number;
   /** Zugehöriges Schuljahr. Wenn nicht gesetzt, gehört das Fach zum aktuellen Jahr (Migration). */
   schoolYearId?: string;
+  /** Optionale Zugehörigkeit zu einer User-definierten Fächergruppe (SubjectGroup.id). */
+  groupId?: string;
+  /** Manuelle Sortierreihenfolge. Kleinere Werte zuerst. Fehlende Werte werden ans Ende gehängt und alphabetisch sortiert. */
+  position?: number;
+}
+
+/**
+ * Vom User angelegte Fächergruppe – rein organisatorisch (keine Auswirkung auf
+ * Notenberechnung). Z. B. "Naturwissenschaften", "Sprachen", "Sport".
+ */
+export interface SubjectGroup {
+  id: string;
+  label: string;
+  color?: string;
+  /** Reihenfolge der Gruppen untereinander. */
+  position?: number;
 }
 
 /** Standard-Gewichtsoptionen für einzelne Noten - "custom" erlaubt beliebigen Wert via weightMultiplier. */
@@ -189,6 +205,8 @@ export interface AppSettings {
   averageDigits: 1 | 2 | 3;
   trendThreshold: number;
   gradingConfig: GradingSystemConfig;
+  /** Vom User angelegte Fächergruppen. */
+  subjectGroups: SubjectGroup[];
 }
 
 export const SUBJECT_COLORS = [
@@ -248,6 +266,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   averageDigits: 2,
   trendThreshold: 0.2,
   gradingConfig: DEFAULT_GRADING_CONFIG,
+  subjectGroups: [],
 };
 
 function structuredCloneSafe<T>(v: T): T {

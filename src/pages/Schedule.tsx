@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, MapPin, Clock, Share2, KeyRound, Download } from 'lucide-react';
+import { Plus, MapPin, Clock, Share2, KeyRound, Download, Pencil, Check } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -20,6 +20,7 @@ export function SchedulePage() {
   const nav = useNavigate();
   const [dialog, setDialog] = useState<{ open: boolean; lesson?: Lesson; defaults?: { weekday?: Weekday; start?: string; end?: string } }>({ open: false });
   const [shareDialog, setShareDialog] = useState<{ open: boolean; tab: 'share' | 'import' }>({ open: false, tab: 'share' });
+  const [editMode, setEditMode] = useState(false);
 
   const byDay = useMemo(() => {
     const m = new Map<number, Lesson[]>();
@@ -71,14 +72,29 @@ export function SchedulePage() {
   }
 
   return (
-    <PageShell title="Stundenplan" subtitle="Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen."
+    <PageShell title="Stundenplan"
+      subtitle={editMode
+        ? 'Bearbeiten-Modus: klicke eine Stunde zum Ändern oder Löschen, oder auf eine freie Stelle für eine neue.'
+        : 'Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen.'}
       actions={
         <>
-          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })} title="Stundenplan per Code übernehmen">
-            <Download className="size-4" /><span className="hidden sm:inline">Empfangen</span>
-          </button>
-          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'share' })} title="Stundenplan per Code teilen">
-            <Share2 className="size-4" /><span className="hidden sm:inline">Teilen</span>
+          {!editMode && (
+            <>
+              <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })} title="Stundenplan per Code übernehmen">
+                <Download className="size-4" /><span className="hidden sm:inline">Empfangen</span>
+              </button>
+              <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'share' })} title="Stundenplan per Code teilen">
+                <Share2 className="size-4" /><span className="hidden sm:inline">Teilen</span>
+              </button>
+            </>
+          )}
+          <button
+            className={editMode ? 'btn-primary' : 'btn-ghost'}
+            onClick={() => setEditMode(e => !e)}
+            title={editMode ? 'Bearbeiten beenden' : 'Stunden bearbeiten / löschen'}
+          >
+            {editMode ? <Check className="size-4" /> : <Pencil className="size-4" />}
+            <span className="hidden sm:inline">{editMode ? 'Fertig' : 'Bearbeiten'}</span>
           </button>
           <button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>
         </>
@@ -130,11 +146,23 @@ export function SchedulePage() {
                 return (
                   <button
                     key={l.id}
-                    onClick={(ev) => { ev.stopPropagation(); nav(`/noten/${subj.id}`); }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (editMode) {
+                        setDialog({ open: true, lesson: l });
+                      } else {
+                        nav(`/noten/${subj.id}`);
+                      }
+                    }}
                     onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
-                    className="absolute left-1 right-1 rounded-xl p-2 text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10"
+                    className={`absolute left-1 right-1 rounded-xl p-2 text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10 ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
                     style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}cc)` }}
                   >
+                    {editMode && (
+                      <div className="absolute top-1 right-1 size-5 rounded-full bg-white/90 grid place-items-center shadow">
+                        <Pencil className="size-2.5 text-ink-800" />
+                      </div>
+                    )}
                     <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
                     <div className="font-display font-bold text-sm truncate">{subj.name}</div>
                     {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}

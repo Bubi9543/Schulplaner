@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
+  Download, Upload, Loader2, AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
+import { importData } from '@/lib/portability';
 import { SUBJECT_COLORS } from '@/types';
 import type { GradingSystem, Subject } from '@/types';
 import { CATEGORY_LABEL } from '@/lib/grading';
@@ -14,6 +16,8 @@ import { CATEGORY_LABEL } from '@/lib/grading';
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
 const ONBOARDING_PENDING_KEY = 'onboarding_pending';
+/** Der Shortcut-Step (Cloud-Login / JSON-Import) wird nicht in den Stufen-Dots gezeigt. */
+const SHORTCUT_STEP = 99;
 const MAX_STEP = 4;
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
@@ -129,17 +133,36 @@ export function Onboarding() {
   async function finish() { await finishWithData(name, system, subjects); }
   async function tryDemo() { await installDemo(); await load(); }
 
+  /**
+   * Shortcut-Abschluss nach Cloud-Login oder JSON-Import: System+Fächer-Steps
+   * werden übersprungen, weil die Daten ja schon da sind. Wir setzen nur
+   * onboarded:true (und optional den Namen).
+   */
+  async function finishShortcut(opts?: { name?: string }) {
+    await setSettings({
+      name: (opts?.name ?? name).trim() || undefined,
+      onboarded: true,
+      demo: false,
+    });
+    await load();
+  }
+
   function goNext() { setPrevStep(step); setStep(s => Math.min(MAX_STEP, s + 1)); }
   function goPrev() { setPrevStep(step); setStep(s => Math.max(0, s - 1)); }
+  function goShortcut() { setPrevStep(step); setStep(SHORTCUT_STEP); }
+  function leaveShortcut() { setPrevStep(SHORTCUT_STEP); setStep(0); }
 
-  const cfg     = STEP_CFG[step];
-  const gradient = iconGrad(step);
+  const isShortcut = step === SHORTCUT_STEP;
+  // Für visuelles Theme bleiben wir auf einem definierten Index, falls Shortcut.
+  const visualStep = isShortcut ? 4 : step;
+  const cfg     = STEP_CFG[visualStep];
+  const gradient = iconGrad(visualStep);
   const forward  = step >= prevStep;
-  const StepIcon = STEP_ICONS[step];
+  const StepIcon = isShortcut ? Cloud : STEP_ICONS[visualStep];
   // blob intensity grows from 0.20 → 0.62 across steps
-  const blobOp  = 0.20 + (step / MAX_STEP) * 0.42;
+  const blobOp  = 0.20 + (visualStep / MAX_STEP) * 0.42;
   // blob size grows from 320 → 530
-  const blobSz  = 320 + step * 42;
+  const blobSz  = 320 + visualStep * 42;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#f0f4ff]">
@@ -221,7 +244,16 @@ export function Onboarding() {
           <AnimatePresence mode="wait">
             {step === 0 && (
               <motion.div key="w" {...slide(forward)}>
-                <WelcomeStep onStart={goNext} onDemo={tryDemo} gradient={gradient} />
+                <WelcomeStep onStart={goNext} onDemo={tryDemo} onShortcut={goShortcut} gradient={gradient} />
+              </motion.div>
+            )}
+            {step === SHORTCUT_STEP && (
+              <motion.div key="sc" {...slide(forward)}>
+                <ShortcutStep
+                  back={leaveShortcut}
+                  onFinish={finishShortcut}
+                  gradient={gradient}
+                />
               </motion.div>
             )}
             {step === 1 && (
@@ -251,18 +283,20 @@ export function Onboarding() {
           </AnimatePresence>
         </div>
 
-        {/* Step dots */}
-        <div className="flex items-center gap-2">
-          {Array.from({ length: MAX_STEP + 1 }).map((_, i) => (
-            <motion.div
-              key={i}
-              animate={{ width: i === step ? 28 : 8, opacity: i === step ? 1 : 0.35 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-              className="h-2 rounded-full"
-              style={{ background: i === step ? gradient : '#6366f1' }}
-            />
-          ))}
-        </div>
+        {/* Step dots – nur im Standard-Flow zeigen */}
+        {!isShortcut && (
+          <div className="flex items-center gap-2">
+            {Array.from({ length: MAX_STEP + 1 }).map((_, i) => (
+              <motion.div
+                key={i}
+                animate={{ width: i === step ? 28 : 8, opacity: i === step ? 1 : 0.35 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                className="h-2 rounded-full"
+                style={{ background: i === step ? gradient : '#6366f1' }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -361,7 +395,7 @@ function SelectCard({ active, onClick, title, sub, icon, gradient }: {
 
 /* ─── Step 0: Welcome ────────────────────────────────────────────────── */
 
-function WelcomeStep({ onStart, onDemo, gradient }: { onStart: () => void; onDemo: () => void; gradient: string }) {
+function WelcomeStep({ onStart, onDemo, onShortcut, gradient }: { onStart: () => void; onDemo: () => void; onShortcut: () => void; gradient: string }) {
   return (
     <GlassCard className="p-8 md:p-10 text-center">
       <motion.h1
@@ -393,6 +427,12 @@ function WelcomeStep({ onStart, onDemo, gradient }: { onStart: () => void; onDem
           Los geht's <ChevronRight className="size-4" />
         </PrimaryBtn>
         <button
+          onClick={onShortcut}
+          className="w-full py-3 rounded-2xl bg-white/55 border border-white/65 text-ink-800 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-white/75 transition shadow-sm"
+        >
+          <Download className="size-4" /> Ich hab schon Daten
+        </button>
+        <button
           onClick={onDemo}
           className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition"
         >
@@ -410,6 +450,168 @@ function WelcomeStep({ onStart, onDemo, gradient }: { onStart: () => void; onDem
           <span key={t} className="text-xs px-2.5 py-1 rounded-full border border-ink-200 bg-white/60 text-ink-500">{t}</span>
         ))}
       </motion.div>
+    </GlassCard>
+  );
+}
+
+/* ─── Shortcut: Cloud-Login oder JSON-Import ─────────────────────────── */
+
+function ShortcutStep({ back, onFinish, gradient }: {
+  back: () => void;
+  onFinish: (opts?: { name?: string }) => Promise<void>;
+  gradient: string;
+}) {
+  const { signIn, signInWithGoogle, signUp } = useStore();
+  const authUser = useStore(s => s.authUser);
+  const [mode, setMode] = useState<'choice' | 'login' | 'signup' | 'importing'>('choice');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  // Wenn man sich erfolgreich einloggt, übernimmt Realtime + downloadAll
+  // den Datenstand. Sobald der Auth-Listener `authUser` setzt, finishen wir.
+  useEffect(() => {
+    if (mode !== 'login' && mode !== 'signup') return;
+    if (!authUser) return;
+    // kleine Verzögerung, damit startAutoSync seine Initial-Pull machen kann
+    const t = setTimeout(() => { void onFinish(); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, mode]);
+
+  async function submit() {
+    setError(''); setLoading(true);
+    const err = mode === 'login' ? await signIn(email, password) : await signUp(email, password);
+    setLoading(false);
+    if (err) setError(err);
+    // bei Erfolg übernimmt der useEffect-Hook oben das finish
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMode('importing');
+    setError('');
+    try {
+      const text = await file.text();
+      const result = await importData(text);
+      setImportStatus(`${result.subjects} Fächer, ${result.grades} Noten, ${result.tasks} Aufgaben übernommen.`);
+      setTimeout(() => { void onFinish(); }, 1500);
+    } catch (err) {
+      setError('Import fehlgeschlagen: ' + (err instanceof Error ? err.message : String(err)));
+      setMode('choice');
+    } finally {
+      e.target.value = '';
+    }
+  }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">Daten übernehmen</h2>
+      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
+        Du hast den Schulplaner schon auf einem anderen Gerät oder eine JSON-Datei.<br />
+        Wähle einen Weg, dann setzen wir alles für dich auf.
+      </p>
+
+      {mode === 'choice' && (
+        <div className="mt-6 grid gap-3">
+          {supabase ? (
+            <>
+              <button
+                onClick={() => setMode('login')}
+                className="text-left rounded-2xl border border-white/55 bg-white/35 hover:bg-white/55 backdrop-blur p-4 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl text-white grid place-items-center flex-shrink-0" style={{ background: gradient }}>
+                    <Cloud className="size-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-ink-900">Mit Account anmelden</div>
+                    <div className="text-xs text-ink-500 mt-0.5">
+                      Alle Geräte synchronisieren sich automatisch. Empfohlen.
+                    </div>
+                  </div>
+                  <ChevronRight className="size-5 text-ink-400" />
+                </div>
+              </button>
+              <button
+                onClick={async () => { setLoading(true); await signInWithGoogle(); }}
+                className="text-left rounded-2xl border border-white/55 bg-white/35 hover:bg-white/55 backdrop-blur p-4 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-white grid place-items-center shadow-sm flex-shrink-0">
+                    <GoogleIcon />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-ink-900">Mit Google anmelden</div>
+                    <div className="text-xs text-ink-500 mt-0.5">Schneller Login ohne Passwort.</div>
+                  </div>
+                  <ChevronRight className="size-5 text-ink-400" />
+                </div>
+              </button>
+            </>
+          ) : (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900 flex items-start gap-2">
+              <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
+              Cloud-Sync ist auf diesem Server nicht eingerichtet – Account-Login geht nicht.
+            </div>
+          )}
+          <label className="text-left rounded-2xl border border-white/55 bg-white/35 hover:bg-white/55 backdrop-blur p-4 transition cursor-pointer">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-ink-700 text-white grid place-items-center flex-shrink-0">
+                <Upload className="size-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-ink-900">JSON-Datei importieren</div>
+                <div className="text-xs text-ink-500 mt-0.5">
+                  Vorher per „Exportieren" in den Einstellungen gesichert.
+                </div>
+              </div>
+              <ChevronRight className="size-5 text-ink-400" />
+            </div>
+            <input type="file" accept="application/json,.json" className="hidden" onChange={handleImport} />
+          </label>
+        </div>
+      )}
+
+      {(mode === 'login' || mode === 'signup') && !authUser && (
+        <div className="mt-6 space-y-3">
+          <div className="text-sm font-semibold text-ink-700">
+            {mode === 'login' ? 'Anmelden' : 'Registrieren'}
+          </div>
+          <GlassInput value={email} onChange={setEmail} placeholder="E-Mail" type="email" autoFocus />
+          <GlassInput value={password} onChange={setPassword} placeholder="Passwort" type="password"
+            onKeyDown={e => e.key === 'Enter' && submit()} />
+          {error && <div className="text-xs text-rose-600 px-1">{error}</div>}
+          <PrimaryBtn onClick={submit} disabled={loading || !email || !password} gradient={gradient}>
+            {loading ? 'Bitte warten…' : mode === 'login' ? 'Anmelden & Daten laden' : 'Registrieren'}
+          </PrimaryBtn>
+          <button
+            onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+            className="w-full py-2 text-xs text-ink-500 hover:text-ink-800 transition"
+          >
+            {mode === 'login' ? 'Noch kein Account? Registrieren →' : '← Schon einen Account? Anmelden'}
+          </button>
+          <button onClick={() => setMode('choice')} className="w-full py-2 text-xs text-ink-400 hover:text-ink-600 transition">
+            Zurück zur Auswahl
+          </button>
+        </div>
+      )}
+
+      {(mode === 'importing' || (authUser && (mode === 'login' || mode === 'signup'))) && (
+        <div className="mt-6 flex flex-col items-center text-center py-6">
+          <Loader2 className="size-8 text-theme animate-spin mb-3" />
+          <div className="font-display font-bold text-ink-900">
+            {mode === 'importing' ? 'Importiere deine Daten …' : 'Synchronisiere mit der Cloud …'}
+          </div>
+          {importStatus && (
+            <div className="text-xs text-emerald-700 mt-2">{importStatus}</div>
+          )}
+        </div>
+      )}
     </GlassCard>
   );
 }

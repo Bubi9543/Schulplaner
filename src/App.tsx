@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { Sidebar, MobileTabBar } from '@/components/Sidebar';
+import { WelcomeTour, shouldShowTour } from '@/components/WelcomeTour';
 import { Onboarding } from '@/pages/Onboarding';
 import { Dashboard } from '@/pages/Dashboard';
 import { TasksPage } from '@/pages/Tasks';
@@ -19,6 +20,16 @@ export default function App() {
   const settings = useStore(s => s.settings);
   const load = useStore(s => s.load);
   const location = useLocation();
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // Tour einmalig anzeigen, sobald onboarded + noch nicht gesehen.
+  useEffect(() => {
+    if (settings?.onboarded && shouldShowTour()) {
+      // Kleine Verzögerung, damit das Dashboard erst kurz sichtbar wird.
+      const t = setTimeout(() => setTourOpen(true), 400);
+      return () => clearTimeout(t);
+    }
+  }, [settings?.onboarded]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -81,6 +92,7 @@ export default function App() {
         </AnimatePresence>
       </main>
       {settings?.onboarded && <MobileTabBar />}
+      {tourOpen && <WelcomeTour onFinish={() => setTourOpen(false)} />}
     </div>
   );
 }
