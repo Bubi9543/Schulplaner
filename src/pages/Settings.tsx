@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2 } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -414,8 +414,7 @@ function SyncCard() {
   const authUser = useStore(s => s.authUser);
   const syncStatus = useStore(s => s.syncStatus);
   const lastSyncedAt = useStore(s => s.lastSyncedAt);
-  const settings = useStore(s => s.settings)!;
-  const setSettings = useStore(s => s.setSettings);
+  const liveSync = useStore(s => s.liveSync);
   const { signIn, signUp, signInWithGoogle, signOut, syncNow, pullFromCloud } = useStore();
 
   const [mode, setMode] = useState<'idle' | 'login' | 'signup'>('idle');
@@ -424,6 +423,7 @@ function SyncCard() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pullMsg, setPullMsg] = useState('');
+  const [advanced, setAdvanced] = useState(false);
 
   if (!supabase) {
     return (
@@ -448,27 +448,62 @@ function SyncCard() {
   }
 
   if (authUser) {
+    const liveBadge = (() => {
+      switch (liveSync) {
+        case 'live':
+          return { Icon: Zap, label: 'Live-Sync aktiv', tone: 'text-emerald-700 bg-emerald-100 border-emerald-200' };
+        case 'connecting':
+          return { Icon: Loader2, label: 'Verbindet …', tone: 'text-amber-700 bg-amber-100 border-amber-200 animate-pulse' };
+        case 'error':
+          return { Icon: CloudOff, label: 'Sync-Fehler', tone: 'text-rose-700 bg-rose-100 border-rose-200' };
+        default:
+          return { Icon: CloudOff, label: 'Sync inaktiv', tone: 'text-ink-600 bg-white/70 border-white/60' };
+      }
+    })();
+
     return (
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Cloud className="size-5 text-emerald-500" />Cloud Sync</h3>
         <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 mb-3">
-          <div className="text-sm font-semibold text-emerald-800">Eingeloggt als {authUser.email}</div>
-          {lastSyncedAt && <div className="text-xs text-emerald-600">Zuletzt synchronisiert: {new Date(lastSyncedAt).toLocaleTimeString('de-DE')}</div>}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-emerald-800">Eingeloggt als {authUser.email}</div>
+              {lastSyncedAt && <div className="text-xs text-emerald-700/80">Letzter Abgleich: {new Date(lastSyncedAt).toLocaleTimeString('de-DE')}</div>}
+            </div>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${liveBadge.tone}`}>
+              <liveBadge.Icon className={`size-3.5 ${liveSync === 'connecting' ? 'animate-spin' : ''}`} />
+              {liveBadge.label}
+            </span>
+          </div>
+          <p className="text-xs text-emerald-700/80 mt-2 leading-relaxed">
+            Änderungen werden automatisch zwischen all deinen Geräten synchronisiert – kein manueller Upload nötig.
+          </p>
         </div>
-        <Row label="Daten hochladen" hint="Lokale Daten in die Cloud schreiben.">
-          <button onClick={syncNow} disabled={syncStatus === 'syncing'} className="btn-ghost">
-            <Cloud className="size-4" />{syncStatus === 'syncing' ? 'Synchronisiert…' : 'Jetzt sync'}
-          </button>
-        </Row>
-        <Row label="Daten herunterladen" hint="Cloud-Daten auf dieses Gerät laden (überschreibt lokale Daten).">
-          <button onClick={handlePull} disabled={syncStatus === 'syncing'} className="btn-ghost">
-            <RefreshCw className="size-4" />Von Cloud laden
-          </button>
-          {pullMsg && <span className="text-xs text-emerald-600">{pullMsg}</span>}
-        </Row>
+
         <Row label="Abmelden">
           <button onClick={signOut} className="btn-soft text-rose-600"><LogOut className="size-4" />Abmelden</button>
         </Row>
+
+        <div className="mt-3 pt-3 border-t border-white/50">
+          <button onClick={() => setAdvanced(v => !v)} className="text-xs text-ink-500 hover:text-ink-700 transition font-semibold">
+            {advanced ? '− Manuelle Aktionen ausblenden' : '+ Manuelle Aktionen anzeigen'}
+          </button>
+          {advanced && (
+            <div className="mt-3 space-y-2">
+              <Row label="Alles hochladen" hint="Lokalen Stand in die Cloud schreiben (Notfall-Push).">
+                <button onClick={syncNow} disabled={syncStatus === 'syncing'} className="btn-ghost">
+                  <Cloud className="size-4" />{syncStatus === 'syncing' ? 'Synchronisiert…' : 'Push'}
+                </button>
+              </Row>
+              <Row label="Alles herunterladen" hint="Cloud-Stand auf dieses Gerät laden (überschreibt lokal).">
+                <button onClick={handlePull} disabled={syncStatus === 'syncing'} className="btn-ghost">
+                  <RefreshCw className="size-4" />Pull
+                </button>
+                {pullMsg && <span className="text-xs text-emerald-600">{pullMsg}</span>}
+              </Row>
+            </div>
+          )}
+        </div>
       </Card>
     );
   }

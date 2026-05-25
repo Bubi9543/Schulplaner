@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll } from '@/lib/sync';
+import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime, stopRealtime } from '@/lib/sync';
+import type { SyncTable } from '@/lib/sync';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
@@ -51,6 +52,15 @@ function suggestYearStart(): number {
   return new Date(y, 8, 1).getTime();
 }
 
+// Kleine, immutable Helfer für In-Memory-State.
+function upsertById<T extends { id: string }>(arr: T[], item: T): T[] {
+  const i = arr.findIndex(x => x.id === item.id);
+  if (i === -1) return [...arr, item];
+  const next = arr.slice();
+  next[i] = item;
+  return next;
+}
+
 export interface NewYearOptions {
   name: string;
   startDate: number;
@@ -58,6 +68,8 @@ export interface NewYearOptions {
   copySubjectsFromYearId?: string;
   copyLessonsFromYearId?: string;
 }
+
+export type LiveSyncStatus = 'off' | 'connecting' | 'live' | 'error';
 
 interface State {
   loaded: boolean;
@@ -72,6 +84,8 @@ interface State {
   authUser: SupabaseUser | null;
   syncStatus: 'idle' | 'syncing' | 'error';
   lastSyncedAt: number | null;
+  /** Verbindungsstatus des Realtime-Channels. */
+  liveSync: LiveSyncStatus;
 
   load: () => Promise<void>;
   setSettings: (patch: Partial<AppSettings>) => Promise<void>;
@@ -81,7 +95,12 @@ interface State {
   signUp: (email: string, password: string) => Promise<string | null>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  /** Erstmaliger Push+Pull nach Login, danach übernimmt Realtime. */
+  startAutoSync: () => Promise<void>;
+  stopAutoSync: () => void;
+  /** Manuell: Push lokal → Cloud (sollte selten nötig sein). */
   syncNow: () => Promise<void>;
+  /** Manuell: Pull Cloud → lokal (überschreibt). */
   pullFromCloud: () => Promise<boolean>;
 
   addSubject: (s: Omit<Subject, 'id' | 'createdAt'>) => Promise<Subject>;
@@ -106,6 +125,11 @@ interface State {
   deleteSchoolYear: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
   setActiveSchoolYear: (id: string) => Promise<void>;
 }
+
+// ─── Modul-Singletons für Auth-Listener / Visibility-Listener ─────────────
+let authListenerBound = false;
+let visibilityListenerBound = false;
+let autoSyncRunning = false;
 
 /** Liest gespeicherte active-Year-ID. Beim ersten Aufruf wird Default-Jahr erzeugt + alle Daten zugeordnet. */
 async function ensureSchoolYears(allYears: SchoolYear[], allSubjects: Subject[], allGrades: Grade[], allTasks: AppTask[], allLessons: Lesson[]): Promise<{ years: SchoolYear[]; activeId: string | null }> {
@@ -174,6 +198,7 @@ export const useStore = create<State>((set, get) => ({
   authUser: null,
   syncStatus: 'idle',
   lastSyncedAt: null,
+  liveSync: 'off',
 
   async load() {
     const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears] = await Promise.all([
@@ -221,14 +246,40 @@ export const useStore = create<State>((set, get) => ({
       lessons: allLessons.filter(subjFilter),
     });
 
-    if (supabase) {
+    // ─── Auth-Init nur einmal ────────────────────────────────────────────
+    if (supabase && !authListenerBound) {
+      authListenerBound = true;
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         set({ authUser: { id: session.user.id, email: session.user.email } });
+        // Bestehende Session → direkt Auto-Sync starten
+        void get().startAutoSync();
       }
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         const user = session?.user ?? null;
-        set({ authUser: user ? { id: user.id, email: user.email } : null });
+        if (event === 'SIGNED_IN' && user) {
+          set({ authUser: { id: user.id, email: user.email } });
+          void get().startAutoSync();
+        } else if (event === 'SIGNED_OUT') {
+          get().stopAutoSync();
+          set({ authUser: null, lastSyncedAt: null });
+        } else if (event === 'TOKEN_REFRESHED' && user) {
+          set({ authUser: { id: user.id, email: user.email } });
+        }
+      });
+    }
+
+    // ─── Visibility-Listener nur einmal: holt Updates nach Schlaf nach ───
+    if (!visibilityListenerBound && typeof document !== 'undefined') {
+      visibilityListenerBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        const { authUser, liveSync } = get();
+        if (!authUser) return;
+        // Realtime kann nach längerer Sleep-Phase getrennt sein → sicherheitshalber neu pullen
+        if (liveSync !== 'live') {
+          void get().pullFromCloud();
+        }
       });
     }
   },
@@ -259,8 +310,8 @@ export const useStore = create<State>((set, get) => ({
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
     if (data.user) {
+      // authUser + Auto-Sync starten via onAuthStateChange-Listener
       set({ authUser: { id: data.user.id, email: data.user.email } });
-      await get().syncNow();
     }
     return null;
   },
@@ -271,6 +322,8 @@ export const useStore = create<State>((set, get) => ({
     if (error) return error.message;
     if (data.user) {
       set({ authUser: { id: data.user.id, email: data.user.email } });
+      // Wenn Email-Bestätigung aus ist, fängt onAuthStateChange den SIGNED_IN auf.
+      // Falls nicht: zur Sicherheit hier schon einen ersten Upload anschieben.
       await uploadAll(data.user.id);
       set({ lastSyncedAt: Date.now() });
     }
@@ -287,8 +340,54 @@ export const useStore = create<State>((set, get) => ({
 
   async signOut() {
     if (!supabase) return;
+    get().stopAutoSync();
     await supabase.auth.signOut();
     set({ authUser: null, lastSyncedAt: null });
+  },
+
+  async startAutoSync() {
+    const { authUser } = get();
+    if (!authUser || !supabase) return;
+    if (autoSyncRunning) return;
+    autoSyncRunning = true;
+
+    set({ syncStatus: 'syncing', liveSync: 'connecting' });
+    try {
+      // Erst lokale Daten hochladen (eigene Edits behalten), dann Cloud-Stand ziehen.
+      // → Konflikte: local-row gewinnt für IDs, die beide Seiten haben (gewünscht beim Geräte-Login).
+      await uploadAll(authUser.id);
+      await downloadAll(authUser.id);
+      await get().load(); // State frisch aus Dexie ziehen
+      set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
+    } catch (e) {
+      console.warn('Auto-Sync Initial-Push/Pull fehlgeschlagen:', e);
+      set({ syncStatus: 'error' });
+    }
+
+    // Realtime-Subscription für alle Tabellen
+    startRealtime(authUser.id, {
+      onUpsert: async (table, data) => {
+        await applyRealtimeUpsert(table, data, set, get);
+      },
+      onDelete: async (table, id) => {
+        await applyRealtimeDelete(table, id, set, get);
+      },
+      onSettings: async (data) => {
+        await applyRealtimeSettings(data, set);
+      },
+      onStatusChange: (status) => {
+        if (status === 'connected') set({ liveSync: 'live' });
+        else if (status === 'connecting') set({ liveSync: 'connecting' });
+        else if (status === 'error') set({ liveSync: 'error' });
+        else if (status === 'closed') set({ liveSync: 'off' });
+      },
+    });
+  },
+
+  stopAutoSync() {
+    stopRealtime();
+    autoSyncRunning = false;
+    set({ liveSync: 'off' });
   },
 
   async syncNow() {
@@ -334,11 +433,22 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({
       subjects: state.subjects.map(s => s.id === id ? { ...s, ...patch } : s).sort((a, b) => a.name.localeCompare(b.name, 'de')),
     }));
-    const updated = get().subjects.find(s => s.id === id);
+    const updated = await db.subjects.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('subjects', id, updated, authUser.id);
   },
   async deleteSubject(id) {
+    // IDs der zu kaskadierenden Kinder VOR dem Delete einsammeln,
+    // damit wir sie auch in der Cloud löschen können.
+    const [gradeRows, taskRows, lessonRows] = await Promise.all([
+      db.grades.where('subjectId').equals(id).toArray(),
+      db.tasks.where('subjectId').equals(id).toArray(),
+      db.lessons.where('subjectId').equals(id).toArray(),
+    ]);
+    const gradeIds = gradeRows.map(g => g.id);
+    const taskIds = taskRows.map(t => t.id);
+    const lessonIds = lessonRows.map(l => l.id);
+
     await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons], async () => {
       await db.subjects.delete(id);
       await db.grades.where('subjectId').equals(id).delete();
@@ -354,9 +464,9 @@ export const useStore = create<State>((set, get) => ({
     const { authUser } = get();
     if (authUser) {
       deleteRow('subjects', id);
-      supabase?.from('grades').delete().eq('id', id);
-      supabase?.from('tasks').delete().eq('id', id);
-      supabase?.from('lessons').delete().eq('id', id);
+      gradeIds.forEach(gid => deleteRow('grades', gid));
+      taskIds.forEach(tid => deleteRow('tasks', tid));
+      lessonIds.forEach(lid => deleteRow('lessons', lid));
     }
   },
 
@@ -373,7 +483,7 @@ export const useStore = create<State>((set, get) => ({
   async updateGrade(id, patch) {
     await db.grades.update(id, patch);
     set(state => ({ grades: state.grades.map(g => g.id === id ? { ...g, ...patch } : g) }));
-    const updated = get().grades.find(g => g.id === id);
+    const updated = await db.grades.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('grades', id, updated, authUser.id);
   },
@@ -397,7 +507,7 @@ export const useStore = create<State>((set, get) => ({
   async updateTask(id, patch) {
     await db.tasks.update(id, patch);
     set(state => ({ tasks: state.tasks.map(t => t.id === id ? { ...t, ...patch } : t).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)) }));
-    const updated = get().tasks.find(t => t.id === id);
+    const updated = await db.tasks.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('tasks', id, updated, authUser.id);
   },
@@ -427,7 +537,7 @@ export const useStore = create<State>((set, get) => ({
   async updateLesson(id, patch) {
     await db.lessons.update(id, patch);
     set(state => ({ lessons: state.lessons.map(l => l.id === id ? { ...l, ...patch } : l) }));
-    const updated = get().lessons.find(l => l.id === id);
+    const updated = await db.lessons.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('lessons', id, updated, authUser.id);
   },
@@ -449,53 +559,78 @@ export const useStore = create<State>((set, get) => ({
     };
     // Alle anderen Jahre deaktivieren
     const existing = await db.schoolYears.toArray();
+    const deactivated = existing.map(y => ({ ...y, active: false }));
     await db.transaction('rw', db.schoolYears, async () => {
-      await db.schoolYears.bulkPut(existing.map(y => ({ ...y, active: false })));
+      await db.schoolYears.bulkPut(deactivated);
       await db.schoolYears.add(year);
     });
 
     // Optional: Fächer (und damit Stundenplan) aus anderem Jahr kopieren
+    let copiedSubjects: Subject[] = [];
+    let copiedLessons: Lesson[] = [];
     if (opts.copySubjectsFromYearId) {
       const sourceYearId = opts.copySubjectsFromYearId;
       const sourceSubjects = await db.subjects.where('schoolYearId').equals(sourceYearId).toArray();
       const idMap = new Map<string, string>();
-      const newSubjects: Subject[] = sourceSubjects.map(s => {
+      copiedSubjects = sourceSubjects.map(s => {
         const newId = uid();
         idMap.set(s.id, newId);
         return { ...s, id: newId, schoolYearId: year.id, createdAt: Date.now() };
       });
-      if (newSubjects.length) await db.subjects.bulkAdd(newSubjects);
+      if (copiedSubjects.length) await db.subjects.bulkAdd(copiedSubjects);
 
       if (opts.copyLessonsFromYearId) {
         const sourceLessons = await db.lessons.where('schoolYearId').equals(sourceYearId).toArray();
-        const newLessons: Lesson[] = [];
         for (const l of sourceLessons) {
           const newSubjId = idMap.get(l.subjectId);
           if (!newSubjId) continue;
-          newLessons.push({ ...l, id: uid(), subjectId: newSubjId, schoolYearId: year.id });
+          copiedLessons.push({ ...l, id: uid(), subjectId: newSubjId, schoolYearId: year.id });
         }
-        if (newLessons.length) await db.lessons.bulkAdd(newLessons);
+        if (copiedLessons.length) await db.lessons.bulkAdd(copiedLessons);
       }
     }
 
     // Reload um neuen Filter-State herzustellen
     await get().load();
 
-    // Cloud-Sync für neues Jahr (und alle ggf. kopierten Subjects/Lessons werden beim nächsten uploadAll erfasst)
+    // Cloud-Sync: alle deaktivierten Jahre, das neue Jahr, sowie alle kopierten Subjects/Lessons
     const { authUser } = get();
-    if (authUser) syncRow('school_years', year.id, year, authUser.id);
+    if (authUser) {
+      deactivated.forEach(y => syncRow('school_years', y.id, y, authUser.id));
+      syncRow('school_years', year.id, year, authUser.id);
+      copiedSubjects.forEach(s => syncRow('subjects', s.id, s, authUser.id));
+      copiedLessons.forEach(l => syncRow('lessons', l.id, l, authUser.id));
+    }
 
     return year;
   },
   async updateSchoolYear(id, patch) {
     await db.schoolYears.update(id, patch);
     set(state => ({ schoolYears: state.schoolYears.map(y => y.id === id ? { ...y, ...patch } : y) }));
-    const updated = get().schoolYears.find(y => y.id === id);
+    const updated = await db.schoolYears.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('school_years', id, updated, authUser.id);
   },
   async deleteSchoolYear(id, mode = 'wipe') {
     const wasActive = get().activeSchoolYearId === id;
+
+    // IDs der Kinder sammeln, falls wir wipen
+    let childIds: { subjects: string[]; grades: string[]; tasks: string[]; lessons: string[] } | null = null;
+    if (mode === 'wipe') {
+      const [subj, gr, tk, le] = await Promise.all([
+        db.subjects.where('schoolYearId').equals(id).toArray(),
+        db.grades.where('schoolYearId').equals(id).toArray(),
+        db.tasks.where('schoolYearId').equals(id).toArray(),
+        db.lessons.where('schoolYearId').equals(id).toArray(),
+      ]);
+      childIds = {
+        subjects: subj.map(s => s.id),
+        grades: gr.map(g => g.id),
+        tasks: tk.map(t => t.id),
+        lessons: le.map(l => l.id),
+      };
+    }
+
     if (mode === 'wipe') {
       await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.schoolYears], async () => {
         await db.subjects.where('schoolYearId').equals(id).delete();
@@ -508,7 +643,6 @@ export const useStore = create<State>((set, get) => ({
       await db.schoolYears.delete(id);
     }
     if (wasActive) {
-      // Anderes Jahr aktivieren
       const remaining = await db.schoolYears.toArray();
       if (remaining.length > 0) {
         await get().setActiveSchoolYear(remaining[0].id);
@@ -519,7 +653,15 @@ export const useStore = create<State>((set, get) => ({
       set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
     }
     const { authUser } = get();
-    if (authUser) deleteRow('school_years', id);
+    if (authUser) {
+      deleteRow('school_years', id);
+      if (childIds) {
+        childIds.subjects.forEach(sid => deleteRow('subjects', sid));
+        childIds.grades.forEach(gid => deleteRow('grades', gid));
+        childIds.tasks.forEach(tid => deleteRow('tasks', tid));
+        childIds.lessons.forEach(lid => deleteRow('lessons', lid));
+      }
+    }
   },
   async setActiveSchoolYear(id) {
     const years = get().schoolYears;
@@ -528,5 +670,137 @@ export const useStore = create<State>((set, get) => ({
     set({ activeSchoolYearId: id, schoolYears: updated });
     // Re-load all data filtered by new active year
     await get().load();
+
+    // Geänderte active-Flags in die Cloud spiegeln, damit andere Geräte mitschalten.
+    const { authUser } = get();
+    if (authUser) {
+      updated.forEach(y => syncRow('school_years', y.id, y, authUser.id));
+    }
   },
 }));
+
+// ─── Realtime-Handler ────────────────────────────────────────────────────
+// Werden in startAutoSync() registriert und beim Stop wieder unsubscribed.
+
+type SetFn = (partial: Partial<State> | ((state: State) => Partial<State>)) => void;
+type GetFn = () => State;
+
+async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, get: GetFn): Promise<void> {
+  const data = raw as Record<string, unknown> & { id: string };
+  if (!data || typeof data !== 'object' || !data.id) return;
+
+  switch (table) {
+    case 'subjects': {
+      const subj = data as unknown as Subject;
+      await db.subjects.put(subj);
+      const yid = get().activeSchoolYearId;
+      if (!yid || subj.schoolYearId === yid) {
+        set(state => ({
+          subjects: upsertById(state.subjects, subj).sort((a, b) => a.name.localeCompare(b.name, 'de')),
+        }));
+      } else {
+        // Fach gehört zu anderem Jahr; nicht in In-Memory-View aufnehmen, aber falls vorhanden entfernen.
+        set(state => ({ subjects: state.subjects.filter(s => s.id !== subj.id) }));
+      }
+      break;
+    }
+    case 'grades': {
+      const grade = data as unknown as Grade;
+      await db.grades.put(grade);
+      const yid = get().activeSchoolYearId;
+      if (!yid || grade.schoolYearId === yid) {
+        set(state => ({ grades: upsertById(state.grades, grade) }));
+      } else {
+        set(state => ({ grades: state.grades.filter(g => g.id !== grade.id) }));
+      }
+      break;
+    }
+    case 'tasks': {
+      const task = data as unknown as AppTask;
+      await db.tasks.put(task);
+      const yid = get().activeSchoolYearId;
+      if (!yid || task.schoolYearId === yid) {
+        set(state => ({
+          tasks: upsertById(state.tasks, task).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
+        }));
+      } else {
+        set(state => ({ tasks: state.tasks.filter(t => t.id !== task.id) }));
+      }
+      break;
+    }
+    case 'lessons': {
+      const lesson = data as unknown as Lesson;
+      await db.lessons.put(lesson);
+      const yid = get().activeSchoolYearId;
+      if (!yid || lesson.schoolYearId === yid) {
+        set(state => ({ lessons: upsertById(state.lessons, lesson) }));
+      } else {
+        set(state => ({ lessons: state.lessons.filter(l => l.id !== lesson.id) }));
+      }
+      break;
+    }
+    case 'school_years': {
+      const year = data as unknown as SchoolYear;
+      await db.schoolYears.put(year);
+      const prevActive = get().activeSchoolYearId;
+      const merged = upsertById(get().schoolYears, year).sort((a, b) => b.startDate - a.startDate);
+      const nowActive = merged.find(y => y.active);
+      set({ schoolYears: merged, activeSchoolYearId: nowActive?.id ?? prevActive });
+      // Wenn sich das aktive Jahr ändert, alle Filter neu aufbauen.
+      if (nowActive && nowActive.id !== prevActive) {
+        await get().load();
+      }
+      break;
+    }
+    case 'photos': {
+      const photo = data as unknown as Photo;
+      await db.photos.put(photo);
+      // Photos stehen nicht im Store-State, das reicht.
+      break;
+    }
+  }
+}
+
+async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get: GetFn): Promise<void> {
+  switch (table) {
+    case 'subjects':
+      await db.subjects.delete(id);
+      set(state => ({
+        subjects: state.subjects.filter(s => s.id !== id),
+        grades: state.grades.filter(g => g.subjectId !== id),
+        tasks: state.tasks.filter(t => t.subjectId !== id),
+        lessons: state.lessons.filter(l => l.subjectId !== id),
+      }));
+      break;
+    case 'grades':
+      await db.grades.delete(id);
+      set(state => ({ grades: state.grades.filter(g => g.id !== id) }));
+      break;
+    case 'tasks':
+      await db.tasks.delete(id);
+      set(state => ({ tasks: state.tasks.filter(t => t.id !== id) }));
+      break;
+    case 'lessons':
+      await db.lessons.delete(id);
+      set(state => ({ lessons: state.lessons.filter(l => l.id !== id) }));
+      break;
+    case 'school_years': {
+      const wasActive = get().activeSchoolYearId === id;
+      await db.schoolYears.delete(id);
+      set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
+      if (wasActive) await get().load();
+      break;
+    }
+    case 'photos':
+      await db.photos.delete(id);
+      break;
+  }
+}
+
+async function applyRealtimeSettings(data: AppSettings, set: SetFn): Promise<void> {
+  const merged = mergeSettings({ ...data, id: 'app' });
+  await db.settings.put(merged);
+  applyTheme(merged.colorTheme);
+  applyVisualSettings(merged);
+  set({ settings: merged });
+}

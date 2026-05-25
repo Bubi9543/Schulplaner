@@ -95,7 +95,19 @@ create policy "own lessons"       on lessons      for all using (user_id = auth.
 create policy "own school_years"  on school_years for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own photos"        on photos       for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own settings"      on user_settings for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Realtime-Publication: Voraussetzung für Live-Sync zwischen Geräten.
+-- (Ignoriert Fehler, falls Tabellen schon Teil der Publication sind.)
+alter publication supabase_realtime add table subjects;
+alter publication supabase_realtime add table grades;
+alter publication supabase_realtime add table tasks;
+alter publication supabase_realtime add table lessons;
+alter publication supabase_realtime add table school_years;
+alter publication supabase_realtime add table photos;
+alter publication supabase_realtime add table user_settings;
 ```
+
+> Falls einzelne `alter publication`-Zeilen mit „relation … is already member of publication" fehlschlagen, ist das harmlos – einfach die restlichen Zeilen einzeln laufen lassen.
 
 ## 4. Storage Bucket für Fotos
 
@@ -134,7 +146,7 @@ create policy "own storage delete"
 
 ## 5. Fertig
 
-Im Settings → Cloud Sync der App einloggen. Fotos werden ab dem Login direkt in den `photos`-Bucket hochgeladen und beim Wechseln auf andere Geräte automatisch heruntergeladen.
+Im Settings → Cloud Sync der App einloggen. Sobald du auf einem zweiten Gerät eingeloggt bist, **synchronisieren sich Änderungen automatisch in Echtzeit** – kein manueller Upload nötig. Fotos werden ab dem Login direkt in den `photos`-Bucket hochgeladen und beim Wechseln auf andere Geräte automatisch heruntergeladen.
 
 ### Free-Tier-Limits
 - 500 MB Datenbank

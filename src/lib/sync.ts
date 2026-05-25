@@ -1,8 +1,11 @@
 import { supabase } from './supabase';
 import { db } from './db';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear } from '@/types';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export type SyncTable = 'subjects' | 'grades' | 'tasks' | 'lessons' | 'photos' | 'school_years';
+
+const TABLES: SyncTable[] = ['subjects', 'grades', 'tasks', 'lessons', 'photos', 'school_years'];
 
 function row(id: string, userId: string, data: unknown) {
   return { id, user_id: userId, data, updated_at: new Date().toISOString() };
@@ -31,6 +34,10 @@ export async function uploadAll(userId: string): Promise<void> {
   ]);
 }
 
+/**
+ * Lädt Cloud-Daten und überschreibt lokale Daten komplett.
+ * Gibt true zurück, wenn Cloud-Daten existieren.
+ */
 export async function downloadAll(userId: string): Promise<boolean> {
   if (!supabase) return false;
   const [sRes, gRes, tRes, lRes, pRes, yRes, setRes] = await Promise.all([
@@ -86,4 +93,74 @@ export async function deleteRow(table: SyncTable, id: string): Promise<void> {
   supabase.from(table).delete().eq('id', id).then(({ error }) => {
     if (error) console.warn('sync delete error', table, error.message);
   });
+}
+
+// ─── Realtime Live-Sync ─────────────────────────────────────────────────
+
+export interface RealtimeHandlers {
+  onUpsert: (table: SyncTable, data: unknown) => void | Promise<void>;
+  onDelete: (table: SyncTable, id: string) => void | Promise<void>;
+  onSettings: (data: AppSettings) => void | Promise<void>;
+  onStatusChange?: (status: 'connecting' | 'connected' | 'closed' | 'error') => void;
+}
+
+const channels: RealtimeChannel[] = [];
+
+/**
+ * Startet Live-Sync via Supabase Realtime. Jede Änderung an
+ * subjects/grades/tasks/lessons/photos/school_years/user_settings auf dem
+ * Server löst sofort den passenden Handler aus.
+ */
+export function startRealtime(userId: string, handlers: RealtimeHandlers): void {
+  if (!supabase) return;
+  stopRealtime();
+
+  const statusCb = handlers.onStatusChange;
+  statusCb?.('connecting');
+
+  for (const table of TABLES) {
+    const ch = supabase
+      .channel(`sync:${table}:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table, filter: `user_id=eq.${userId}` },
+        (payload: { eventType: 'INSERT' | 'UPDATE' | 'DELETE'; new: Record<string, unknown> | null; old: Record<string, unknown> | null }) => {
+          if (payload.eventType === 'DELETE') {
+            const id = (payload.old as { id?: string } | null)?.id;
+            if (id) void handlers.onDelete(table, id);
+          } else {
+            const data = (payload.new as { data?: unknown } | null)?.data;
+            if (data) void handlers.onUpsert(table, data);
+          }
+        },
+      )
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') statusCb?.('connected');
+        else if (status === 'CHANNEL_ERROR') statusCb?.('error');
+        else if (status === 'CLOSED') statusCb?.('closed');
+      });
+    channels.push(ch);
+  }
+
+  const settingsCh = supabase
+    .channel(`sync:user_settings:${userId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${userId}` },
+      (payload: { eventType: 'INSERT' | 'UPDATE' | 'DELETE'; new: Record<string, unknown> | null }) => {
+        if (payload.eventType === 'DELETE') return;
+        const data = (payload.new as { data?: AppSettings } | null)?.data;
+        if (data) void handlers.onSettings(data);
+      },
+    )
+    .subscribe();
+  channels.push(settingsCh);
+}
+
+export function stopRealtime(): void {
+  if (!supabase) return;
+  for (const ch of channels) {
+    supabase.removeChannel(ch);
+  }
+  channels.length = 0;
 }
