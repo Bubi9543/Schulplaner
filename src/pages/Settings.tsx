@@ -9,6 +9,7 @@ import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
+import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
 import { KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import { CATEGORY_DESCRIPTION } from '@/lib/grading';
@@ -657,47 +658,45 @@ function SchoolYearsSection() {
 }
 
 function DataSection() {
-  const settings = useStore(s => s.settings)!;
-  const subjects = useStore(s => s.subjects);
   const load = useStore(s => s.load);
   const [storageInfo, setStorageInfo] = useState<string>('');
+  const [importStatus, setImportStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
 
-  function exportJson() {
-    const data = {
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      settings,
-      subjects,
-      grades: useStore.getState().grades,
-      tasks: useStore.getState().tasks,
-      lessons: useStore.getState().lessons,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `notenapp-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportJson() {
+    const data = await buildExport();
+    downloadExport(data);
   }
 
-  async function importJson(e: React.ChangeEvent<HTMLInputElement>) {
+  async function copyExampleSchema() {
+    const ex = getExampleFile();
+    await navigator.clipboard.writeText(JSON.stringify(ex, null, 2));
+    setImportStatus({ kind: 'ok', msg: 'Beispiel-Schema in Zwischenablage kopiert.' });
+    setTimeout(() => setImportStatus(null), 3000);
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!confirm('Daten aus Datei importieren? Bestehende Daten werden ersetzt.')) return;
+    if (!confirm('Daten aus Datei importieren? ALLE bestehenden Daten werden ersetzt.')) {
+      e.target.value = '';
+      return;
+    }
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      await resetAll();
-      if (data.subjects?.length) await db.subjects.bulkAdd(data.subjects);
-      if (data.grades?.length) await db.grades.bulkAdd(data.grades);
-      if (data.tasks?.length) await db.tasks.bulkAdd(data.tasks);
-      if (data.lessons?.length) await db.lessons.bulkAdd(data.lessons);
-      if (data.settings) await db.settings.put({ ...data.settings, id: 'app' });
+      const result = await importData(text);
       await load();
-      alert('Erfolgreich importiert!');
+      const lines = [
+        `${result.schoolYears} Schuljahre`,
+        `${result.subjects} Fächer`,
+        `${result.grades} Noten`,
+        `${result.tasks} Aufgaben`,
+        `${result.lessons} Stunden`,
+      ];
+      let msg = `Import erfolgreich: ${lines.join(' · ')}`;
+      if (result.warnings.length) msg += `\n\nHinweise:\n• ${result.warnings.join('\n• ')}`;
+      setImportStatus({ kind: 'ok', msg });
     } catch (err) {
-      alert('Fehler beim Import: ' + (err instanceof Error ? err.message : String(err)));
+      setImportStatus({ kind: 'err', msg: 'Fehler: ' + (err instanceof Error ? err.message : String(err)) });
     } finally {
       e.target.value = '';
     }
@@ -725,29 +724,49 @@ function DataSection() {
 
   return (
     <div className="space-y-4">
-    <SyncCard />
-    <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-rose-500" />Daten</h3>
-      <Row label="Export" hint="Als JSON-Datei sichern.">
-        <button onClick={exportJson} className="btn-ghost"><RefreshCw className="size-4" />Exportieren</button>
-      </Row>
-      <Row label="Import" hint="JSON-Datei wiederherstellen (überschreibt).">
-        <label className="btn-ghost cursor-pointer">
-          <Upload className="size-4" />Datei wählen
-          <input type="file" accept="application/json" className="hidden" onChange={importJson} />
-        </label>
-      </Row>
-      <Row label="Demodaten" hint="Lädt fertige Beispieldaten (überschreibt alles).">
-        <button onClick={loadDemo} className="btn-ghost"><Wand2 className="size-4" />Laden</button>
-      </Row>
-      <Row label="Speicherplatz">
-        <button onClick={checkStorage} className="btn-ghost text-xs"><Database className="size-4" />Prüfen</button>
-        {storageInfo && <span className="text-xs text-ink-600">{storageInfo}</span>}
-      </Row>
-      <Row label="Alles zurücksetzen" hint="Löscht ALLE lokalen Daten unwiderruflich.">
-        <button onClick={reset} className="btn-soft text-rose-600"><Trash2 className="size-4" />Zurücksetzen</button>
-      </Row>
-    </Card>
+      <SyncCard />
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Sicherung & Import</h3>
+
+        <Row label="Komplett-Export" hint="Alle Schuljahre, Fächer, Noten, Aufgaben & Stundenplan als JSON.">
+          <button onClick={exportJson} className="btn-ghost"><RefreshCw className="size-4" />Exportieren</button>
+        </Row>
+
+        <Row label="Import aus Datei" hint="JSON wiederherstellen. ALLE bestehenden Daten werden ersetzt.">
+          <label className="btn-ghost cursor-pointer">
+            <Upload className="size-4" />Datei wählen
+            <input type="file" accept="application/json,.json" className="hidden" onChange={handleImport} />
+          </label>
+        </Row>
+
+        <Row label="Beispiel-Schema" hint="JSON-Vorlage in die Zwischenablage kopieren - hilfreich um mit ChatGPT/Claude eigene Daten zu generieren.">
+          <button onClick={copyExampleSchema} className="btn-ghost"><Database className="size-4" />Schema kopieren</button>
+        </Row>
+
+        {importStatus && (
+          <div className={`mt-3 rounded-2xl p-3 text-sm whitespace-pre-line ${importStatus.kind === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
+            {importStatus.msg}
+          </div>
+        )}
+
+        <div className="mt-3 text-xs text-ink-500">
+          Du willst Daten aus einer anderen App importieren? Frag Claude Code mit dem <code className="font-mono bg-ink-100 px-1.5 py-0.5 rounded">IMPORT_GUIDE.md</code> aus dem Repo - dort steht das exakte Format.
+        </div>
+      </Card>
+
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Verwaltung</h3>
+        <Row label="Demodaten" hint="Lädt fertige Beispieldaten (überschreibt alles).">
+          <button onClick={loadDemo} className="btn-ghost"><Wand2 className="size-4" />Laden</button>
+        </Row>
+        <Row label="Speicherplatz">
+          <button onClick={checkStorage} className="btn-ghost text-xs"><Database className="size-4" />Prüfen</button>
+          {storageInfo && <span className="text-xs text-ink-600">{storageInfo}</span>}
+        </Row>
+        <Row label="Alles zurücksetzen" hint="Löscht ALLE lokalen Daten unwiderruflich.">
+          <button onClick={reset} className="btn-soft text-rose-600"><Trash2 className="size-4" />Zurücksetzen</button>
+        </Row>
+      </Card>
     </div>
   );
 }
