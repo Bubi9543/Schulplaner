@@ -267,9 +267,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
             <span className="text-sm text-ink-700">Note steht aus (Termin vormerken)</span>
           </label>
 
-          {settings?.isMainDevice && (
-            <PhotoAttachment refId={gradeIdRef.current} refType="grade" />
-          )}
+          <PhotoAttachment refId={gradeIdRef.current} refType="grade" />
         </div>
       </Modal>
       <Confetti trigger={confettiTrigger} />

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
-  ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Camera, Check,
+  ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
@@ -14,7 +14,7 @@ import { CATEGORY_LABEL } from '@/lib/grading';
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
 const ONBOARDING_PENDING_KEY = 'onboarding_pending';
-const MAX_STEP = 5;
+const MAX_STEP = 4;
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Mathematik', short: 'M',   category: 'hauptfach' },
@@ -50,7 +50,7 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-const STEP_ICONS = [Sparkles, User, Trophy, BookOpen, Camera, Cloud];
+const STEP_ICONS = [Sparkles, User, Trophy, BookOpen, Cloud];
 
 function iconGrad(step: number) {
   const c = STEP_CFG[step];
@@ -80,9 +80,8 @@ export function Onboarding() {
   const [name, setName]               = useState('');
   const [system, setSystem]           = useState<GradingSystem>('bayern');
   const [subjects, setSubjects]       = useState<Draft[]>([]);
-  const [isMainDevice, setIsMainDevice] = useState(false);
 
-  const pendingRef = useRef<{ name: string; system: GradingSystem; subjects: Draft[]; isMainDevice: boolean } | null>(null);
+  const pendingRef = useRef<{ name: string; system: GradingSystem; subjects: Draft[] } | null>(null);
 
   // Restore state saved before Google OAuth redirect
   useEffect(() => {
@@ -98,12 +97,12 @@ export function Onboarding() {
     const saved = pendingRef.current;
     pendingRef.current = null;
     localStorage.removeItem(ONBOARDING_PENDING_KEY);
-    finishWithData(saved.name, saved.system, saved.subjects, saved.isMainDevice);
+    finishWithData(saved.name, saved.system, saved.subjects);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
   function saveStateForRedirect() {
-    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, system, subjects, isMainDevice }));
+    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, system, subjects }));
   }
 
   function toggleStarter(s: typeof STARTER_SUBJECTS[number]) {
@@ -122,12 +121,12 @@ export function Onboarding() {
     setSubjects(prev => [...prev, { name: n.trim(), short: n.trim().slice(0, 2), color, category: 'nebenfach', system }]);
   }
 
-  async function finishWithData(n: string, sys: GradingSystem, subjs: Draft[], mainDevice: boolean) {
+  async function finishWithData(n: string, sys: GradingSystem, subjs: Draft[]) {
     for (const s of subjs) await addSubject({ ...s, system: sys });
-    await setSettings({ name: n.trim() || undefined, system: sys, onboarded: true, demo: false, isMainDevice: mainDevice });
+    await setSettings({ name: n.trim() || undefined, system: sys, onboarded: true, demo: false });
     await load();
   }
-  async function finish() { await finishWithData(name, system, subjects, isMainDevice); }
+  async function finish() { await finishWithData(name, system, subjects); }
   async function tryDemo() { await installDemo(); await load(); }
 
   function goNext() { setPrevStep(step); setStep(s => Math.min(MAX_STEP, s + 1)); }
@@ -245,11 +244,6 @@ export function Onboarding() {
               </motion.div>
             )}
             {step === 4 && (
-              <motion.div key="d" {...slide(forward)}>
-                <DeviceStep isMainDevice={isMainDevice} setIsMainDevice={setIsMainDevice} next={goNext} back={goPrev} gradient={gradient} />
-              </motion.div>
-            )}
-            {step === 5 && (
               <motion.div key="a" {...slide(forward)}>
                 <AccountStep finish={finish} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
               </motion.div>
@@ -561,44 +555,6 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
   );
 }
 
-/* ─── Step 4: Main device ────────────────────────────────────────────── */
-
-function DeviceStep({ isMainDevice, setIsMainDevice, next, back, gradient }: {
-  isMainDevice: boolean; setIsMainDevice: (v: boolean) => void;
-  next: () => void; back: () => void; gradient: string;
-}) {
-  return (
-    <GlassCard className="p-8">
-      <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Ist das dein Hauptgerät?</h2>
-      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
-        Auf dem Hauptgerät kannst du Fotos von Aufgaben und Tests direkt mit der Kamera hinzufügen.
-        Du kannst das später in den Einstellungen ändern.
-      </p>
-
-      <div className="mt-6 space-y-3">
-        <SelectCard
-          active={isMainDevice} onClick={() => setIsMainDevice(true)}
-          title="Ja, Hauptgerät"
-          sub="Fotos zu Noten und Aufgaben hinzufügen (z. B. Klassenarbeit abfotografieren)"
-          gradient={gradient}
-        />
-        <SelectCard
-          active={!isMainDevice} onClick={() => setIsMainDevice(false)}
-          title="Nein, Nebengerät"
-          sub="Nur Noten und Aufgaben verwalten – ohne Kamera-Funktion"
-          gradient={gradient}
-        />
-      </div>
-
-      <div className="mt-5">
-        <PrimaryBtn onClick={next} gradient={gradient}>
-          Weiter <ChevronRight className="size-4" />
-        </PrimaryBtn>
-      </div>
-    </GlassCard>
-  );
-}
 
 /* ─── Step 5: Account ────────────────────────────────────────────────── */
 

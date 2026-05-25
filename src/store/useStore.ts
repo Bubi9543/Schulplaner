@@ -480,11 +480,19 @@ export const useStore = create<State>((set, get) => ({
 
     // Reload um neuen Filter-State herzustellen
     await get().load();
+
+    // Cloud-Sync für neues Jahr (und alle ggf. kopierten Subjects/Lessons werden beim nächsten uploadAll erfasst)
+    const { authUser } = get();
+    if (authUser) syncRow('school_years', year.id, year, authUser.id);
+
     return year;
   },
   async updateSchoolYear(id, patch) {
     await db.schoolYears.update(id, patch);
     set(state => ({ schoolYears: state.schoolYears.map(y => y.id === id ? { ...y, ...patch } : y) }));
+    const updated = get().schoolYears.find(y => y.id === id);
+    const { authUser } = get();
+    if (authUser && updated) syncRow('school_years', id, updated, authUser.id);
   },
   async deleteSchoolYear(id, mode = 'wipe') {
     const wasActive = get().activeSchoolYearId === id;
@@ -510,6 +518,8 @@ export const useStore = create<State>((set, get) => ({
     } else {
       set(state => ({ schoolYears: state.schoolYears.filter(y => y.id !== id) }));
     }
+    const { authUser } = get();
+    if (authUser) deleteRow('school_years', id);
   },
   async setActiveSchoolYear(id) {
     const years = get().schoolYears;

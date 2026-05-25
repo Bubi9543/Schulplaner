@@ -466,9 +466,6 @@ function SyncCard() {
           </button>
           {pullMsg && <span className="text-xs text-emerald-600">{pullMsg}</span>}
         </Row>
-        <Row label="Dieses Gerät ist Hauptgerät" hint="Auf dem Hauptgerät können Fotos an Noten und Aufgaben angehängt werden.">
-          <Toggle checked={settings.isMainDevice} onChange={v => setSettings({ isMainDevice: v })} />
-        </Row>
         <Row label="Abmelden">
           <button onClick={signOut} className="btn-soft text-rose-600"><LogOut className="size-4" />Abmelden</button>
         </Row>

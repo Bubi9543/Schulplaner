@@ -146,9 +146,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <textarea className="input min-h-[80px]" value={description} onChange={e => setDescription(e.target.value)} />
         </div>
 
-        {settings?.isMainDevice && (
-          <PhotoAttachment refId={taskIdRef.current} refType="task" />
-        )}
+        <PhotoAttachment refId={taskIdRef.current} refType="task" />
       </div>
     </Modal>
   );

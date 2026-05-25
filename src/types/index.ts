@@ -125,8 +125,13 @@ export interface Photo {
   id: string;
   refId: string;
   refType: 'grade' | 'task';
-  dataUrl: string;
+  /** Pfad in Supabase Storage, Form: "{userId}/{photoId}.jpg". Neue Fotos haben das. */
+  storagePath?: string;
+  /** Legacy: base64 Data-URL. Ältere Fotos vor der Cloud-Migration. */
+  dataUrl?: string;
   createdAt: number;
+  /** Falls schon vom Cloud-Sync gepushed. */
+  userId?: string;
 }
 
 export interface AppSettings {
@@ -138,7 +143,6 @@ export interface AppSettings {
   system: GradingSystem;
   onboarded: boolean;
   demo: boolean;
-  isMainDevice: boolean;
   theme: ThemeMode;
   colorTheme: ColorThemeId;
   density: DensityMode;
@@ -221,7 +225,6 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   averageDigits: 2,
   trendThreshold: 0.2,
   gradingConfig: DEFAULT_GRADING_CONFIG,
-  isMainDevice: false,
 };
 
 function structuredCloneSafe<T>(v: T): T {
