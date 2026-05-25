@@ -9,12 +9,12 @@ import { Card } from '@/components/Card';
  */
 const LEGAL_DATA = {
   // ─── Bitte hier eure echten Daten eintragen ─────────────────────────────
-  parentName: 'Max & Erika Mustermann',         // Name der/des Erziehungsberechtigten
+  parentName: 'Jens Becker',         // Name der/des Erziehungsberechtigten
   childName: 'Conor Becker',                    // Dein Name (technischer Betreiber)
-  streetAddress: 'Musterstraße 1',
-  city: '12345 Musterstadt',
+  streetAddress: 'Lohengrinstraße 17',
+  city: '81925 München',
   country: 'Deutschland',
-  email: 'kontakt@conor.at',                    // Kontakt-Email
+  email: 'cnrbckr@gmail.com',                   // Kontakt-Email
   phone: '',                                    // optional, leer lassen wenn nicht gewünscht
   websiteUrl: 'https://schulplaner.conor.at',
   // ───────────────────────────────────────────────────────────────────────
