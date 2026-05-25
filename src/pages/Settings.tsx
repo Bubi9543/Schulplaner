@@ -798,6 +798,8 @@ function SchoolYearsSection() {
 
 function DataSection() {
   const load = useStore(s => s.load);
+  const authUser = useStore(s => s.authUser);
+  const replaceCloud = useStore(s => s.replaceCloud);
   const [storageInfo, setStorageInfo] = useState<string>('');
   const [importStatus, setImportStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
 
@@ -833,6 +835,13 @@ function DataSection() {
       ];
       let msg = `Import erfolgreich: ${lines.join(' · ')}`;
       if (result.warnings.length) msg += `\n\nHinweise:\n• ${result.warnings.join('\n• ')}`;
+      // Wenn eingeloggt: Cloud-Stand komplett mit Import-Stand überschreiben,
+      // damit das auf allen Geräten ankommt.
+      if (authUser) {
+        setImportStatus({ kind: 'ok', msg: msg + '\n\n⏳ Synchronisiere in die Cloud …' });
+        await replaceCloud();
+        msg += '\n\n☁️ In die Cloud gepusht – andere Geräte ziehen automatisch nach.';
+      }
       setImportStatus({ kind: 'ok', msg });
     } catch (err) {
       setImportStatus({ kind: 'err', msg: 'Fehler: ' + (err instanceof Error ? err.message : String(err)) });
@@ -845,6 +854,8 @@ function DataSection() {
     if (!confirm('Demodaten laden? Bestehende Daten werden ersetzt.')) return;
     await installDemo();
     await load();
+    // Wenn eingeloggt: Cloud-Stand komplett mit Demo überschreiben.
+    if (authUser) await replaceCloud();
   }
 
   async function reset() {

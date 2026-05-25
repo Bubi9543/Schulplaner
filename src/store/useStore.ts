@@ -104,6 +104,12 @@ interface State {
   pullFromCloud: () => Promise<boolean>;
   /** Destruktiv: alle Cloud-Daten des Users löschen. Lokale Daten bleiben. */
   wipeCloud: () => Promise<{ rows: number; files: number } | null>;
+  /**
+   * Hard-Replace: Cloud-Stand wird komplett mit dem aktuellen lokalen Stand überschrieben.
+   * Wird nach Massen-Operationen aufgerufen, die Dexie direkt schreiben (Import, Demo-Load),
+   * damit auch in der Cloud nichts „Geister-Zeilen" zurückbleiben.
+   */
+  replaceCloud: () => Promise<void>;
 
   addSubject: (s: Omit<Subject, 'id' | 'createdAt'>) => Promise<Subject>;
   updateSubject: (id: string, patch: Partial<Subject>) => Promise<void>;
@@ -367,23 +373,7 @@ export const useStore = create<State>((set, get) => ({
     }
 
     // Realtime-Subscription für alle Tabellen
-    startRealtime(authUser.id, {
-      onUpsert: async (table, data) => {
-        await applyRealtimeUpsert(table, data, set, get);
-      },
-      onDelete: async (table, id) => {
-        await applyRealtimeDelete(table, id, set, get);
-      },
-      onSettings: async (data) => {
-        await applyRealtimeSettings(data, set);
-      },
-      onStatusChange: (status) => {
-        if (status === 'connected') set({ liveSync: 'live' });
-        else if (status === 'connecting') set({ liveSync: 'connecting' });
-        else if (status === 'error') set({ liveSync: 'error' });
-        else if (status === 'closed') set({ liveSync: 'off' });
-      },
-    });
+    startRealtimeHandlers(authUser.id, set, get);
   },
 
   stopAutoSync() {
@@ -417,6 +407,30 @@ export const useStore = create<State>((set, get) => ({
       set({ syncStatus: 'error' });
       return false;
     }
+  },
+
+  async replaceCloud() {
+    const { authUser } = get();
+    if (!authUser || !supabase) return;
+
+    // Realtime stoppen, damit unsere DELETE/UPSERT-Events nicht selbst zurückkommen.
+    stopRealtime();
+    autoSyncRunning = false;
+    set({ syncStatus: 'syncing', liveSync: 'connecting' });
+    try {
+      // 1) Alles in der Cloud weg, damit „Geister-Zeilen" aus der vorherigen
+      //    Datei nicht hängenbleiben.
+      await deleteAllCloudData(authUser.id);
+      // 2) Aktuellen lokalen Stand hochladen.
+      await uploadAll(authUser.id);
+      set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
+    } catch (e) {
+      console.warn('replaceCloud fehlgeschlagen:', e);
+      set({ syncStatus: 'error' });
+    }
+    // 3) Realtime neu aufsetzen, damit Live-Sync weiterläuft.
+    autoSyncRunning = true;
+    startRealtimeHandlers(authUser.id, set, get);
   },
 
   async wipeCloud() {
@@ -708,6 +722,27 @@ export const useStore = create<State>((set, get) => ({
 
 type SetFn = (partial: Partial<State> | ((state: State) => Partial<State>)) => void;
 type GetFn = () => State;
+
+/** Schmaler Wrapper, damit startAutoSync und replaceCloud die gleichen Handler installieren. */
+function startRealtimeHandlers(userId: string, set: SetFn, get: GetFn): void {
+  startRealtime(userId, {
+    onUpsert: async (table, data) => {
+      await applyRealtimeUpsert(table, data, set, get);
+    },
+    onDelete: async (table, id) => {
+      await applyRealtimeDelete(table, id, set, get);
+    },
+    onSettings: async (data) => {
+      await applyRealtimeSettings(data, set);
+    },
+    onStatusChange: (status) => {
+      if (status === 'connected') set({ liveSync: 'live' });
+      else if (status === 'connecting') set({ liveSync: 'connecting' });
+      else if (status === 'error') set({ liveSync: 'error' });
+      else if (status === 'closed') set({ liveSync: 'off' });
+    },
+  });
+}
 
 async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, get: GetFn): Promise<void> {
   const data = raw as Record<string, unknown> & { id: string };
