@@ -122,6 +122,11 @@ export function Sidebar() {
         <div className="font-semibold text-ink-700 mb-1">Tipp</div>
         Klicke im Stundenplan auf ein Fach – du springst direkt zur Fach-Analyse.
       </div>
+      <div className="flex items-center justify-center gap-3 text-[11px] text-ink-400 mt-1">
+        <NavLink to="/impressum" className="hover:text-ink-700 transition">Impressum</NavLink>
+        <span>·</span>
+        <NavLink to="/datenschutz" className="hover:text-ink-700 transition">Datenschutz</NavLink>
+      </div>
     </aside>
   );
 }

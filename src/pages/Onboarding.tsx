@@ -629,6 +629,12 @@ function AccountStep({ finish, back, onSaveState, gradient }: {
       <button onClick={finish} className="mt-4 w-full py-2 text-sm text-ink-400 hover:text-ink-600 transition">
         Überspringen – später in Einstellungen einrichten
       </button>
+
+      <div className="mt-3 flex items-center justify-center gap-3 text-[11px] text-ink-400">
+        <a href="/datenschutz" className="hover:text-ink-700 transition">Datenschutz</a>
+        <span>·</span>
+        <a href="/impressum" className="hover:text-ink-700 transition">Impressum</a>
+      </div>
     </GlassCard>
   );
 }

@@ -10,6 +10,7 @@ import { SchedulePage } from '@/pages/Schedule';
 import { GradesPage } from '@/pages/Grades';
 import { SubjectDetailPage } from '@/pages/SubjectDetail';
 import { SettingsPage } from '@/pages/Settings';
+import { ImpressumPage, DatenschutzPage } from '@/pages/Legal';
 import { applyTheme } from '@/lib/themes';
 
 export default function App() {
@@ -34,13 +35,16 @@ export default function App() {
     );
   }
 
-  if (!settings?.onboarded) {
+  // Impressum & Datenschutz sind immer erreichbar - auch im Onboarding (rechtlich nötig)
+  const isLegalRoute = location.pathname === '/impressum' || location.pathname === '/datenschutz';
+
+  if (!settings?.onboarded && !isLegalRoute) {
     return <Onboarding />;
   }
 
   return (
     <div className="min-h-full flex">
-      <Sidebar />
+      {settings?.onboarded && <Sidebar />}
       <main className="flex-1 min-w-0">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
@@ -50,11 +54,13 @@ export default function App() {
             <Route path="/noten" element={<GradesPage />} />
             <Route path="/noten/:subjectId" element={<SubjectDetailPage />} />
             <Route path="/einstellungen" element={<SettingsPage />} />
+            <Route path="/impressum" element={<ImpressumPage />} />
+            <Route path="/datenschutz" element={<DatenschutzPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AnimatePresence>
       </main>
-      <MobileTabBar />
+      {settings?.onboarded && <MobileTabBar />}
     </div>
   );
 }
