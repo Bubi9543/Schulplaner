@@ -20,6 +20,8 @@ import { AverageRing } from '@/components/AverageRing';
 import { TodayTimeline } from '@/components/TodayTimeline';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
+import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
+import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { useStore } from '@/store/useStore';
 import {
   effectiveWeight, formatAverage, gradeTrend, overallAverage,
@@ -27,7 +29,7 @@ import {
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
-import type { Grade, TaskKind } from '@/types';
+import type { Grade, TaskKind, AppTask } from '@/types';
 
 
 // ─── Widget system ─────────────────────────────────────────────────────────────
@@ -239,7 +241,7 @@ function TimelineWidget() {
   );
 }
 
-function TasksTodayWidget() {
+function TasksTodayWidget({ onSelectTask }: { onSelectTask: (t: AppTask) => void }) {
   const { subjects, tasks } = useStore();
   const todayTasks = useMemo(() =>
     tasks.filter(t => !t.done && t.dueDate && daysUntil(t.dueDate) <= 1),
@@ -260,17 +262,20 @@ function TasksTodayWidget() {
               const subj = subjects.find(s => s.id === t.subjectId);
               return (
                 <li key={t.id} className="flex items-center gap-3 px-1 py-2.5">
-                  <button onClick={() => useStore.getState().toggleTask(t.id)} className="text-ink-400 hover:text-emerald-500 flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); useStore.getState().toggleTask(t.id); }}
+                    className="text-ink-400 hover:text-emerald-500 flex-shrink-0"
+                  >
                     {t.done ? <CheckCircle2 className="size-5 text-emerald-500" /> : <Circle className="size-5" />}
                   </button>
-                  <div className="flex-1 min-w-0">
+                  <button onClick={() => onSelectTask(t)} className="flex-1 min-w-0 text-left">
                     <div className="font-medium text-ink-800 truncate">{t.title}</div>
                     <div className="text-xs text-ink-500 flex items-center gap-2">
                       {subj && <span className="size-2 rounded-full flex-shrink-0" style={{ background: subj.color }} />}
                       <span className="truncate">{subj?.name ?? 'Ohne Fach'}</span>
                       {t.dueDate && <span className="flex-shrink-0">· {relativeDate(t.dueDate)}</span>}
                     </div>
-                  </div>
+                  </button>
                   <span className={cn('chip text-[10px] flex-shrink-0',
                     t.priority === 3 ? 'bg-rose-100 text-rose-600 border-rose-200' :
                     t.priority === 2 ? 'bg-amber-100 text-amber-700 border-amber-200' : '')}>
@@ -286,7 +291,7 @@ function TasksTodayWidget() {
   );
 }
 
-function RecentGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }) {
+function RecentGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => void }) {
   const { subjects, grades } = useStore();
   const recentGrades = useMemo(() =>
     [...grades].filter(g => !g.isPending).sort((a, b) => b.date - a.date).slice(0, 6),
@@ -309,7 +314,7 @@ function RecentGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }
               return (
                 <li key={g.id}>
                   <button
-                    onClick={() => onEditGrade(g)}
+                    onClick={() => onSelectGrade(g)}
                     className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
                   >
                     <GradeBadge value={g.value} system={subj.system} size="sm" />
@@ -328,7 +333,7 @@ function RecentGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }
   );
 }
 
-function PendingGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void }) {
+function PendingGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => void }) {
   const { subjects, grades } = useStore();
   const pendingGrades = useMemo(() =>
     grades.filter(g => g.isPending).sort((a, b) => a.date - b.date).slice(0, 5),
@@ -352,7 +357,7 @@ function PendingGradesWidget({ onEditGrade }: { onEditGrade: (g: Grade) => void 
               return (
                 <li key={g.id}>
                   <button
-                    onClick={() => onEditGrade(g)}
+                    onClick={() => onSelectGrade(g)}
                     className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
                   >
                     <div className="size-9 rounded-xl grid place-items-center text-white font-bold text-xs flex-shrink-0" style={{ background: subj.color }}>{subj.short}</div>
@@ -459,7 +464,7 @@ function SubjectsWidget() {
             );
           })}
           {subjects.length === 0 && (
-            <Link to="/einstellungen"
+            <Link to="/einstellungen?section=subjects"
               className="col-span-2 rounded-2xl border-2 border-dashed border-ink-200 grid place-items-center p-4 text-ink-500 hover:text-ink-700">
               <span className="flex items-center gap-2"><Plus className="size-4" /> Fach anlegen</span>
             </Link>
@@ -473,19 +478,21 @@ function SubjectsWidget() {
 // ─── Widget router ─────────────────────────────────────────────────────────────
 
 function WidgetRouter({
-  type, onEditGrade, onOpenTask,
+  type, onSelectGrade, onSelectTask, onOpenTask,
 }: {
   type: WidgetType;
-  onEditGrade: (g: Grade) => void;
+  onSelectGrade: (g: Grade) => void;
+  onSelectTask: (t: AppTask) => void;
   onOpenTask: (kind?: TaskKind) => void;
 }) {
+  void onOpenTask;
   switch (type) {
     case 'grade-overview':     return <GradeOverviewWidget />;
     case 'grade-trend':        return <GradeTrendWidget />;
     case 'timeline':           return <TimelineWidget />;
-    case 'tasks-today':        return <TasksTodayWidget />;
-    case 'recent-grades':      return <RecentGradesWidget onEditGrade={onEditGrade} />;
-    case 'pending-grades':     return <PendingGradesWidget onEditGrade={onEditGrade} />;
+    case 'tasks-today':        return <TasksTodayWidget onSelectTask={onSelectTask} />;
+    case 'recent-grades':      return <RecentGradesWidget onSelectGrade={onSelectGrade} />;
+    case 'pending-grades':     return <PendingGradesWidget onSelectGrade={onSelectGrade} />;
     case 'grade-distribution': return <GradeDistributionWidget />;
     case 'subjects':           return <SubjectsWidget />;
   }
@@ -505,8 +512,10 @@ export function Dashboard() {
   const { settings, grades, subjects, tasks } = useStore();
 
   const [editMode, setEditMode] = useState(false);
-  const [taskDialog, setTaskDialog] = useState<{ open: boolean; kind?: TaskKind }>({ open: false });
+  const [taskDialog, setTaskDialog] = useState<{ open: boolean; kind?: TaskKind; initial?: Partial<AppTask> }>({ open: false });
   const [gradeDialog, setGradeDialog] = useState<{ open: boolean; initial?: Grade }>({ open: false });
+  const [taskDetail, setTaskDetail] = useState<{ open: boolean; task?: AppTask }>({ open: false });
+  const [gradeDetail, setGradeDetail] = useState<{ open: boolean; grade?: Grade }>({ open: false });
 
   const [widgets, setWidgets] = useState<WidgetInstance[]>(() =>
     loadFromStorage(WIDGETS_KEY, DEFAULT_WIDGETS));
@@ -558,7 +567,8 @@ export function Dashboard() {
   const activeTypes = new Set(widgets.map(w => w.type));
   const availableToAdd = (Object.keys(WIDGET_META) as WidgetType[]).filter(t => !activeTypes.has(t));
 
-  const handleEditGrade = useCallback((g: Grade) => setGradeDialog({ open: true, initial: g }), []);
+  const handleSelectGrade = useCallback((g: Grade) => setGradeDetail({ open: true, grade: g }), []);
+  const handleSelectTask = useCallback((t: AppTask) => setTaskDetail({ open: true, task: t }), []);
   const handleOpenTask = useCallback((kind?: TaskKind) => setTaskDialog({ open: true, kind }), []);
 
   return (
@@ -611,7 +621,8 @@ export function Dashboard() {
               >
                 <WidgetRouter
                   type={w.type}
-                  onEditGrade={handleEditGrade}
+                  onSelectGrade={handleSelectGrade}
+                  onSelectTask={handleSelectTask}
                   onOpenTask={handleOpenTask}
                 />
               </WidgetShell>
@@ -656,8 +667,33 @@ export function Dashboard() {
         )}
       </AnimatePresence>
 
-      <TaskDialog open={taskDialog.open} onClose={() => setTaskDialog({ open: false })} defaultKind={taskDialog.kind} />
+      <TaskDialog
+        open={taskDialog.open}
+        onClose={() => setTaskDialog({ open: false })}
+        defaultKind={taskDialog.kind}
+        initial={taskDialog.initial}
+      />
       <GradeDialog open={gradeDialog.open} onClose={() => setGradeDialog({ open: false })} initial={gradeDialog.initial} />
+
+      {/* Detail-Anzeigen (View-Mode) - öffnen sich beim Klick auf Aufgabe/Note */}
+      <TaskDetailDialog
+        open={taskDetail.open}
+        task={taskDetail.task}
+        onClose={() => setTaskDetail({ open: false })}
+        onEdit={t => {
+          setTaskDetail({ open: false });
+          setTaskDialog({ open: true, initial: t });
+        }}
+      />
+      <GradeDetailDialog
+        open={gradeDetail.open}
+        grade={gradeDetail.grade}
+        onClose={() => setGradeDetail({ open: false })}
+        onEdit={g => {
+          setGradeDetail({ open: false });
+          setGradeDialog({ open: true, initial: g });
+        }}
+      />
     </PageShell>
   );
 }

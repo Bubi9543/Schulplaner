@@ -6,6 +6,7 @@ import { Sidebar, MobileTabBar } from '@/components/Sidebar';
 import { Onboarding } from '@/pages/Onboarding';
 import { Dashboard } from '@/pages/Dashboard';
 import { TasksPage } from '@/pages/Tasks';
+import { CalendarPage } from '@/pages/Calendar';
 import { SchedulePage } from '@/pages/Schedule';
 import { GradesPage } from '@/pages/Grades';
 import { SubjectDetailPage } from '@/pages/SubjectDetail';
@@ -20,6 +21,24 @@ export default function App() {
   const location = useLocation();
 
   useEffect(() => { load(); }, [load]);
+
+  // OAuth-Callback (Google) hinterlässt einen leeren oder token-haltigen
+  // Hash in der URL. Sobald Supabase-js die Session konsumiert hat,
+  // wegputzen — sonst sieht der Nutzer kurz "/#" und manche Browser/PWAs
+  // rendern den Hintergrund komisch (deshalb war das Schwarzbild).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Etwas verzögert, damit Supabase erst seine Tokens aus dem Fragment
+    // ziehen kann, bevor wir es löschen.
+    const t = setTimeout(() => {
+      const h = window.location.hash;
+      if (!h) return;
+      if (h === '#' || /access_token|refresh_token|provider_token|error=/.test(h)) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    }, 50);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (settings?.colorTheme === 'rainbow') {
@@ -50,6 +69,7 @@ export default function App() {
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/aufgaben" element={<TasksPage />} />
+            <Route path="/kalender" element={<CalendarPage />} />
             <Route path="/stundenplan" element={<SchedulePage />} />
             <Route path="/noten" element={<GradesPage />} />
             <Route path="/noten/:subjectId" element={<SubjectDetailPage />} />

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import type { Grade, GradeKind } from '@/types';
-import { KIND_LABEL, getSystemMeta, gradeColor, isGoodGrade, isLargeAssessmentKind } from '@/lib/grading';
+import { BUILTIN_GRADE_KINDS } from '@/types';
+import { getKindLabel, getSystemMeta, gradeColor, isGoodGrade, isLargeAssessmentKind } from '@/lib/grading';
 import { hexToRgba } from '@/lib/utils';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
 import { Confetti } from '@/components/CountUp';
@@ -17,7 +18,9 @@ interface Props {
   defaultSubjectId?: string;
 }
 
-const KIND_OPTIONS: GradeKind[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
+const BUILTIN_KIND_ORDER: GradeKind[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
+// Sanity-Check: BUILTIN_KIND_ORDER muss eine Permutation von BUILTIN_GRADE_KINDS sein
+void BUILTIN_GRADE_KINDS;
 
 const WEIGHT_PRESETS: Array<{ value: number; label: string }> = [
   { value: 0.5, label: '×½' },
@@ -143,8 +146,9 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
 
   const color = gradeColor(value, system, config);
   const customActive = !isPreset(weightMultiplier);
-  const isLargeKind = isLargeAssessmentKind(kind);
+  const isLargeKind = isLargeAssessmentKind(kind, config);
   const showCategoryHint = subject.system === 'bayern' && subject.category !== 'nebenfach';
+  const customKinds = config.customKinds ?? [];
 
   return (
     <>
@@ -206,16 +210,27 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
           <div>
             <label className="label">Art</label>
             <div className="flex flex-wrap gap-2">
-              {KIND_OPTIONS.map(k => (
+              {BUILTIN_KIND_ORDER.map(k => (
                 <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
-                  {KIND_LABEL[k]}
+                  {getKindLabel(k, config)}
+                </button>
+              ))}
+              {customKinds.map(c => (
+                <button key={c.id} type="button" onClick={() => setKind(c.id)}
+                  className={`chip ${kind === c.id ? 'chip-active' : ''}`}
+                  title={c.weighting === 'large' ? 'Eigene Kategorie · zählt wie Schulaufgabe' : 'Eigene Kategorie · zählt wie Mündlich'}
+                >
+                  {c.label}
+                  <span className="ml-1 opacity-60 text-[10px]">
+                    {c.weighting === 'large' ? '· SA' : '· Mdl'}
+                  </span>
                 </button>
               ))}
             </div>
             {showCategoryHint && (
               <div className="subtle mt-1.5 text-xs">
                 {isLargeKind
-                  ? `Schulaufgabe/Klausur zählt ${subject.category === 'hauptfach' ? 'doppelt' : '1:1'} mit dem Rest.`
+                  ? `Diese Note zählt ${subject.category === 'hauptfach' ? 'doppelt' : '1:1'} mit dem Rest (Schulaufgaben-Block).`
                   : 'Wird zum Schnitt der kleinen Leistungen verrechnet.'}
               </div>
             )}

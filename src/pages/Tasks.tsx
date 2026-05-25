@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, ListTodo, CalendarDays, Filter, CheckCircle2, Circle, Inbox, AlertCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Plus, ListTodo, Filter, CheckCircle2, Circle, AlertTriangle, Inbox } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
+import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
-import { addDays, isSameDay, relativeDate, startOfWeek } from '@/lib/utils';
+import { relativeDate } from '@/lib/utils';
 import type { AppTask, TaskKind } from '@/types';
-
-type View = 'list' | 'calendar' | 'kanban';
 
 const KIND_META: Record<TaskKind, { label: string; icon: string }> = {
   hausaufgabe: { label: 'Hausaufgabe', icon: '📝' },
@@ -18,15 +17,32 @@ const KIND_META: Record<TaskKind, { label: string; icon: string }> = {
   todo: { label: 'Todo', icon: '✅' },
 };
 
+type BucketKey = 'heute' | 'morgen' | 'thisWeek' | 'nextWeek' | 'later' | 'noDate' | 'overdue';
+
+interface Bucket {
+  key: BucketKey;
+  label: string;
+  hint?: string;
+  tone: 'danger' | 'warn' | 'default' | 'muted';
+  items: AppTask[];
+}
+
+function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 export function TasksPage() {
   const tasks = useStore(s => s.tasks);
   const subjects = useStore(s => s.subjects);
   const toggleTask = useStore(s => s.toggleTask);
-  const [view, setView] = useState<View>('calendar');
+
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
   const [filterSubject, setFilterSubject] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
-  const [dialog, setDialog] = useState<{ open: boolean; task?: AppTask; defaultKind?: TaskKind }>({ open: false });
+  const [detail, setDetail] = useState<{ open: boolean; task?: AppTask }>({ open: false });
+  const [editor, setEditor] = useState<{ open: boolean; task?: Partial<AppTask>; defaultKind?: TaskKind }>({ open: false });
 
   const filtered = useMemo(() => {
     return tasks.filter(t => {
@@ -37,19 +53,72 @@ export function TasksPage() {
     });
   }, [tasks, filterKind, filterSubject, showDone]);
 
+  const buckets = useMemo<Bucket[]>(() => {
+    const today = startOfDay(Date.now());
+    const tomorrow = today + 86400000;
+    const dayAfterTomorrow = today + 2 * 86400000;
+    const inAWeek = today + 7 * 86400000;
+    const inTwoWeeks = today + 14 * 86400000;
+
+    const overdue: AppTask[] = [];
+    const heute: AppTask[] = [];
+    const morgen: AppTask[] = [];
+    const thisWeek: AppTask[] = [];
+    const nextWeek: AppTask[] = [];
+    const later: AppTask[] = [];
+    const noDate: AppTask[] = [];
+
+    for (const t of filtered) {
+      if (!t.dueDate) {
+        noDate.push(t);
+        continue;
+      }
+      const due = startOfDay(t.dueDate);
+      // Überfällig: mehr als 1 Tag nach Fälligkeit UND noch offen
+      if (!t.done && due < today - 86400000) {
+        overdue.push(t);
+        continue;
+      }
+      if (due === today) heute.push(t);
+      else if (due === tomorrow) morgen.push(t);
+      else if (due >= dayAfterTomorrow && due < inAWeek) thisWeek.push(t);
+      else if (due >= inAWeek && due < inTwoWeeks) nextWeek.push(t);
+      else if (due >= inTwoWeeks) later.push(t);
+      else heute.push(t); // gestern noch nicht überfällig (Karenztag)
+    }
+
+    const sortByDue = (a: AppTask, b: AppTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || a.priority - b.priority;
+    overdue.sort(sortByDue);
+    heute.sort(sortByDue);
+    morgen.sort(sortByDue);
+    thisWeek.sort(sortByDue);
+    nextWeek.sort(sortByDue);
+    later.sort(sortByDue);
+    noDate.sort((a, b) => b.createdAt - a.createdAt);
+
+    return [
+      { key: 'heute',    label: 'Heute',         hint: 'Fällig heute',                tone: 'warn',    items: heute },
+      { key: 'morgen',   label: 'Morgen',        tone: 'default', items: morgen },
+      { key: 'thisWeek', label: 'Diese Woche',   tone: 'default', items: thisWeek },
+      { key: 'nextWeek', label: 'Nächste Woche', tone: 'default', items: nextWeek },
+      { key: 'later',    label: 'Später',        tone: 'muted',   items: later },
+      { key: 'noDate',   label: 'Ohne Datum',    tone: 'muted',   items: noDate },
+      { key: 'overdue',  label: 'Überfällig',    hint: 'Mehr als 1 Tag nach Fälligkeit, noch nicht erledigt', tone: 'danger', items: overdue },
+    ];
+  }, [filtered]);
+
+  const openCount = tasks.filter(t => !t.done).length;
+  const doneCount = tasks.filter(t => t.done).length;
+  const totalShown = buckets.reduce((acc, b) => acc + b.items.length, 0);
+
   return (
     <PageShell
       title="Aufgaben"
-      subtitle={`${tasks.filter(t => !t.done).length} offen · ${tasks.filter(t => t.done).length} erledigt`}
+      subtitle={`${openCount} offen · ${doneCount} erledigt`}
       actions={
-        <>
-          <div className="glass rounded-2xl p-1 flex">
-            <ViewBtn active={view === 'calendar'} onClick={() => setView('calendar')} icon={<CalendarDays className="size-4" />} label="Kalender" />
-            <ViewBtn active={view === 'list'} onClick={() => setView('list')} icon={<ListTodo className="size-4" />} label="Liste" />
-            <ViewBtn active={view === 'kanban'} onClick={() => setView('kanban')} icon={<Inbox className="size-4" />} label="Board" />
-          </div>
-          <button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neu</button>
-        </>
+        <button className="btn-primary" onClick={() => setEditor({ open: true })}>
+          <Plus className="size-4" />Neu
+        </button>
       }
     >
       <Card className="mb-4">
@@ -75,219 +144,117 @@ export function TasksPage() {
         </div>
       </Card>
 
-      <AnimatePresence mode="wait">
-        {view === 'calendar' && (
-          <motion.div key="cal" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-            <CalendarView tasks={filtered} onSelect={t => setDialog({ open: true, task: t })} onNew={(d) => { const task: Partial<AppTask> = { dueDate: d.getTime() }; setDialog({ open: true, task: task as AppTask }); }} />
-          </motion.div>
-        )}
-        {view === 'list' && (
-          <motion.div key="list" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-            <ListView tasks={filtered} onSelect={t => setDialog({ open: true, task: t })} onToggle={toggleTask} />
-          </motion.div>
-        )}
-        {view === 'kanban' && (
-          <motion.div key="kan" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-            <KanbanView tasks={filtered} onSelect={t => setDialog({ open: true, task: t })} onToggle={toggleTask} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {totalShown === 0 ? (
+        <Card>
+          <div className="flex flex-col items-center text-center py-10">
+            <div className="size-14 rounded-2xl bg-white/70 grid place-items-center shadow-soft mb-4">
+              <Inbox className="size-7 text-ink-500" />
+            </div>
+            <h3 className="font-display font-bold text-ink-800 text-lg">Keine Aufgaben</h3>
+            <p className="subtle mt-1 max-w-sm">{tasks.length ? 'Filter prüfen oder erledigte einblenden.' : 'Leg los — was steht als nächstes an?'}</p>
+            <button onClick={() => setEditor({ open: true })} className="btn-primary mt-4"><Plus className="size-4" />Neue Aufgabe</button>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {buckets.map((b, idx) => b.items.length === 0 ? null : (
+            <motion.div key={b.key}
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.03 }}>
+              <BucketCard bucket={b} onSelect={t => setDetail({ open: true, task: t })} onToggle={toggleTask} />
+            </motion.div>
+          ))}
+        </div>
+      )}
 
-      <TaskDialog open={dialog.open} initial={dialog.task} defaultKind={dialog.defaultKind} onClose={() => setDialog({ open: false })} />
+      <TaskDetailDialog
+        open={detail.open}
+        task={detail.task}
+        onClose={() => setDetail({ open: false })}
+        onEdit={t => {
+          setDetail({ open: false });
+          setEditor({ open: true, task: t });
+        }}
+      />
+      <TaskDialog
+        open={editor.open}
+        initial={editor.task}
+        onClose={() => setEditor({ open: false })}
+      />
     </PageShell>
   );
 }
 
-function ViewBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button onClick={onClick} className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition ${active ? 'text-white' : 'text-ink-600'}`}>
-      {active && <motion.span layoutId="task-view" className="absolute inset-0 rounded-xl theme-gradient" />}
-      <span className="relative flex items-center gap-1.5">{icon}{label}</span>
-    </button>
-  );
-}
-
-function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: (t: AppTask) => void; onNew: (d: Date) => void }) {
+function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: (t: AppTask) => void; onToggle: (id: string) => void }) {
   const subjects = useStore(s => s.subjects);
-  const [cursor, setCursor] = useState<Date>(() => {
-    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
-  });
-  const monthStart = new Date(cursor); monthStart.setDate(1);
-  const monthName = monthStart.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
-  const gridStart = startOfWeek(monthStart, 1);
-  const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
-
-  const tasksByDay = useMemo(() => {
-    const m = new Map<string, AppTask[]>();
-    for (const t of tasks) {
-      if (!t.dueDate) continue;
-      const d = new Date(t.dueDate);
-      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      const arr = m.get(k) ?? [];
-      arr.push(t);
-      m.set(k, arr);
+  const toneClass = (() => {
+    switch (bucket.tone) {
+      case 'danger': return 'text-rose-700';
+      case 'warn':   return 'text-orange-600';
+      case 'muted':  return 'text-ink-500';
+      default:       return 'text-ink-800';
     }
-    return m;
-  }, [tasks]);
+  })();
+  const chipClass = (() => {
+    switch (bucket.tone) {
+      case 'danger': return 'bg-rose-100 text-rose-700 border-rose-200';
+      case 'warn':   return 'bg-orange-100 text-orange-700 border-orange-200';
+      case 'muted':  return 'bg-ink-100 text-ink-600 border-ink-200';
+      default:       return '';
+    }
+  })();
+  const cardClass = bucket.tone === 'danger' ? 'border-rose-200/80 bg-rose-50/40' : '';
 
   return (
-    <Card>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <button className="size-9 grid place-items-center rounded-full hover:bg-white/80" onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() - 1); setCursor(d); }}><ChevronLeft className="size-4" /></button>
-          <div className="font-display font-bold text-lg capitalize min-w-[150px] text-center">{monthName}</div>
-          <button className="size-9 grid place-items-center rounded-full hover:bg-white/80" onClick={() => { const d = new Date(cursor); d.setMonth(d.getMonth() + 1); setCursor(d); }}><ChevronRight className="size-4" /></button>
-        </div>
-        <button onClick={() => { const d = new Date(); d.setDate(1); setCursor(d); }} className="chip">Heute</button>
+    <Card className={cardClass}>
+      <div className="flex items-center gap-2 mb-2.5">
+        {bucket.tone === 'danger' && <AlertTriangle className="size-5 text-rose-600" />}
+        {bucket.tone !== 'danger' && bucket.key === 'heute' && <ListTodo className="size-5 text-orange-500" />}
+        <h3 className={`h3 ${toneClass}`}>{bucket.label}</h3>
+        <span className={`chip ${chipClass}`}>{bucket.items.length}</span>
+        {bucket.hint && <span className="text-[11px] text-ink-400 ml-1 hidden sm:inline">{bucket.hint}</span>}
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-ink-500 mb-1">
-        {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => <div key={d}>{d}</div>)}
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {cells.map((d, i) => {
-          const inMonth = d.getMonth() === monthStart.getMonth();
-          const isToday = isSameDay(d, new Date());
-          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-          const day = tasksByDay.get(key) ?? [];
+      <ul className="divide-y divide-white/50">
+        {bucket.items.map(t => {
+          const subj = subjects.find(s => s.id === t.subjectId);
           return (
-            <div
-              key={i}
-              onClick={() => onNew(d)}
-              className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${
-                isToday ? 'theme-gradient-soft border-theme-soft' : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent'
-              }`}
-            >
-              <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
-              <div className="mt-1 flex flex-col gap-0.5">
-                {day.slice(0, 3).map(t => {
-                  const subj = subjects.find(s => s.id === t.subjectId);
-                  return (
-                    <button key={t.id} onClick={(e) => { e.stopPropagation(); onSelect(t); }}
-                      className={`text-[10px] font-medium truncate rounded-md px-1.5 py-0.5 text-white text-left ${t.done ? 'opacity-50 line-through' : ''}`}
-                      style={{ background: subj?.color ?? '#64748b' }}>
-                      {t.title}
-                    </button>
-                  );
-                })}
-                {day.length > 3 && <div className="text-[10px] text-ink-500 px-1">+{day.length - 3} mehr</div>}
-              </div>
-            </div>
+            <li key={t.id} className="flex items-center gap-3 py-2.5 group">
+              <button
+                onClick={() => onToggle(t.id)}
+                className={`grid place-items-center size-7 rounded-full hover:bg-white/70 transition ${t.done ? 'text-emerald-500' : 'text-ink-400 hover:text-emerald-500'}`}
+                aria-label={t.done ? 'Erledigt' : 'Offen'}
+              >
+                {t.done ? <CheckCircle2 className="size-5" /> : <Circle className="size-5" />}
+              </button>
+              <button onClick={() => onSelect(t)} className="flex-1 min-w-0 text-left">
+                <div className={`font-medium text-ink-800 truncate ${t.done ? 'line-through text-ink-400' : ''}`}>{t.title}</div>
+                <div className="text-xs text-ink-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span>{KIND_META[t.kind].icon} {KIND_META[t.kind].label}</span>
+                  {subj && (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="size-2 rounded-full" style={{ background: subj.color }} />
+                        {subj.name}
+                      </span>
+                    </>
+                  )}
+                  {t.dueDate && <><span>·</span><span>{relativeDate(t.dueDate)}</span></>}
+                </div>
+              </button>
+              <span
+                className={`chip text-[10px] flex-shrink-0 ${
+                  t.priority === 3 ? 'bg-rose-100 text-rose-600 border-rose-200'
+                  : t.priority === 2 ? 'bg-amber-100 text-amber-700 border-amber-200'
+                  : ''
+                }`}
+              >
+                {t.priority === 3 ? 'Hoch' : t.priority === 2 ? 'Normal' : 'Niedrig'}
+              </span>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </Card>
-  );
-}
-
-function ListView({ tasks, onSelect, onToggle }: { tasks: AppTask[]; onSelect: (t: AppTask) => void; onToggle: (id: string) => void }) {
-  const subjects = useStore(s => s.subjects);
-  const buckets = useMemo(() => {
-    const out: Record<string, AppTask[]> = { overdue: [], today: [], week: [], later: [], noDate: [] };
-    const now = new Date(); now.setHours(0, 0, 0, 0);
-    for (const t of tasks) {
-      if (!t.dueDate) { out.noDate.push(t); continue; }
-      const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
-      const diff = (d.getTime() - now.getTime()) / 86400000;
-      if (diff < 0) out.overdue.push(t);
-      else if (diff < 1) out.today.push(t);
-      else if (diff < 7) out.week.push(t);
-      else out.later.push(t);
-    }
-    return out;
-  }, [tasks]);
-  const sections: Array<{ key: keyof typeof buckets; label: string; tint?: string }> = [
-    { key: 'overdue', label: 'Überfällig', tint: 'text-rose-600' },
-    { key: 'today', label: 'Heute & Morgen', tint: 'text-orange-600' },
-    { key: 'week', label: 'Diese Woche' },
-    { key: 'later', label: 'Später' },
-    { key: 'noDate', label: 'Ohne Datum' },
-  ];
-
-  if (!tasks.length) {
-    return <Card><div className="text-center py-8 text-ink-500">Keine Aufgaben – genieße den Moment 🌞</div></Card>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {sections.map(sec => buckets[sec.key].length === 0 ? null : (
-        <Card key={sec.key}>
-          <h3 className={`h3 ${sec.tint ?? ''} mb-2 flex items-center gap-2`}>
-            {sec.key === 'overdue' && <AlertCircle className="size-5" />}{sec.label}
-            <span className="chip">{buckets[sec.key].length}</span>
-          </h3>
-          <ul className="divide-y divide-white/50">
-            {buckets[sec.key].map(t => {
-              const subj = subjects.find(s => s.id === t.subjectId);
-              return (
-                <li key={t.id} className="flex items-center gap-3 py-2.5 group">
-                  <button onClick={() => onToggle(t.id)} className="text-ink-400 hover:text-emerald-500">
-                    {t.done ? <CheckCircle2 className="size-5 text-emerald-500" /> : <Circle className="size-5" />}
-                  </button>
-                  <button onClick={() => onSelect(t)} className="flex-1 min-w-0 text-left">
-                    <div className={`font-medium text-ink-800 truncate ${t.done ? 'line-through text-ink-400' : ''}`}>{t.title}</div>
-                    <div className="text-xs text-ink-500 flex items-center gap-2 mt-0.5">
-                      <span>{KIND_META[t.kind].icon} {KIND_META[t.kind].label}</span>
-                      {subj && (<><span>·</span><span className="inline-flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: subj.color }} />{subj.name}</span></>)}
-                      {t.dueDate && <><span>·</span><span>{relativeDate(t.dueDate)}</span></>}
-                    </div>
-                  </button>
-                  <span className={`chip text-[10px] ${t.priority === 3 ? 'bg-rose-100 text-rose-600 border-rose-200' : t.priority === 2 ? 'bg-amber-100 text-amber-700 border-amber-200' : ''}`}>
-                    {t.priority === 3 ? 'Hoch' : t.priority === 2 ? 'Normal' : 'Niedrig'}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function KanbanView({ tasks, onSelect, onToggle }: { tasks: AppTask[]; onSelect: (t: AppTask) => void; onToggle: (id: string) => void }) {
-  const subjects = useStore(s => s.subjects);
-  const cols = [
-    { label: 'Backlog', filter: (t: AppTask) => !t.done && !t.dueDate, accent: 'from-slate-400 to-slate-500' },
-    { label: 'Diese Woche', filter: (t: AppTask) => !t.done && t.dueDate && (t.dueDate - Date.now()) < 7 * 86400000, accent: 'from-orange-400 to-rose-500' },
-    { label: 'Später', filter: (t: AppTask) => !t.done && t.dueDate && (t.dueDate - Date.now()) >= 7 * 86400000, accent: 'from-indigo-400 to-violet-500' },
-    { label: 'Erledigt', filter: (t: AppTask) => t.done, accent: 'from-emerald-400 to-teal-500' },
-  ];
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-      {cols.map(c => {
-        const items = tasks.filter(c.filter);
-        return (
-          <div key={c.label} className="card !p-3">
-            <div className={`rounded-2xl mb-2 px-3 py-2 text-white text-sm font-semibold bg-gradient-to-r ${c.accent} flex items-center justify-between`}>
-              {c.label}<span className="chip bg-white/20 text-white border-white/30">{items.length}</span>
-            </div>
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-              {items.map(t => {
-                const subj = subjects.find(s => s.id === t.subjectId);
-                return (
-                  <button key={t.id} onClick={() => onSelect(t)}
-                    className="block w-full text-left rounded-2xl bg-white/80 hover:bg-white p-3 transition shadow-sm">
-                    <div className="flex items-start gap-2">
-                      <button onClick={(e) => { e.stopPropagation(); onToggle(t.id); }} className="mt-0.5 text-ink-400 hover:text-emerald-500">
-                        {t.done ? <CheckCircle2 className="size-4 text-emerald-500" /> : <Circle className="size-4" />}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-semibold text-sm text-ink-800 ${t.done ? 'line-through text-ink-400' : ''}`}>{t.title}</div>
-                        <div className="text-[10px] text-ink-500 flex items-center gap-1 flex-wrap mt-1">
-                          {subj && <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full" style={{ background: subj.color }} />{subj.short}</span>}
-                          {t.dueDate && <span>· {relativeDate(t.dueDate)}</span>}
-                          <span>· {KIND_META[t.kind].label}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-              {!items.length && <div className="text-center text-xs text-ink-400 py-6">leer</div>}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }

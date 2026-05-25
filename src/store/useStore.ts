@@ -33,7 +33,16 @@ function mergeGradingConfig(stored: Partial<GradingSystemConfig> | undefined): G
     },
     austria: { kindWeights: { ...def.austria.kindWeights, ...(stored.austria?.kindWeights ?? {}) } },
     custom: { ...def.custom, ...(stored.custom ?? {}), kindWeights: { ...def.custom.kindWeights, ...(stored.custom?.kindWeights ?? {}) } },
+    customKinds: Array.isArray(stored.customKinds) ? stored.customKinds.filter(isValidCustomKind) : [],
   };
+}
+
+function isValidCustomKind(c: unknown): c is { id: string; label: string; weighting: 'large' | 'rest' } {
+  if (!c || typeof c !== 'object') return false;
+  const o = c as Record<string, unknown>;
+  return typeof o.id === 'string' && o.id.length > 0
+    && typeof o.label === 'string'
+    && (o.weighting === 'large' || o.weighting === 'rest');
 }
 
 function cloneCfg(c: GradingSystemConfig): GradingSystemConfig {
@@ -340,9 +349,12 @@ export const useStore = create<State>((set, get) => ({
 
   async signInWithGoogle() {
     if (!supabase) return;
+    // WICHTIG: Trailing slash, sonst landet der OAuth-Redirect auf
+    //   https://schulplaner.conor.at#access_token=…
+    // (ohne `/`) und einzelne Browser/PWAs interpretieren das nicht sauber.
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: window.location.origin + '/' },
     });
   },
 

@@ -1,6 +1,6 @@
 import type { Grade, GradingSystem, GradingSystemConfig, Subject, GradeKind, SubjectCategory } from '@/types';
 
-export const KIND_LABEL: Record<GradeKind, string> = {
+export const BUILTIN_KIND_LABEL: Record<string, string> = {
   schulaufgabe: 'Schulaufgabe',
   stegreif:     'Stegreifaufgabe',
   muendlich:    'Mündlich',
@@ -9,6 +9,25 @@ export const KIND_LABEL: Record<GradeKind, string> = {
   projekt:      'Projekt',
   sonstige:     'Sonstige',
 };
+
+/**
+ * Legacy-Export: alte Aufrufer wie `KIND_LABEL[g.kind]` weiter unterstützt –
+ * Wenn eine ID nicht in den Built-ins steht, wird sie 1:1 als Label
+ * zurückgegeben. Für lokalisierte Labels von Custom-Kinds bitte
+ * `getKindLabel(kind, config)` nutzen.
+ */
+export const KIND_LABEL = new Proxy(BUILTIN_KIND_LABEL, {
+  get(target, prop: string) {
+    return target[prop] ?? prop;
+  },
+}) as Record<string, string>;
+
+/** Schlüssel-→-Label-Auflösung, kennt Built-ins UND User-Custom-Kinds. */
+export function getKindLabel(kind: GradeKind, config?: GradingSystemConfig): string {
+  if (BUILTIN_KIND_LABEL[kind]) return BUILTIN_KIND_LABEL[kind];
+  const custom = config?.customKinds?.find(c => c.id === kind);
+  return custom?.label ?? kind;
+}
 
 export const CATEGORY_LABEL: Record<SubjectCategory, string> = {
   'hauptfach':        'Hauptfach',
@@ -71,9 +90,16 @@ export function getSystemMeta(system: GradingSystem, config: GradingSystemConfig
   }
 }
 
-/** Gibt true zurück, wenn die Notenart als „Schulaufgabe / Klausur" gilt (vs. „kleine LN / Rest"). */
-export function isLargeAssessmentKind(kind: GradeKind): boolean {
-  return kind === 'schulaufgabe' || kind === 'klausur';
+/**
+ * Gibt true zurück, wenn die Notenart als „Schulaufgabe / Klausur" gilt
+ * (vs. „kleine LN / Rest"). Custom-Kinds mit `weighting: 'large'` werden
+ * ebenfalls als groß behandelt.
+ */
+export function isLargeAssessmentKind(kind: GradeKind, config?: GradingSystemConfig): boolean {
+  if (kind === 'schulaufgabe' || kind === 'klausur') return true;
+  if (!config) return false;
+  const custom = config.customKinds?.find(c => c.id === kind);
+  return custom?.weighting === 'large';
 }
 
 /** Effektives Gewicht einer einzelnen Note: weightMultiplier (default 1). */
@@ -97,8 +123,7 @@ function weightedMean(grades: Grade[]): number | null {
 }
 
 /** Berechnet den Schnitt eines Fachs nach Bayern-Logik (Kategorie + per-Note-Multiplikator). */
-export function subjectAverage(grades: Grade[], subject: Subject, _config?: GradingSystemConfig): number | null {
-  void _config;
+export function subjectAverage(grades: Grade[], subject: Subject, config?: GradingSystemConfig): number | null {
   const valid = grades.filter(g => g.subjectId === subject.id && !g.isPending && typeof g.value === 'number');
   if (!valid.length) return null;
 
@@ -108,8 +133,8 @@ export function subjectAverage(grades: Grade[], subject: Subject, _config?: Grad
   }
 
   // Hauptfach (mit oder ohne 1:1): Split in Schulaufgaben / Rest
-  const sa   = valid.filter(g => isLargeAssessmentKind(g.kind));
-  const rest = valid.filter(g => !isLargeAssessmentKind(g.kind));
+  const sa   = valid.filter(g => isLargeAssessmentKind(g.kind, config));
+  const rest = valid.filter(g => !isLargeAssessmentKind(g.kind, config));
 
   const saMean   = weightedMean(sa);
   const restMean = weightedMean(rest);

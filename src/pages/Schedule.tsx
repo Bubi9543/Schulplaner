@@ -40,7 +40,18 @@ export function SchedulePage() {
   if (!subjects.length) {
     return (
       <PageShell title="Stundenplan">
-        <Card><Empty icon={Clock} title="Noch keine Fächer angelegt" description="Lege erst Fächer in den Einstellungen an, dann kannst du den Stundenplan füllen." /></Card>
+        <Card>
+          <Empty
+            icon={Clock}
+            title="Noch keine Fächer angelegt"
+            description="Lege erst Fächer an, dann kannst du den Stundenplan füllen."
+            action={
+              <button onClick={() => nav('/einstellungen?section=subjects')} className="btn-primary">
+                <Plus className="size-4" /> Fach anlegen
+              </button>
+            }
+          />
+        </Card>
       </PageShell>
     );
   }

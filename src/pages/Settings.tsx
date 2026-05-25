@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2, AlertTriangle } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
@@ -10,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
-import { KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
+import { CATEGORY_LABEL } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import { CATEGORY_DESCRIPTION } from '@/lib/grading';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
@@ -30,9 +31,31 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'about', label: 'Über', icon: Info },
 ];
 
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'animations', 'dashboard', 'grading', 'subjects', 'schoolyears', 'data', 'about'];
+
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
-  const [section, setSection] = useState<SectionId>('profile');
+  const [params, setParams] = useSearchParams();
+  const urlSection = params.get('section') as SectionId | null;
+  const initialSection: SectionId = urlSection && VALID_SECTIONS.includes(urlSection) ? urlSection : 'profile';
+  const [section, setSection] = useState<SectionId>(initialSection);
+
+  // Wenn sich der URL-Param ändert (z.B. durch Sidebar-Klick), Sektion mitführen.
+  useEffect(() => {
+    if (urlSection && VALID_SECTIONS.includes(urlSection) && urlSection !== section) {
+      setSection(urlSection);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlSection]);
+
+  // Wenn die User die Sektion intern wechselt, URL ohne History-Push aktualisieren.
+  function changeSection(s: SectionId) {
+    setSection(s);
+    const next = new URLSearchParams(params);
+    if (s === 'profile') next.delete('section');
+    else next.set('section', s);
+    setParams(next, { replace: true });
+  }
 
   if (!settings) return null;
 
@@ -45,7 +68,7 @@ export function SettingsPage() {
               const active = section === s.id;
               const Icon = s.icon;
               return (
-                <button key={s.id} onClick={() => setSection(s.id)}
+                <button key={s.id} onClick={() => changeSection(s.id)}
                   className={`relative shrink-0 md:shrink flex items-center gap-2 px-3 py-2.5 rounded-2xl text-sm font-semibold transition text-left ${active ? 'text-white' : 'text-ink-700 hover:bg-white/70'}`}>
                   {active && <motion.span layoutId="settings-active" className="absolute inset-0 rounded-2xl theme-gradient" />}
                   <span className="relative flex items-center gap-2 w-full">
@@ -335,6 +358,8 @@ function GradingSection() {
         </div>
       </Card>
 
+      <CustomKindsCard />
+
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-amber-500" />Frei konfigurierbar</h3>
         <p className="subtle mb-3">Eigenes Notensystem (z.B. Punkteskala). Nutzt einfachen gewichteten Schnitt mit den per-Note Gewichten.</p>
@@ -363,6 +388,124 @@ function GradingSection() {
         </Row>
       </Card>
     </div>
+  );
+}
+
+function CustomKindsCard() {
+  const settings = useStore(s => s.settings)!;
+  const setGradingConfig = useStore(s => s.setGradingConfig);
+  const cfg = settings.gradingConfig;
+  const customKinds = cfg.customKinds ?? [];
+
+  const [draftLabel, setDraftLabel] = useState('');
+  const [draftWeighting, setDraftWeighting] = useState<'large' | 'rest'>('rest');
+
+  function addKind() {
+    const label = draftLabel.trim();
+    if (!label) return;
+    const id = 'custom-' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+    const next = [...customKinds, { id, label, weighting: draftWeighting }];
+    setGradingConfig({ customKinds: next });
+    setDraftLabel('');
+    setDraftWeighting('rest');
+  }
+
+  function updateKind(id: string, patch: Partial<{ label: string; weighting: 'large' | 'rest' }>) {
+    const next = customKinds.map(k => k.id === id ? { ...k, ...patch } : k);
+    setGradingConfig({ customKinds: next });
+  }
+
+  function deleteKind(id: string) {
+    const k = customKinds.find(c => c.id === id);
+    if (!k) return;
+    if (!confirm(`Kategorie „${k.label}" löschen? Bestehende Noten mit dieser Kategorie behalten ihren Eintrag, werden aber wieder als „Sonstige" verrechnet.`)) return;
+    const next = customKinds.filter(c => c.id !== id);
+    setGradingConfig({ customKinds: next });
+  }
+
+  return (
+    <Card>
+      <h3 className="h3 mb-2 flex items-center gap-2">
+        <span className="inline-block size-3 rounded-full bg-violet-500" />
+        Eigene Leistungsnachweis-Kategorien
+      </h3>
+      <p className="subtle mb-3">
+        Lege eigene Kategorien an (z. B. „Aufsatz", „Test", „Vokabeltest") und wähle, ob sie wie eine
+        Schulaufgabe (große Leistung) oder wie eine mündliche Note (kleine Leistung) verrechnet werden.
+      </p>
+
+      {customKinds.length > 0 && (
+        <ul className="space-y-2 mb-4">
+          {customKinds.map(k => (
+            <li key={k.id} className="rounded-2xl bg-white/70 border border-white/60 p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <input
+                className="input flex-1 min-w-0"
+                value={k.label}
+                onChange={e => updateKind(k.id, { label: e.target.value })}
+                placeholder="Bezeichnung"
+              />
+              <div className="inline-flex glass rounded-2xl p-1 gap-0.5">
+                {(['large', 'rest'] as const).map(w => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => updateKind(k.id, { weighting: w })}
+                    className={`relative px-3 py-1.5 rounded-xl text-xs font-semibold transition ${k.weighting === w ? 'text-white' : 'text-ink-700'}`}
+                  >
+                    {k.weighting === w && (
+                      <motion.span layoutId={`ck-${k.id}`} className="absolute inset-0 rounded-xl theme-gradient" />
+                    )}
+                    <span className="relative whitespace-nowrap">
+                      {w === 'large' ? 'wie Schulaufgabe' : 'wie Mündlich'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => deleteKind(k.id)}
+                className="size-9 grid place-items-center rounded-xl text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
+                title="Löschen"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="rounded-2xl bg-theme-soft/30 border border-theme-soft p-3">
+        <label className="label">Neue Kategorie</label>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            className="input flex-1 min-w-0"
+            placeholder="z. B. Vokabeltest"
+            value={draftLabel}
+            onChange={e => setDraftLabel(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addKind(); }}
+          />
+          <div className="inline-flex glass rounded-2xl p-1 gap-0.5">
+            {(['large', 'rest'] as const).map(w => (
+              <button
+                key={w}
+                type="button"
+                onClick={() => setDraftWeighting(w)}
+                className={`relative px-3 py-1.5 rounded-xl text-xs font-semibold transition ${draftWeighting === w ? 'text-white' : 'text-ink-700'}`}
+              >
+                {draftWeighting === w && <motion.span layoutId="ck-new" className="absolute inset-0 rounded-xl theme-gradient" />}
+                <span className="relative whitespace-nowrap">{w === 'large' ? 'wie Schulaufgabe' : 'wie Mündlich'}</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={addKind} disabled={!draftLabel.trim()} className="btn-primary">
+            <Plus className="size-4" />Hinzufügen
+          </button>
+        </div>
+        <div className="text-[11px] text-ink-500 mt-2 leading-relaxed">
+          <strong>wie Schulaufgabe</strong> = große Leistung, zählt im Bayern-Hauptfach doppelt (mit Schulaufgaben/Klausuren).<br />
+          <strong>wie Mündlich</strong> = kleine Leistung, zählt im Rest-Block (Stegreif/Mündlich/Referat).
+        </div>
+      </div>
+    </Card>
   );
 }
 

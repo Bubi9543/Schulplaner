@@ -228,6 +228,7 @@ export const THEME_LIST: ThemePalette[] = Object.values(THEMES);
 export const ROUTE_THEME_MAP: Record<string, ThemeId> = {
   '/': 'ocean',
   '/aufgaben': 'crimson',
+  '/kalender': 'sunset',
   '/stundenplan': 'indigo',
   '/noten': 'forest',
   '/einstellungen': 'rose',

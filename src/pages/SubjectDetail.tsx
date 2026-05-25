@@ -7,12 +7,15 @@ import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
+import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
+import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
+import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, KIND_LABEL, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
+import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, getKindLabel, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
-import type { Grade } from '@/types';
+import type { Grade, AppTask } from '@/types';
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
@@ -27,6 +30,9 @@ export function SubjectDetailPage() {
 
   const subject = subjects.find(s => s.id === subjectId);
   const [gradeDialog, setGradeDialog] = useState<{ open: boolean; grade?: Grade }>({ open: false });
+  const [gradeDetail, setGradeDetail] = useState<{ open: boolean; grade?: Grade }>({ open: false });
+  const [taskDialog, setTaskDialog] = useState<{ open: boolean; task?: Partial<AppTask> }>({ open: false });
+  const [taskDetail, setTaskDetail] = useState<{ open: boolean; task?: AppTask }>({ open: false });
   const [subjectDialog, setSubjectDialog] = useState(false);
 
   const subjectGrades = useMemo(() => subject ? grades.filter(g => g.subjectId === subject.id).sort((a, b) => a.date - b.date) : [], [grades, subject]);
@@ -144,7 +150,7 @@ export function SubjectDetailPage() {
               {byKind.map(b => (
                 <li key={b.kind} className="flex items-center gap-3 rounded-2xl p-2 bg-white/60">
                   <div className="flex-1">
-                    <div className="font-semibold text-ink-800">{KIND_LABEL[b.kind as Grade['kind']] ?? b.kind}</div>
+                    <div className="font-semibold text-ink-800">{getKindLabel(b.kind, config)}</div>
                     <div className="text-xs text-ink-500">{b.count} Noten · Gewicht {b.weight}</div>
                   </div>
                   <GradeBadge value={b.avg ?? 0} system={subject.system} size="sm" />
@@ -163,21 +169,31 @@ export function SubjectDetailPage() {
           ) : (
             <ul className="space-y-2">
               {pendingGrades.map(g => (
-                <li key={g.id} className="flex items-center gap-3 rounded-2xl p-2 bg-white/60">
-                  <GradeBadge value={0} system={subject.system} size="sm" pending />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-ink-800 truncate">{g.title ?? 'Ausstehende Note'}</div>
-                    <div className="text-xs text-ink-500">{KIND_LABEL[g.kind]} · {relativeDate(g.date)}</div>
-                  </div>
+                <li key={g.id}>
+                  <button
+                    onClick={() => setGradeDetail({ open: true, grade: g })}
+                    className="w-full flex items-center gap-3 rounded-2xl p-2 bg-white/60 hover:bg-white text-left transition"
+                  >
+                    <GradeBadge value={0} system={subject.system} size="sm" pending />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-ink-800 truncate">{g.title ?? 'Ausstehende Note'}</div>
+                      <div className="text-xs text-ink-500">{getKindLabel(g.kind, config)} · {relativeDate(g.date)}</div>
+                    </div>
+                  </button>
                 </li>
               ))}
               {openTasks.map(t => (
-                <li key={t.id} className="flex items-center gap-3 rounded-2xl p-2 bg-white/60">
-                  <div className="size-9 rounded-xl grid place-items-center bg-ink-100 font-bold text-xs">📝</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-ink-800 truncate">{t.title}</div>
-                    <div className="text-xs text-ink-500">{t.dueDate ? relativeDate(t.dueDate) : 'Ohne Datum'}</div>
-                  </div>
+                <li key={t.id}>
+                  <button
+                    onClick={() => setTaskDetail({ open: true, task: t })}
+                    className="w-full flex items-center gap-3 rounded-2xl p-2 bg-white/60 hover:bg-white text-left transition"
+                  >
+                    <div className="size-9 rounded-xl grid place-items-center bg-ink-100 font-bold text-xs">📝</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-ink-800 truncate">{t.title}</div>
+                      <div className="text-xs text-ink-500">{t.dueDate ? relativeDate(t.dueDate) : 'Ohne Datum'}</div>
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -191,11 +207,11 @@ export function SubjectDetailPage() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {[...realGrades].reverse().map(g => (
-                <button key={g.id} onClick={() => setGradeDialog({ open: true, grade: g })}
+                <button key={g.id} onClick={() => setGradeDetail({ open: true, grade: g })}
                   className="rounded-2xl bg-white/70 hover:bg-white p-3 text-left transition shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <GradeBadge value={g.value} system={subject.system} size="sm" />
-                    <span className="chip">{KIND_LABEL[g.kind]}</span>
+                    <span className="chip">{getKindLabel(g.kind, config)}</span>
                   </div>
                   <div className="font-semibold text-sm text-ink-800 truncate">{g.title ?? 'Note'}</div>
                   <div className="text-xs text-ink-500">{formatDate(g.date)}</div>
@@ -207,6 +223,29 @@ export function SubjectDetailPage() {
       </div>
 
       <GradeDialog open={gradeDialog.open} initial={gradeDialog.grade} defaultSubjectId={subject.id} onClose={() => setGradeDialog({ open: false })} />
+      <GradeDetailDialog
+        open={gradeDetail.open}
+        grade={gradeDetail.grade}
+        onClose={() => setGradeDetail({ open: false })}
+        onEdit={g => {
+          setGradeDetail({ open: false });
+          setGradeDialog({ open: true, grade: g });
+        }}
+      />
+      <TaskDetailDialog
+        open={taskDetail.open}
+        task={taskDetail.task}
+        onClose={() => setTaskDetail({ open: false })}
+        onEdit={t => {
+          setTaskDetail({ open: false });
+          setTaskDialog({ open: true, task: t });
+        }}
+      />
+      <TaskDialog
+        open={taskDialog.open}
+        initial={taskDialog.task}
+        onClose={() => setTaskDialog({ open: false })}
+      />
       <SubjectDialog open={subjectDialog} initial={subject} onClose={() => setSubjectDialog(false)} />
     </PageShell>
   );

@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, GraduationCap, Settings, ChevronDown, Check, Calendar } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 
 const NAV = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben' },
+  { to: '/kalender', icon: CalendarRange, label: 'Kalender' },
   { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan' },
   { to: '/noten', icon: GraduationCap, label: 'Noten' },
   { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
@@ -85,8 +86,7 @@ function SchoolYearSwitcher() {
               <button
                 onClick={() => {
                   setOpen(false);
-                  navigate('/einstellungen');
-                  // Trigger schoolyears section via querystring? Just navigate to settings.
+                  navigate('/einstellungen?section=schoolyears');
                 }}
                 className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-ink-600 hover:bg-white/70 transition font-medium"
               >

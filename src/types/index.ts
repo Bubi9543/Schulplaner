@@ -18,7 +18,27 @@ export function normalizeSubjectCategory(input: unknown): SubjectCategory {
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type GradeKind = 'schulaufgabe' | 'stegreif' | 'muendlich' | 'referat' | 'klausur' | 'projekt' | 'sonstige';
+/**
+ * Notenart. Vordefiniert sind die Werte aus BUILTIN_GRADE_KINDS, zusätzlich
+ * können in den Einstellungen eigene Kategorien angelegt werden – ihre ID
+ * wird dann hier abgelegt (Format frei wählbar).
+ */
+export type GradeKind = string;
+
+export const BUILTIN_GRADE_KINDS = ['schulaufgabe', 'stegreif', 'muendlich', 'referat', 'klausur', 'projekt', 'sonstige'] as const;
+export type BuiltinGradeKind = typeof BUILTIN_GRADE_KINDS[number];
+
+/**
+ * Vom User definierte zusätzliche Notenart.
+ * - `weighting = 'large'`: zählt wie eine Schulaufgabe/Klausur
+ *   (geht in den Schulaufgaben-Block beim Bayern-Hauptfach-Schnitt).
+ * - `weighting = 'rest'`: zählt wie Mündlich/Stegreif (kleine Leistung).
+ */
+export interface CustomGradeKind {
+  id: string;
+  label: string;
+  weighting: 'large' | 'rest';
+}
 
 export type GradeKindWeight = { haupt: number; neben: number };
 
@@ -47,6 +67,8 @@ export interface GradingSystemConfig {
   oberstufe: OberstufeConfig;
   austria: AustriaConfig;
   custom: CustomConfig;
+  /** Vom User angelegte Leistungsnachweis-Kategorien (über Schulaufgabe/Mündlich hinaus). */
+  customKinds: CustomGradeKind[];
 }
 
 export interface Subject {
@@ -196,6 +218,7 @@ export const DEFAULT_GRADING_CONFIG: GradingSystemConfig = {
   oberstufe: { kindWeights: structuredCloneSafe(DEFAULT_KIND_WEIGHTS), allowPerGradeWeight: true },
   austria: { kindWeights: structuredCloneSafe(DEFAULT_KIND_WEIGHTS) },
   custom: { min: 1, max: 6, step: 1/3, goodIsLow: true, defaultValue: 2, label: 'Frei', kindWeights: structuredCloneSafe(DEFAULT_KIND_WEIGHTS) },
+  customKinds: [],
 };
 
 export const DEFAULT_QUICK_BUTTONS: TaskKind[] = ['todo', 'hausaufgabe', 'test'];
