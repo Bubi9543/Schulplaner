@@ -30,3 +30,7 @@ dist-ssr
 .env.local
 .env.production
 .env.development
+
+# Supabase CLI Working-Files (Project-Ref, lokale Versionen etc.)
+supabase/.temp/
+supabase/.branches/

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, RotateCcw, Settings as SettingsIcon, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2 } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -12,26 +12,24 @@ import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
 import { CATEGORY_LABEL } from '@/lib/grading';
-import { DEFAULT_GRADING_CONFIG } from '@/types';
 import { CATEGORY_DESCRIPTION } from '@/lib/grading';
-import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, DashboardLayout, TaskKind, AppSettings, SchoolYear } from '@/types';
+import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'animations' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'profile', label: 'Profil', icon: User },
-  { id: 'appearance', label: 'Erscheinung', icon: Palette },
-  { id: 'animations', label: 'Animationen', icon: Sparkles },
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'grading', label: 'Noten & Aufgaben', icon: GraduationCap },
-  { id: 'subjects',    label: 'Fächer',       icon: BookOpen },
-  { id: 'schoolyears', label: 'Schuljahre',   icon: Calendar },
-  { id: 'data',        label: 'Daten',        icon: Database },
-  { id: 'about', label: 'Über', icon: Info },
+  { id: 'profile',     label: 'Profil',          icon: User },
+  { id: 'appearance',  label: 'Erscheinung',     icon: Palette },
+  { id: 'dashboard',   label: 'Dashboard',       icon: LayoutDashboard },
+  { id: 'grading',     label: 'Noten & Aufgaben', icon: GraduationCap },
+  { id: 'subjects',    label: 'Fächer',          icon: BookOpen },
+  { id: 'schoolyears', label: 'Schuljahre',      icon: Calendar },
+  { id: 'data',        label: 'Daten & Sync',    icon: Database },
+  { id: 'about',       label: 'Über',            icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'animations', 'dashboard', 'grading', 'subjects', 'schoolyears', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -60,7 +58,7 @@ export function SettingsPage() {
   if (!settings) return null;
 
   return (
-    <PageShell title="Einstellungen" subtitle="Profil, Aussehen, Notensysteme und mehr – alles personalisierbar.">
+    <PageShell title="Einstellungen" subtitle="Profil, Aussehen, Notensysteme, Cloud-Sync und mehr.">
       <div className="grid grid-cols-12 gap-4 md:gap-5">
         <Card className="col-span-12 md:col-span-3 lg:col-span-3 !p-2 md:sticky md:top-4 md:self-start">
           <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible no-scrollbar">
@@ -86,7 +84,6 @@ export function SettingsPage() {
             <motion.div key={section} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>
               {section === 'profile' && <ProfileSection />}
               {section === 'appearance' && <AppearanceSection />}
-              {section === 'animations' && <AnimationsSection />}
               {section === 'dashboard' && <DashboardSection />}
               {section === 'grading' && <GradingSection />}
               {section === 'subjects' && <SubjectsSection />}
@@ -222,26 +219,20 @@ function AppearanceSection() {
           <Toggle checked={settings.glassEffects} onChange={v => setSettings({ glassEffects: v })} />
         </Row>
       </Card>
-    </div>
-  );
-}
 
-function AnimationsSection() {
-  const settings = useStore(s => s.settings)!;
-  const setSettings = useStore(s => s.setSettings);
-  return (
-    <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Sparkles className="size-5 text-amber-500" />Animationen</h3>
-      <Row label="Animations-Stufe" hint="Wie viel Bewegung soll's sein?">
-        <Segmented<AnimationLevel> value={settings.animationLevel} options={[
-          { value: 'rich', label: 'Reichhaltig' }, { value: 'reduced', label: 'Reduziert' }, { value: 'minimal', label: 'Minimal' },
-        ]} onChange={v => setSettings({ animationLevel: v })} />
-      </Row>
-      <Row label="Konfetti bei guten Noten" hint="Bei Note 1/2 (Bayern), ab 12 P (Oberstufe).">
-        <Toggle checked={settings.confettiOnGood} onChange={v => setSettings({ confettiOnGood: v })} />
-      </Row>
-      <div className="text-xs text-ink-500 mt-2">💡 Wenn dein Gerät „Bewegung reduzieren" aktiviert hat, schalten wir automatisch auf Reduziert.</div>
-    </Card>
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Sparkles className="size-5 text-amber-500" />Animationen & Feedback</h3>
+        <Row label="Animations-Stufe" hint="Wie viel Bewegung soll's sein?">
+          <Segmented<AnimationLevel> value={settings.animationLevel} options={[
+            { value: 'rich', label: 'Reichhaltig' }, { value: 'reduced', label: 'Reduziert' }, { value: 'minimal', label: 'Minimal' },
+          ]} onChange={v => setSettings({ animationLevel: v })} />
+        </Row>
+        <Row label="Konfetti bei guten Noten" hint="Bei Note 1/2 (Bayern), ab 12 P (Oberstufe).">
+          <Toggle checked={settings.confettiOnGood} onChange={v => setSettings({ confettiOnGood: v })} />
+        </Row>
+        <div className="text-xs text-ink-500 mt-2">💡 Wenn dein Gerät „Bewegung reduzieren" aktiviert hat, schalten wir automatisch auf Reduziert.</div>
+      </Card>
+    </div>
   );
 }
 
@@ -251,30 +242,22 @@ function DashboardSection() {
   return (
     <Card>
       <h3 className="h3 mb-3 flex items-center gap-2"><LayoutDashboard className="size-5 text-sky-500" />Dashboard</h3>
-      <Row label="Begrüßungsstil">
+      <Row label="Begrüßungsstil" hint="Wie soll dich das Dashboard ansprechen?">
         <Segmented<GreetingStyle> value={settings.dashboardGreetingStyle} options={[
           { value: 'casual', label: 'Locker' }, { value: 'formal', label: 'Formell' }, { value: 'fun', label: 'Lustig' },
         ]} onChange={v => setSettings({ dashboardGreetingStyle: v })} />
-      </Row>
-      <Row label="Layout">
-        <Segmented<DashboardLayout> value={settings.dashboardLayout} options={[
-          { value: 'rich', label: 'Reich' }, { value: 'list', label: 'Liste' },
-        ]} onChange={v => setSettings({ dashboardLayout: v })} />
       </Row>
       <Row label="Wochenstart">
         <Segmented<0 | 1> value={settings.weekStart} options={[
           { value: 1, label: 'Montag' }, { value: 0, label: 'Sonntag' },
         ]} onChange={v => setSettings({ weekStart: v })} />
       </Row>
-      <Row label="Schul-Tagesfenster" hint="Vom Tagesbeginn bis zum Tagesende.">
+      <Row label="Schul-Tagesfenster" hint="Bestimmt den sichtbaren Zeitbereich im Heute-Stundenplan-Widget.">
         <input type="time" className="input max-w-[120px]" value={settings.schoolStart}
           onChange={e => setSettings({ schoolStart: e.target.value })} />
         <span className="text-ink-500">bis</span>
         <input type="time" className="input max-w-[120px]" value={settings.schoolEnd}
           onChange={e => setSettings({ schoolEnd: e.target.value })} />
-      </Row>
-      <Row label="Wochenenden zeigen">
-        <Toggle checked={settings.showWeekends} onChange={v => setSettings({ showWeekends: v })} />
       </Row>
       <Row label="Quick-Buttons" hint="Welche Knöpfe oben im Dashboard erscheinen.">
         <div className="flex flex-wrap gap-1.5">
@@ -506,18 +489,6 @@ function CustomKindsCard() {
         </div>
       </div>
     </Card>
-  );
-}
-
-// _NumberStepper: ehemals für die Kind-Weight-Matrix benutzt - entfernt
-function _UnusedNumberStepper({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const options = [0.5, 1, 1.5, 2, 2.5, 3];
-  return (
-    <div className="flex justify-center">
-      <select className="input max-w-[80px] py-1.5 text-center" value={value} onChange={e => onChange(parseFloat(e.target.value))}>
-        {options.map(o => <option key={o} value={o}>×{o.toString().replace('.', ',')}</option>)}
-      </select>
-    </div>
   );
 }
 
@@ -1273,70 +1244,76 @@ function DataSection() {
 }
 
 function AboutSection() {
-  const [showSql, setShowSql] = useState(false);
-  const sql = `-- Einmalig im Supabase SQL-Editor ausführen:
-create table subjects (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
-alter table subjects enable row level security;
-create policy "own" on subjects for all using (auth.uid() = user_id);
-
-create table grades (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
-alter table grades enable row level security;
-create policy "own" on grades for all using (auth.uid() = user_id);
-
-create table tasks (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
-alter table tasks enable row level security;
-create policy "own" on tasks for all using (auth.uid() = user_id);
-
-create table lessons (id text primary key, user_id uuid references auth.users not null, data jsonb not null, updated_at timestamptz default now());
-alter table lessons enable row level security;
-create policy "own" on lessons for all using (auth.uid() = user_id);
-
-create table user_settings (user_id uuid references auth.users primary key, data jsonb not null, updated_at timestamptz default now());
-alter table user_settings enable row level security;
-create policy "own" on user_settings for all using (auth.uid() = user_id);`;
+  const FEATURES: Array<{ icon: React.ComponentType<{ className?: string }>; label: string; desc: string }> = [
+    { icon: GraduationCap, label: 'Notensysteme', desc: 'Bayern, Oberstufe, Österreich + frei konfigurierbar mit eigenen Kategorien' },
+    { icon: Calendar, label: 'Schuljahre & Stundenplan', desc: 'Mehrere Schuljahre parallel, Fächer/Stunden pro Jahr getrennt' },
+    { icon: Cloud, label: 'Cloud-Sync & Realtime', desc: 'Automatischer Live-Sync zwischen all deinen Geräten' },
+    { icon: Smartphone, label: 'PWA & Offline', desc: 'Funktioniert offline, installierbar auf iPad/iPhone/Android' },
+    { icon: Share2, label: 'Stundenplan teilen', desc: '4-stelliger Code für Freunde aus deiner Klasse' },
+    { icon: CalendarRange, label: 'Kalender-Abo', desc: 'Live-Sync in Google Calendar / Apple Kalender / Outlook' },
+  ];
 
   return (
-    <Card>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Info className="size-5 text-slate-500" />Über</h3>
-      <div className="space-y-3 text-sm text-ink-700">
-        <p><strong>Schulplaner / Notenapp</strong> – dein persönliches Schul-Tool.</p>
-        <p>Die App funktioniert offline und kann auf iPad/Android über „Zum Home-Bildschirm" installiert werden.</p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-2xl p-3 bg-white/60">
-            <div className="font-bold text-ink-800">Notensysteme</div>
-            <div className="text-ink-500">Bayern, Oberstufe, Österreich, Frei</div>
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-start gap-4">
+          <div className="size-14 rounded-2xl theme-gradient grid place-items-center text-white shadow-glow flex-shrink-0">
+            <GraduationCap className="size-7" strokeWidth={2.5} />
           </div>
-          <div className="rounded-2xl p-3 bg-white/60">
-            <div className="font-bold text-ink-800">Speicher</div>
-            <div className="text-ink-500">Lokal + Cloud (optional)</div>
+          <div className="flex-1">
+            <h3 className="font-display font-extrabold text-2xl text-ink-900 leading-tight">Schulplaner</h3>
+            <p className="text-sm text-ink-600 mt-1">
+              Dein persönliches Schul-Tool für Noten, Aufgaben und Stundenplan – schön übersichtlich,
+              ohne Werbung, ohne Schnickschnack.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-ink-500">
+              <span className="chip">v1.0</span>
+              <span className="chip">React 19 + TypeScript</span>
+              <span className="chip">Supabase</span>
+              <span className="chip">PWA</span>
+            </div>
           </div>
         </div>
+      </Card>
 
-        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
-          <div className="font-semibold text-ink-800 mb-1 flex items-center gap-2"><Smartphone className="size-4" />Cloud Sync einrichten</div>
-          <ol className="text-xs text-ink-600 space-y-1 list-decimal list-inside">
-            <li>Auf <strong>supabase.com</strong> kostenloses Konto erstellen</li>
-            <li>Neues Projekt anlegen</li>
-            <li>Im SQL-Editor das Script unten ausführen</li>
-            <li>Unter Settings → API: URL und anon key kopieren</li>
-            <li>In Vercel als Umgebungsvariablen eintragen:<br/><code className="bg-white px-1 rounded">VITE_SUPABASE_URL</code> und <code className="bg-white px-1 rounded">VITE_SUPABASE_ANON_KEY</code></li>
-            <li>Neu deployen → in Daten-Tab anmelden</li>
-          </ol>
-          <button onClick={() => setShowSql(s => !s)} className="btn-ghost text-xs mt-2">
-            {showSql ? 'SQL ausblenden' : 'SQL anzeigen'}
-          </button>
-          {showSql && (
-            <pre className="mt-2 text-[10px] bg-slate-800 text-slate-200 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap">{sql}</pre>
-          )}
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Sparkles className="size-5 text-theme" />Was die App kann</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {FEATURES.map(f => {
+            const Icon = f.icon;
+            return (
+              <div key={f.label} className="rounded-2xl bg-white/70 border border-white/60 p-3 flex items-start gap-3">
+                <div className="size-9 rounded-xl bg-theme-soft text-theme-deep grid place-items-center flex-shrink-0">
+                  <Icon className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm text-ink-800">{f.label}</div>
+                  <div className="text-xs text-ink-500 mt-0.5 leading-relaxed">{f.desc}</div>
+                </div>
+              </div>
+            );
+          })}
         </div>
+      </Card>
 
-        <a href="https://github.com/Bubi9543/Schulplaner" target="_blank" rel="noopener noreferrer" className="btn-ghost inline-flex">
-          <SettingsIcon className="size-4" />Quellcode auf GitHub
-        </a>
-      </div>
-    </Card>
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Info className="size-5 text-slate-500" />Rechtliches & Quellcode</h3>
+        <div className="flex flex-wrap gap-2">
+          <a href="https://github.com/Bubi9543/Schulplaner" target="_blank" rel="noopener noreferrer" className="btn-ghost inline-flex">
+            <ExternalLink className="size-4" />Quellcode (GitHub)
+          </a>
+          <a href="/impressum" className="btn-ghost inline-flex">
+            <Info className="size-4" />Impressum
+          </a>
+          <a href="/datenschutz" className="btn-ghost inline-flex">
+            <Info className="size-4" />Datenschutz
+          </a>
+        </div>
+        <div className="text-[11px] text-ink-400 mt-3 leading-relaxed">
+          Daten liegen auf deinem Gerät (IndexedDB) und – wenn du eingeloggt bist – verschlüsselt
+          bei Supabase in der EU. Keine Tracker, kein Werbe-Sharing.
+        </div>
+      </Card>
+    </div>
   );
 }
-
-// avoid unused import warning
-void (DEFAULT_GRADING_CONFIG as AppSettings['gradingConfig']);

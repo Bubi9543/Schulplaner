@@ -149,7 +149,6 @@ export type DensityMode = 'comfortable' | 'compact';
 export type FontScale = 0.9 | 1 | 1.1;
 export type AnimationLevel = 'rich' | 'reduced' | 'minimal';
 export type GreetingStyle = 'casual' | 'formal' | 'fun';
-export type DashboardLayout = 'rich' | 'list';
 
 export interface Photo {
   id: string;
@@ -169,7 +168,6 @@ export interface AppSettings {
   name?: string;
   school?: string;
   classLevel?: string;
-  avatarColor?: string;
   system: GradingSystem;
   onboarded: boolean;
   demo: boolean;
@@ -182,15 +180,12 @@ export interface AppSettings {
   confettiOnGood: boolean;
   schoolStart: string;
   schoolEnd: string;
-  showWeekends: boolean;
   weekStart: 0 | 1;
   dashboardGreetingStyle: GreetingStyle;
-  dashboardLayout: DashboardLayout;
   quickButtons: TaskKind[];
   autoSelectActiveSubject: boolean;
   activeSubjectThresholdMin: number;
   defaultTaskPriority: 1 | 2 | 3;
-  autoCompleteOverdue: boolean;
   averageDigits: 1 | 2 | 3;
   trendThreshold: number;
   gradingConfig: GradingSystemConfig;
@@ -244,15 +239,12 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   confettiOnGood: true,
   schoolStart: '08:00',
   schoolEnd: '17:00',
-  showWeekends: false,
   weekStart: 1,
   dashboardGreetingStyle: 'casual',
-  dashboardLayout: 'rich',
   quickButtons: DEFAULT_QUICK_BUTTONS,
   autoSelectActiveSubject: true,
   activeSubjectThresholdMin: 10,
   defaultTaskPriority: 2,
-  autoCompleteOverdue: false,
   averageDigits: 2,
   trendThreshold: 0.2,
   gradingConfig: DEFAULT_GRADING_CONFIG,
