@@ -5,6 +5,8 @@ import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
 import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
 import type { AppTask, TaskKind } from '@/types';
+import { BUILTIN_TASK_KINDS } from '@/types';
+import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
 import { Sparkles } from 'lucide-react';
 
 interface Props {
@@ -13,14 +15,6 @@ interface Props {
   initial?: Partial<AppTask>;
   defaultKind?: TaskKind;
 }
-
-const KIND_LABEL: Record<TaskKind, string> = {
-  hausaufgabe: 'Hausaufgabe',
-  test: 'Test',
-  schulaufgabe: 'Schulaufgabe',
-  projekt: 'Projekt',
-  todo: 'Todo',
-};
 
 export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const subjects = useStore(s => s.subjects);
@@ -105,9 +99,17 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
         <div>
           <label className="label">Art</label>
           <div className="flex flex-wrap gap-2">
-            {(Object.keys(KIND_LABEL) as TaskKind[]).map(k => (
+            {BUILTIN_TASK_KINDS.map(k => (
               <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
-                {KIND_LABEL[k]}
+                <span>{getTaskKindIcon(k)}</span>{getTaskKindLabel(k)}
+              </button>
+            ))}
+            {settings?.gradingConfig.customKinds?.map(c => (
+              <button key={c.id} type="button" onClick={() => setKind(c.id)}
+                className={`chip ${kind === c.id ? 'chip-active' : ''}`}
+                title={`Eigene Kategorie · zählt als Note ${c.weighting === 'large' ? 'wie Schulaufgabe' : 'wie Mündlich'}`}
+              >
+                <span>{getTaskKindIcon(c.id)}</span>{c.label}
               </button>
             ))}
           </div>

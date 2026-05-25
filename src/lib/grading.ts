@@ -29,6 +29,36 @@ export function getKindLabel(kind: GradeKind, config?: GradingSystemConfig): str
   return custom?.label ?? kind;
 }
 
+// ─── Task-Kinds ────────────────────────────────────────────────────────────
+
+export const BUILTIN_TASK_KIND_LABEL: Record<string, string> = {
+  hausaufgabe:  'Hausaufgabe',
+  test:         'Test',
+  schulaufgabe: 'Schulaufgabe',
+  projekt:      'Projekt',
+  todo:         'Todo',
+};
+
+export const BUILTIN_TASK_KIND_ICON: Record<string, string> = {
+  hausaufgabe:  '📝',
+  test:         '✏️',
+  schulaufgabe: '📄',
+  projekt:      '🎯',
+  todo:         '✅',
+};
+
+/** Liefert das Anzeige-Label einer TaskKind-ID. Kennt Built-ins und Custom-Kinds. */
+export function getTaskKindLabel(kind: string, config?: GradingSystemConfig): string {
+  if (BUILTIN_TASK_KIND_LABEL[kind]) return BUILTIN_TASK_KIND_LABEL[kind];
+  const custom = config?.customKinds?.find(c => c.id === kind);
+  return custom?.label ?? kind;
+}
+
+/** Emoji-Icon einer TaskKind-ID. Custom-Kinds bekommen ein neutrales Tag-Emoji. */
+export function getTaskKindIcon(kind: string): string {
+  return BUILTIN_TASK_KIND_ICON[kind] ?? '🏷️';
+}
+
 export const CATEGORY_LABEL: Record<SubjectCategory, string> = {
   'hauptfach':        'Hauptfach',
   'hauptfach-1zu1':   'Hauptfach (1:1)',

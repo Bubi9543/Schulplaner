@@ -66,8 +66,6 @@ export function downloadExport(data: ExportFile, filename?: string) {
 // ─── Import ────────────────────────────────────────────────────────────────
 
 const VALID_SYSTEMS: GradingSystem[] = ['bayern', 'oberstufe', 'austria', 'custom'];
-const VALID_KINDS: GradeKind[] = ['schulaufgabe', 'stegreif', 'muendlich', 'referat', 'klausur', 'projekt', 'sonstige'];
-const VALID_TASK_KINDS: TaskKind[] = ['hausaufgabe', 'test', 'schulaufgabe', 'projekt', 'todo'];
 
 export interface ImportResult {
   schoolYears: number;
@@ -108,11 +106,13 @@ function normalizeSystem(v: unknown): GradingSystem {
   return 'bayern';
 }
 function normalizeKind(v: unknown): GradeKind {
-  if (typeof v === 'string' && (VALID_KINDS as string[]).includes(v)) return v as GradeKind;
+  // Beliebige Strings akzeptieren – Custom-Kinds haben generierte IDs,
+  // die wir hier nicht in einer Whitelist haben.
+  if (typeof v === 'string' && v.trim()) return v.trim();
   return 'sonstige';
 }
 function normalizeTaskKind(v: unknown): TaskKind {
-  if (typeof v === 'string' && (VALID_TASK_KINDS as string[]).includes(v)) return v as TaskKind;
+  if (typeof v === 'string' && v.trim()) return v.trim();
   return 'todo';
 }
 function normalizeWeekday(v: unknown): Weekday {

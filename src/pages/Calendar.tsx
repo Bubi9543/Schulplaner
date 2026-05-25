@@ -7,19 +7,20 @@ import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
+import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
 import type { AppTask, TaskKind } from '@/types';
-
-const KIND_META: Record<TaskKind, { label: string; icon: string }> = {
-  hausaufgabe: { label: 'Hausaufgabe', icon: '📝' },
-  test: { label: 'Test', icon: '✏️' },
-  schulaufgabe: { label: 'Schulaufgabe', icon: '📄' },
-  projekt: { label: 'Projekt', icon: '🎯' },
-  todo: { label: 'Todo', icon: '✅' },
-};
+import { BUILTIN_TASK_KINDS } from '@/types';
 
 export function CalendarPage() {
   const tasks = useStore(s => s.tasks);
   const subjects = useStore(s => s.subjects);
+  const settings = useStore(s => s.settings);
+  const customKinds = settings?.gradingConfig.customKinds ?? [];
+  const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
+    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
+    ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
+  ], [customKinds]);
+
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
   const [filterSubject, setFilterSubject] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
@@ -49,10 +50,10 @@ export function CalendarPage() {
         <div className="flex flex-wrap gap-2 items-center">
           <Filter className="size-4 text-ink-400" />
           <button onClick={() => setFilterKind(null)} className={`chip ${!filterKind ? 'bg-ink-900 text-white border-ink-900' : ''}`}>Alle</button>
-          {(Object.keys(KIND_META) as TaskKind[]).map(k => (
-            <button key={k} onClick={() => setFilterKind(filterKind === k ? null : k)}
-              className={`chip ${filterKind === k ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
-              <span>{KIND_META[k].icon}</span>{KIND_META[k].label}
+          {allKinds.map(k => (
+            <button key={k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}
+              className={`chip ${filterKind === k.id ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
+              <span>{k.icon}</span>{k.label}
             </button>
           ))}
           <div className="w-px h-5 bg-ink-200 mx-1" />

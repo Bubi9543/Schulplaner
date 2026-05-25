@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { X, Pencil, Trash2, Check, Circle, Calendar, Flag, Tag, NotebookText, AlertTriangle } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
-import type { AppTask, Photo, TaskKind } from '@/types';
+import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
+import type { AppTask, Photo } from '@/types';
 
 interface Props {
   open: boolean;
@@ -11,22 +12,6 @@ interface Props {
   onClose: () => void;
   onEdit: (task: AppTask) => void;
 }
-
-const KIND_LABEL: Record<TaskKind, string> = {
-  hausaufgabe: 'Hausaufgabe',
-  test:        'Test',
-  schulaufgabe:'Schulaufgabe',
-  projekt:     'Projekt',
-  todo:        'Todo',
-};
-
-const KIND_ICON: Record<TaskKind, string> = {
-  hausaufgabe: '📝',
-  test:        '✏️',
-  schulaufgabe:'📄',
-  projekt:     '🎯',
-  todo:        '✅',
-};
 
 const PRIO_META: Record<1 | 2 | 3, { label: string; color: string }> = {
   1: { label: 'Niedrig', color: 'text-ink-600 bg-ink-100 border-ink-200' },
@@ -40,6 +25,7 @@ function fmtFullDate(ts: number): string {
 
 export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
+  const config = useStore(s => s.settings?.gradingConfig);
   const toggleTask = useStore(s => s.toggleTask);
   const deleteTask = useStore(s => s.deleteTask);
 
@@ -121,8 +107,8 @@ export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
               </div>
 
               <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold opacity-90">
-                <span>{KIND_ICON[task.kind]}</span>
-                <span>{KIND_LABEL[task.kind]}</span>
+                <span>{getTaskKindIcon(task.kind)}</span>
+                <span>{getTaskKindLabel(task.kind, config)}</span>
                 {isOverdue && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/90 text-white text-[10px] font-bold">
                     <AlertTriangle className="size-3" /> Überfällig
@@ -195,7 +181,7 @@ export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
                   </span>
                 </MetaTile>
                 <MetaTile icon={Tag} label="Art">
-                  {KIND_ICON[task.kind]} {KIND_LABEL[task.kind]}
+                  {getTaskKindIcon(task.kind)} {getTaskKindLabel(task.kind, config)}
                 </MetaTile>
                 {task.createdAt && (
                   <MetaTile icon={NotebookText} label="Angelegt">

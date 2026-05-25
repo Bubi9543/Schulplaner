@@ -86,7 +86,7 @@ const WIDGET_META: Record<WidgetType, {
   'subjects':           { label: 'Fächer',               icon: BookOpen,    defaultSize: { w: 7, h: 7 } },
 };
 
-const QUICK_BUTTON_META: Record<TaskKind, { label: string; icon: React.ReactNode }> = {
+const QUICK_BUTTON_META: Record<string, { label: string; icon: React.ReactNode }> = {
   todo:         { label: 'Todo',         icon: <ListTodo className="size-4" /> },
   hausaufgabe:  { label: 'Hausaufgabe',  icon: <NotebookPen className="size-4" /> },
   test:         { label: 'Test',         icon: <GraduationCap className="size-4" /> },

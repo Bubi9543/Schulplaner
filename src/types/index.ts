@@ -105,7 +105,15 @@ export interface Grade {
   schoolYearId?: string;
 }
 
-export type TaskKind = 'hausaufgabe' | 'test' | 'schulaufgabe' | 'projekt' | 'todo';
+/**
+ * Aufgaben-Art. Built-ins in BUILTIN_TASK_KINDS, zusätzlich können die
+ * vom User angelegten Custom-Kategorien (gradingConfig.customKinds) als
+ * Aufgaben-Art verwendet werden – ihre ID landet dann hier als String.
+ */
+export type TaskKind = string;
+
+export const BUILTIN_TASK_KINDS = ['hausaufgabe', 'test', 'schulaufgabe', 'projekt', 'todo'] as const;
+export type BuiltinTaskKind = typeof BUILTIN_TASK_KINDS[number];
 
 export interface AppTask {
   id: string;

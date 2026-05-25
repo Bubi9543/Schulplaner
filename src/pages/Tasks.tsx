@@ -7,15 +7,9 @@ import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { relativeDate } from '@/lib/utils';
+import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
 import type { AppTask, TaskKind } from '@/types';
-
-const KIND_META: Record<TaskKind, { label: string; icon: string }> = {
-  hausaufgabe: { label: 'Hausaufgabe', icon: '📝' },
-  test: { label: 'Test', icon: '✏️' },
-  schulaufgabe: { label: 'Schulaufgabe', icon: '📄' },
-  projekt: { label: 'Projekt', icon: '🎯' },
-  todo: { label: 'Todo', icon: '✅' },
-};
+import { BUILTIN_TASK_KINDS } from '@/types';
 
 type BucketKey = 'heute' | 'morgen' | 'thisWeek' | 'nextWeek' | 'later' | 'noDate' | 'overdue';
 
@@ -36,7 +30,15 @@ function startOfDay(ts: number): number {
 export function TasksPage() {
   const tasks = useStore(s => s.tasks);
   const subjects = useStore(s => s.subjects);
+  const settings = useStore(s => s.settings);
   const toggleTask = useStore(s => s.toggleTask);
+
+  const customKinds = settings?.gradingConfig.customKinds ?? [];
+  // Alle Filter-Chips: Built-ins + User-Custom-Kategorien.
+  const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
+    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
+    ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
+  ], [customKinds]);
 
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
   const [filterSubject, setFilterSubject] = useState<string | null>(null);
@@ -125,10 +127,10 @@ export function TasksPage() {
         <div className="flex flex-wrap gap-2 items-center">
           <Filter className="size-4 text-ink-400" />
           <button onClick={() => setFilterKind(null)} className={`chip ${!filterKind ? 'bg-ink-900 text-white border-ink-900' : ''}`}>Alle</button>
-          {(Object.keys(KIND_META) as TaskKind[]).map(k => (
-            <button key={k} onClick={() => setFilterKind(filterKind === k ? null : k)}
-              className={`chip ${filterKind === k ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
-              <span>{KIND_META[k].icon}</span>{KIND_META[k].label}
+          {allKinds.map(k => (
+            <button key={k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}
+              className={`chip ${filterKind === k.id ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
+              <span>{k.icon}</span>{k.label}
             </button>
           ))}
           <div className="w-px h-5 bg-ink-200 mx-1" />
@@ -187,6 +189,7 @@ export function TasksPage() {
 
 function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: (t: AppTask) => void; onToggle: (id: string) => void }) {
   const subjects = useStore(s => s.subjects);
+  const config = useStore(s => s.settings?.gradingConfig);
   const toneClass = (() => {
     switch (bucket.tone) {
       case 'danger': return 'text-rose-700';
@@ -229,7 +232,7 @@ function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: 
               <button onClick={() => onSelect(t)} className="flex-1 min-w-0 text-left">
                 <div className={`font-medium text-ink-800 truncate ${t.done ? 'line-through text-ink-400' : ''}`}>{t.title}</div>
                 <div className="text-xs text-ink-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                  <span>{KIND_META[t.kind].icon} {KIND_META[t.kind].label}</span>
+                  <span>{getTaskKindIcon(t.kind)} {getTaskKindLabel(t.kind, config)}</span>
                   {subj && (
                     <>
                       <span>·</span>
