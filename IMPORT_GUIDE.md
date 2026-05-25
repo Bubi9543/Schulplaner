@@ -33,6 +33,20 @@ Dieses Dokument beschreibt das **JSON-Format** für den Daten-Import in die Note
 - `version`: aktuell **3**. Wenn `version` höher ist, versucht die App trotzdem zu importieren.
 - `exportedAt`: ISO-Timestamp, dient nur der Übersicht.
 - Alle Listen sind optional, fehlende Listen werden als leer behandelt.
+- `settings` kann komplett weggelassen werden (oder `null`) – dann werden Standardwerte verwendet bzw. bestehende Settings beibehalten. **Wichtig:** Wenn du eine frische App-Installation importierst, sollte mindestens `{ "onboarded": true, "system": "bayern" }` in `settings` stehen, sonst landet der User wieder im Onboarding.
+
+## Settings (Minimal)
+
+```jsonc
+{
+  "onboarded": true,         // sonst wird das Onboarding gezeigt
+  "system": "bayern",        // Standard-Notensystem für neue Fächer
+  "name": "Max Mustermann",  // optional
+  "demo": false
+}
+```
+
+Alle weiteren Felder (theme, colorTheme, density, …) sind optional und nutzen Defaults.
 
 ---
 

@@ -302,10 +302,19 @@ export async function importData(rawText: string): Promise<ImportResult> {
   }
   if (skippedLessons) warnings.push(`${skippedLessons} Stunden ohne passendes Fach übersprungen.`);
 
-  // Settings
-  let settings: AppSettings | null = null;
+  // Settings: wenn in Datei → übernehmen; sonst bestehende behalten (so bleibt onboarded=true).
+  const existingSettings = await db.settings.get('app');
+  let settings: AppSettings;
   if (data.settings && typeof data.settings === 'object') {
-    settings = { ...DEFAULT_SETTINGS, ...(data.settings as object), id: 'app' } as AppSettings;
+    settings = { ...DEFAULT_SETTINGS, ...(existingSettings ?? {}), ...(data.settings as object), id: 'app', onboarded: true } as AppSettings;
+  } else if (existingSettings) {
+    // Existierende Settings beibehalten - User ist schon onboarded
+    settings = { ...existingSettings, onboarded: true } as AppSettings;
+    warnings.push('Datei enthielt keine Settings - bestehende Einstellungen wurden beibehalten.');
+  } else {
+    // Frisch installiert + Datei ohne Settings: minimale Defaults setzen, damit Onboarding übersprungen wird
+    settings = { ...DEFAULT_SETTINGS, id: 'app', onboarded: true, demo: false } as AppSettings;
+    warnings.push('Datei enthielt keine Settings - Standardwerte wurden gesetzt.');
   }
 
   // Reset + Insert
@@ -316,7 +325,7 @@ export async function importData(rawText: string): Promise<ImportResult> {
     await db.grades.clear();
     await db.tasks.clear();
     await db.lessons.clear();
-    if (settings) await db.settings.put(settings);
+    await db.settings.put(settings);
     if (schoolYears.length) await db.schoolYears.bulkAdd(schoolYears);
     if (subjects.length) await db.subjects.bulkAdd(subjects);
     if (grades.length) await db.grades.bulkAdd(grades);
