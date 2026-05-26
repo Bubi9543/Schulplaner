@@ -244,7 +244,14 @@ function TimelineWidget() {
 function TasksTodayWidget({ onSelectTask }: { onSelectTask: (t: AppTask) => void }) {
   const { subjects, tasks } = useStore();
   const todayTasks = useMemo(() =>
-    tasks.filter(t => !t.done && t.dueDate && daysUntil(t.dueDate) <= 1),
+    // Nur heute oder morgen fällig – Überfällige bewusst NICHT, damit das
+    // Dashboard aufgeräumt bleibt. Die landen in der Aufgaben-Liste unter
+    // "Überfällig".
+    tasks.filter(t => {
+      if (t.done || !t.dueDate) return false;
+      const d = daysUntil(t.dueDate);
+      return d >= 0 && d <= 1;
+    }),
     [tasks]);
 
   return (
