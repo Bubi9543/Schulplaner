@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar, Calculator, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -12,10 +13,11 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, getKindLabel, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
+import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, gradeColor, getKindLabel, subjectAverage, isLargeAssessmentKind, BUILTIN_KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
-import type { Grade, AppTask } from '@/types';
+import type { Grade, AppTask, GradeKind, Subject } from '@/types';
+import { BUILTIN_GRADE_KINDS } from '@/types';
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
@@ -220,6 +222,10 @@ export function SubjectDetailPage() {
             </div>
           )}
         </Card>
+
+        <Card delay={0.25} className="col-span-12">
+          <WhatIfCalculator subject={subject} realGrades={realGrades} pendingGrades={pendingGrades} />
+        </Card>
       </div>
 
       <GradeDialog open={gradeDialog.open} initial={gradeDialog.grade} defaultSubjectId={subject.id} onClose={() => setGradeDialog({ open: false })} />
@@ -248,6 +254,323 @@ export function SubjectDetailPage() {
       />
       <SubjectDialog open={subjectDialog} initial={subject} onClose={() => setSubjectDialog(false)} />
     </PageShell>
+  );
+}
+
+/* ─── Was-wäre-wenn-Rechner ──────────────────────────────────────────── */
+
+interface HypotheticalRow {
+  /** Stabile ID für React-Key. */
+  id: string;
+  /**
+   * Quelle:
+   * - 'pending'  → eine bestehende ausstehende Note vorbelegt
+   * - 'custom'   → frei hinzugefügter hypothetischer Eintrag
+   */
+  source: 'pending' | 'custom';
+  /** Bei source='pending': verweist auf die echte Pending-Grade-ID. */
+  pendingGradeId?: string;
+  label: string;
+  kind: GradeKind;
+  value: number;
+  /** Per-Note-Gewichts-Multiplikator (analog zu Grade.weightMultiplier). */
+  weightMultiplier: number;
+}
+
+function WhatIfCalculator({
+  subject,
+  realGrades,
+  pendingGrades,
+}: {
+  subject: Subject;
+  realGrades: Grade[];
+  pendingGrades: Grade[];
+}) {
+  const settings = useStore(s => s.settings);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const digits = settings?.averageDigits ?? 2;
+  const meta = getSystemMeta(subject.system, config);
+
+  const customKinds = config.customKinds ?? [];
+  const allKinds: GradeKind[] = [...BUILTIN_GRADE_KINDS, ...customKinds.map(c => c.id)];
+
+  function makeRowFromPending(g: Grade): HypotheticalRow {
+    return {
+      id: `pending-${g.id}`,
+      source: 'pending',
+      pendingGradeId: g.id,
+      label: g.title || (BUILTIN_KIND_LABEL[g.kind] ?? g.kind),
+      kind: g.kind,
+      value: meta.defaultValue,
+      weightMultiplier: g.weightMultiplier ?? 1,
+    };
+  }
+
+  // Default: alle Pending-Noten als Zeilen vorbelegt mit Default-Wert.
+  const [rows, setRows] = useState<HypotheticalRow[]>(() => pendingGrades.map(makeRowFromPending));
+  // Wenn neue Pending-Grades dazukommen, ergänze sie. (Reload bei Wechsel)
+  const [lastPendingIds, setLastPendingIds] = useState<string>(() => pendingGrades.map(g => g.id).sort().join(','));
+  const currentPendingIds = pendingGrades.map(g => g.id).sort().join(',');
+  if (currentPendingIds !== lastPendingIds) {
+    // Behalte bestehende User-Edits, ergänze neue Pendings.
+    const knownIds = new Set(rows.filter(r => r.source === 'pending').map(r => r.pendingGradeId));
+    const newOnes = pendingGrades.filter(g => !knownIds.has(g.id)).map(makeRowFromPending);
+    setRows(prev => [
+      ...prev.filter(r => r.source === 'custom' || pendingGrades.some(g => g.id === r.pendingGradeId)),
+      ...newOnes,
+    ]);
+    setLastPendingIds(currentPendingIds);
+  }
+
+  function updateRow(id: string, patch: Partial<HypotheticalRow>) {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  }
+
+  function removeRow(id: string) {
+    setRows(prev => prev.filter(r => r.id !== id));
+  }
+
+  function addCustom() {
+    setRows(prev => [
+      ...prev,
+      {
+        id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        source: 'custom',
+        label: 'Neue Note',
+        kind: 'muendlich',
+        value: meta.defaultValue,
+        weightMultiplier: 1,
+      },
+    ]);
+  }
+
+  function reset() {
+    setRows(pendingGrades.map(makeRowFromPending));
+  }
+
+  // ─── Berechnung ────────────────────────────────────────────────────────
+  // currentAvg = nur echte (nicht-pending) Noten
+  // hypotheticalAvg = echte + alle Zeilen als finale Noten
+  const currentAvg = useMemo(() => subjectAverage(realGrades, subject, config), [realGrades, subject, config]);
+
+  const hypotheticalAvg = useMemo(() => {
+    const virtual: Grade[] = rows.map(r => ({
+      id: r.id,
+      subjectId: subject.id,
+      value: r.value,
+      kind: r.kind,
+      date: Date.now(),
+      weight: 1,
+      weightMultiplier: r.weightMultiplier,
+      isPending: false,
+      schoolYearId: subject.schoolYearId,
+    }));
+    return subjectAverage([...realGrades, ...virtual], subject, config);
+  }, [rows, realGrades, subject, config]);
+
+  const delta = currentAvg !== null && hypotheticalAvg !== null
+    ? +(hypotheticalAvg - currentAvg).toFixed(3)
+    : null;
+
+  // Richtungssensitiv: in goodIsLow-Systemen ist negativer delta gut (besser).
+  const deltaGood = delta === null ? null
+    : meta.goodIsLow ? delta < -0.005
+    : delta > 0.005;
+  const deltaBad = delta === null ? null
+    : meta.goodIsLow ? delta > 0.005
+    : delta < -0.005;
+
+  // Verfügbare Werte für den Stepper – richtig sortiert (gut zuerst beim Slider links).
+  // Bei goodIsLow lassen wir den Standard-Range, der User sieht z.B. 1..6.
+
+  return (
+    <>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 className="h3 flex items-center gap-2">
+          <Calculator className="size-5 text-theme" />
+          Was-wäre-wenn-Rechner
+        </h3>
+        <div className="flex gap-2">
+          <button onClick={reset} className="btn-ghost text-xs" title="Auf Default-Werte zurücksetzen">
+            <RotateCcw className="size-3.5" />Zurücksetzen
+          </button>
+          <button onClick={addCustom} className="btn-primary text-xs">
+            <Plus className="size-3.5" />Hypothetische Note
+          </button>
+        </div>
+      </div>
+      <p className="subtle mb-4">
+        Probier durch, wie sich ausstehende Noten oder neue Wertungen auf deinen Schnitt auswirken.
+        Schulaufgaben/Klausuren werden{' '}
+        {subject.category === 'hauptfach' ? <><strong>doppelt</strong></>
+          : subject.category === 'hauptfach-1zu1' ? <><strong>1:1</strong></>
+          : <strong>gleich</strong>}
+        {' '}wie der Rest verrechnet.
+      </p>
+
+      {/* Schnitt-Vergleich */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <div className="rounded-2xl bg-white/60 p-4 text-center">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">Aktuell</div>
+          <div className="font-display font-extrabold text-3xl mt-1 text-ink-900">
+            {formatAverage(currentAvg, subject.system, digits)}
+          </div>
+        </div>
+        <div className="rounded-2xl p-4 text-center text-white relative overflow-hidden"
+          style={{ background: `linear-gradient(135deg, ${hypotheticalAvg !== null ? gradeColor(hypotheticalAvg, subject.system, config) : '#64748b'}, ${hypotheticalAvg !== null ? gradeColor(hypotheticalAvg, subject.system, config) : '#64748b'}cc)` }}
+        >
+          <div className="text-[11px] uppercase tracking-wider font-semibold opacity-90">
+            <Sparkles className="size-3 inline -mt-0.5 mr-1" />Hypothetisch
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={hypotheticalAvg !== null ? hypotheticalAvg.toFixed(2) : 'none'}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18 }}
+              className="font-display font-extrabold text-3xl mt-1"
+            >
+              {formatAverage(hypotheticalAvg, subject.system, digits)}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        <div className={`rounded-2xl p-4 text-center transition-colors ${
+          deltaGood ? 'bg-emerald-50 text-emerald-800'
+          : deltaBad ? 'bg-rose-50 text-rose-800'
+          : 'bg-white/60 text-ink-700'
+        }`}>
+          <div className="text-[11px] uppercase tracking-wider font-semibold opacity-80">Veränderung</div>
+          <div className="font-display font-extrabold text-3xl mt-1 flex items-center justify-center gap-1">
+            {deltaGood && <TrendingUp className="size-5" />}
+            {deltaBad && <TrendingDown className="size-5" />}
+            {delta === null || delta === 0 ? '–'
+              : (delta > 0 ? '+' : '') + delta.toFixed(2).replace('.', ',')}
+          </div>
+        </div>
+      </div>
+
+      {/* Eingabe-Liste */}
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border-2 border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+          <Sparkles className="size-5 text-theme mx-auto mb-2" />
+          Keine hypothetischen Noten – füg eine hinzu oder leg eine ausstehende Note an.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map(r => (
+            <HypotheticalRowEditor
+              key={r.id}
+              row={r}
+              subject={subject}
+              meta={meta}
+              allKinds={allKinds}
+              onChange={patch => updateRow(r.id, patch)}
+              onRemove={() => removeRow(r.id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-4 text-[11px] text-ink-400 leading-relaxed">
+        💡 Das hier ändert nichts an deinen echten Noten – nur Simulation. Sobald die Note real ist,
+        einfach in der Notenliste auf die ausstehende Note klicken und den Wert eintragen.
+      </div>
+    </>
+  );
+}
+
+function HypotheticalRowEditor({
+  row, subject, meta, allKinds, onChange, onRemove,
+}: {
+  row: HypotheticalRow;
+  subject: Subject;
+  meta: ReturnType<typeof getSystemMeta>;
+  allKinds: GradeKind[];
+  onChange: (patch: Partial<HypotheticalRow>) => void;
+  onRemove: () => void;
+}) {
+  const settings = useStore(s => s.settings);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const isLarge = isLargeAssessmentKind(row.kind, config);
+  const showCategoryHint = subject.category !== 'nebenfach';
+  // Multiplikator-Optionen analog zum GradeDialog.
+  const weightOptions = [0.5, 1, 1.5, 2];
+
+  return (
+    <li className="rounded-2xl bg-white/70 border border-white/60 p-3 sm:p-4">
+      <div className="flex items-start gap-3 flex-wrap sm:flex-nowrap">
+        {/* Label */}
+        <div className="flex-1 min-w-0">
+          <input
+            value={row.label}
+            onChange={e => onChange({ label: e.target.value })}
+            className="w-full bg-transparent font-semibold text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition"
+            placeholder="Bezeichnung"
+          />
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {allKinds.map(k => (
+              <button
+                key={k}
+                onClick={() => onChange({ kind: k })}
+                className={`text-[11px] px-2 py-0.5 rounded-full border transition ${
+                  row.kind === k
+                    ? 'bg-ink-900 text-white border-ink-900'
+                    : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
+                }`}
+              >
+                {getKindLabel(k, config)}
+              </button>
+            ))}
+          </div>
+          {showCategoryHint && (
+            <div className="text-[11px] text-ink-500 mt-2">
+              {isLarge
+                ? `📄 Zählt als ${subject.category === 'hauptfach' ? 'doppelte' : '1:1'} große Leistung.`
+                : '✏️ Zählt als kleine Leistung (Rest-Block).'}
+            </div>
+          )}
+        </div>
+
+        {/* Wert */}
+        <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+          <GradeBadge value={row.value} system={subject.system} size="md" />
+          <select
+            value={row.value}
+            onChange={e => onChange({ value: parseFloat(e.target.value) })}
+            className="chip bg-white/80 cursor-pointer text-xs"
+          >
+            {meta.valueOptions.map(v => (
+              <option key={v} value={v}>{meta.formatValue(v)}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Gewicht */}
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <select
+            value={weightOptions.includes(row.weightMultiplier) ? row.weightMultiplier : 'custom'}
+            onChange={e => {
+              if (e.target.value === 'custom') return;
+              onChange({ weightMultiplier: parseFloat(e.target.value) });
+            }}
+            className="chip bg-white/80 cursor-pointer text-xs"
+            title="Per-Note-Gewicht"
+          >
+            {weightOptions.map(w => (
+              <option key={w} value={w}>×{w.toString().replace('.', ',')}</option>
+            ))}
+          </select>
+          <button
+            onClick={onRemove}
+            className="size-7 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
+            title={row.source === 'pending' ? 'Aus Rechner entfernen' : 'Löschen'}
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      </div>
+    </li>
   );
 }
 
