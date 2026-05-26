@@ -5,7 +5,8 @@ import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
 import { getSystemMeta, gradeColor, getKindLabel, isLargeAssessmentKind } from '@/lib/grading';
 import { hexToRgba } from '@/lib/utils';
-import type { Grade, Photo } from '@/types';
+import { StudyChecklist } from '@/components/StudyChecklist';
+import type { Grade, Photo, StudyChecklistItem } from '@/types';
 
 interface Props {
   open: boolean;
@@ -22,6 +23,7 @@ export function GradeDetailDialog({ open, grade, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
   const deleteGrade = useStore(s => s.deleteGrade);
+  const updateGrade = useStore(s => s.updateGrade);
 
   useEffect(() => {
     if (!open) return;
@@ -149,6 +151,16 @@ export function GradeDetailDialog({ open, grade, onClose, onEdit }: Props) {
                   </MetaTile>
                 )}
               </div>
+
+              {/* Lerncheckliste – sinnvoll für ausstehende Schulaufgaben/Klausuren */}
+              {(isPending || (grade.studyChecklist && grade.studyChecklist.length > 0)) && (
+                <StudyChecklist
+                  items={grade.studyChecklist ?? []}
+                  onChange={(items: StudyChecklistItem[]) => {
+                    void updateGrade(grade.id, { studyChecklist: items });
+                  }}
+                />
+              )}
 
               {/* Fotos in groß */}
               <PhotoGallery refId={grade.id} refType="grade" />

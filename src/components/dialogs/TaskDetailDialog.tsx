@@ -4,7 +4,8 @@ import { X, Pencil, Trash2, Check, Circle, Calendar, Flag, Tag, NotebookText, Al
 import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
-import type { AppTask, Photo } from '@/types';
+import { StudyChecklist } from '@/components/StudyChecklist';
+import type { AppTask, Photo, StudyChecklistItem } from '@/types';
 
 interface Props {
   open: boolean;
@@ -27,6 +28,7 @@ export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
   const config = useStore(s => s.settings?.gradingConfig);
   const toggleTask = useStore(s => s.toggleTask);
+  const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
 
   useEffect(() => {
@@ -198,6 +200,16 @@ export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
                   </div>
                   <div className="text-ink-800 whitespace-pre-wrap leading-relaxed">{task.description}</div>
                 </div>
+              )}
+
+              {/* Lerncheckliste – sinnvoll vor allem für Tests/Schulaufgaben/Projekte */}
+              {(task.kind === 'test' || task.kind === 'schulaufgabe' || task.kind === 'projekt' || (task.studyChecklist && task.studyChecklist.length > 0)) && (
+                <StudyChecklist
+                  items={task.studyChecklist ?? []}
+                  onChange={(items: StudyChecklistItem[]) => {
+                    void updateTask(task.id, { studyChecklist: items });
+                  }}
+                />
               )}
 
               {/* Fotos in groß */}

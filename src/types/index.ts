@@ -119,6 +119,16 @@ export interface Grade {
   isPending?: boolean;
   /** Zugehöriges Schuljahr. Wird vom Subject geerbt beim Anlegen. */
   schoolYearId?: string;
+  /** Lerncheckliste – Themen die du können musst, mit Ampel-Status. */
+  studyChecklist?: StudyChecklistItem[];
+}
+
+export type StudyStatus = 'red' | 'yellow' | 'green';
+
+export interface StudyChecklistItem {
+  id: string;
+  label: string;
+  status: StudyStatus;
 }
 
 /**
@@ -145,6 +155,8 @@ export interface AppTask {
   createdAt: number;
   /** Zugehöriges Schuljahr. */
   schoolYearId?: string;
+  /** Lerncheckliste – Themen die du können musst, mit Ampel-Status. */
+  studyChecklist?: StudyChecklistItem[];
 }
 
 export interface Lesson {
