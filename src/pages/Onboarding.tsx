@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
-  Download, Upload, Loader2, AlertCircle,
+  Download, Upload, Loader2, AlertCircle, KeyRound,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
@@ -18,7 +18,7 @@ type Draft = Omit<Subject, 'id' | 'createdAt'>;
 const ONBOARDING_PENDING_KEY = 'onboarding_pending';
 /** Der Shortcut-Step (Cloud-Login / JSON-Import) wird nicht in den Stufen-Dots gezeigt. */
 const SHORTCUT_STEP = 99;
-const MAX_STEP = 4;
+const MAX_STEP = 5;
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Mathematik', short: 'M',   category: 'hauptfach' },
@@ -54,7 +54,7 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-const STEP_ICONS = [Sparkles, User, Trophy, BookOpen, Cloud];
+const STEP_ICONS = [Sparkles, User, Trophy, BookOpen, Cloud, KeyRound];
 
 function iconGrad(step: number) {
   const c = STEP_CFG[step];
@@ -82,10 +82,12 @@ export function Onboarding() {
   const [step, setStep]               = useState(0);
   const [prevStep, setPrevStep]       = useState(0);
   const [name, setName]               = useState('');
+  const [school, setSchool]           = useState('');
+  const [classLevel, setClassLevel]   = useState('');
   const [system, setSystem]           = useState<GradingSystem>('bayern');
   const [subjects, setSubjects]       = useState<Draft[]>([]);
 
-  const pendingRef = useRef<{ name: string; system: GradingSystem; subjects: Draft[] } | null>(null);
+  const pendingRef = useRef<{ name: string; school: string; classLevel: string; system: GradingSystem; subjects: Draft[] } | null>(null);
 
   // Restore state saved before Google OAuth redirect
   useEffect(() => {
@@ -95,18 +97,26 @@ export function Onboarding() {
     }
   }, []);
 
-  // Complete onboarding when authUser appears after OAuth redirect
+  // Nach OAuth-Redirect: Daten waren schon vor dem Login da, jetzt nur
+  // die in-memory State wiederherstellen und in den Friend-Code-Step springen.
+  // (finishWithData wird erst im Friend-Code-Step ausgelöst.)
   useEffect(() => {
     if (!authUser || !pendingRef.current) return;
     const saved = pendingRef.current;
     pendingRef.current = null;
     localStorage.removeItem(ONBOARDING_PENDING_KEY);
-    finishWithData(saved.name, saved.system, saved.subjects);
+    setName(saved.name);
+    setSchool(saved.school);
+    setClassLevel(saved.classLevel);
+    setSystem(saved.system);
+    setSubjects(saved.subjects);
+    setPrevStep(4);
+    setStep(5);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
   function saveStateForRedirect() {
-    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, system, subjects }));
+    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, school, classLevel, system, subjects }));
   }
 
   function toggleStarter(s: typeof STARTER_SUBJECTS[number]) {
@@ -125,12 +135,19 @@ export function Onboarding() {
     setSubjects(prev => [...prev, { name: n.trim(), short: n.trim().slice(0, 2), color, category: 'nebenfach', system }]);
   }
 
-  async function finishWithData(n: string, sys: GradingSystem, subjs: Draft[]) {
+  async function finishWithData(n: string, sch: string, cls: string, sys: GradingSystem, subjs: Draft[]) {
     for (const s of subjs) await addSubject({ ...s, system: sys });
-    await setSettings({ name: n.trim() || undefined, system: sys, onboarded: true, demo: false });
+    await setSettings({
+      name: n.trim() || undefined,
+      school: sch.trim() || undefined,
+      classLevel: cls.trim() || undefined,
+      system: sys,
+      onboarded: true,
+      demo: false,
+    });
     await load();
   }
-  async function finish() { await finishWithData(name, system, subjects); }
+  async function finish() { await finishWithData(name, school, classLevel, system, subjects); }
   async function tryDemo() { await installDemo(); await load(); }
 
   /**
@@ -258,7 +275,12 @@ export function Onboarding() {
             )}
             {step === 1 && (
               <motion.div key="n" {...slide(forward)}>
-                <NameStep name={name} setName={setName} next={goNext} back={goPrev} gradient={gradient} />
+                <ProfileStep
+                  name={name} setName={setName}
+                  school={school} setSchool={setSchool}
+                  classLevel={classLevel} setClassLevel={setClassLevel}
+                  next={goNext} back={goPrev} gradient={gradient}
+                />
               </motion.div>
             )}
             {step === 2 && (
@@ -277,7 +299,18 @@ export function Onboarding() {
             )}
             {step === 4 && (
               <motion.div key="a" {...slide(forward)}>
-                <AccountStep finish={finish} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
+                <AccountStep
+                  onAuthed={goNext}
+                  onSkip={finish}
+                  back={goPrev}
+                  onSaveState={saveStateForRedirect}
+                  gradient={gradient}
+                />
+              </motion.div>
+            )}
+            {step === 5 && (
+              <motion.div key="c" {...slide(forward)}>
+                <FriendCodeStep finish={finish} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -618,22 +651,46 @@ function ShortcutStep({ back, onFinish, gradient }: {
 
 /* ─── Step 1: Name ───────────────────────────────────────────────────── */
 
-function NameStep({ name, setName, next, back, gradient }: {
-  name: string; setName: (n: string) => void; next: () => void; back: () => void; gradient: string;
+function ProfileStep({ name, setName, school, setSchool, classLevel, setClassLevel, next, back, gradient }: {
+  name: string; setName: (n: string) => void;
+  school: string; setSchool: (s: string) => void;
+  classLevel: string; setClassLevel: (c: string) => void;
+  next: () => void; back: () => void; gradient: string;
 }) {
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Wie heißt du? 👋</h2>
-      <p className="text-ink-500 text-sm mt-1">Optional – nur für die persönliche Begrüßung.</p>
-      <div className="mt-6">
-        <GlassInput
-          value={name} onChange={setName}
-          placeholder="Dein Name" autoFocus
-          onKeyDown={e => e.key === 'Enter' && next()}
-        />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">Erzähl uns etwas über dich 👋</h2>
+      <p className="text-ink-500 text-sm mt-1">Alles optional – kannst du auch später in den Einstellungen ändern.</p>
+
+      <div className="mt-6 space-y-3">
+        <div>
+          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Name</label>
+          <GlassInput
+            value={name} onChange={setName}
+            placeholder="Dein Name" autoFocus
+            onKeyDown={e => e.key === 'Enter' && next()}
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Schule</label>
+            <GlassInput
+              value={school} onChange={setSchool}
+              placeholder="z. B. Albertus-Magnus-Gymnasium"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Klasse</label>
+            <GlassInput
+              value={classLevel} onChange={setClassLevel}
+              placeholder="11"
+            />
+          </div>
+        </div>
       </div>
-      <div className="mt-4">
+
+      <div className="mt-5">
         <PrimaryBtn onClick={next} gradient={gradient}>
           Weiter <ChevronRight className="size-4" />
         </PrimaryBtn>
@@ -760,8 +817,8 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
 
 /* ─── Step 5: Account ────────────────────────────────────────────────── */
 
-function AccountStep({ finish, back, onSaveState, gradient }: {
-  finish: () => void; back: () => void; onSaveState: () => void; gradient: string;
+function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
+  onAuthed: () => void; onSkip: () => void; back: () => void; onSaveState: () => void; gradient: string;
 }) {
   const { signIn, signUp, signInWithGoogle } = useStore();
   const [mode, setMode]         = useState<'choice' | 'login' | 'signup'>('choice');
@@ -774,7 +831,7 @@ function AccountStep({ finish, back, onSaveState, gradient }: {
     setError(''); setLoading(true);
     const err = mode === 'login' ? await signIn(email, password) : await signUp(email, password);
     setLoading(false);
-    if (err) setError(err); else finish();
+    if (err) setError(err); else onAuthed();
   }
 
   async function handleGoogle() {
@@ -828,7 +885,7 @@ function AccountStep({ finish, back, onSaveState, gradient }: {
         </div>
       )}
 
-      <button onClick={finish} className="mt-4 w-full py-2 text-sm text-ink-400 hover:text-ink-600 transition">
+      <button onClick={onSkip} className="mt-4 w-full py-2 text-sm text-ink-400 hover:text-ink-600 transition">
         Überspringen – später in Einstellungen einrichten
       </button>
 
@@ -838,6 +895,180 @@ function AccountStep({ finish, back, onSaveState, gradient }: {
         <a href="/impressum" className="hover:text-ink-700 transition">Impressum</a>
       </div>
     </GlassCard>
+  );
+}
+
+/* ─── Step 5: Friend-Code (optional) ─────────────────────────────────── */
+
+function FriendCodeStep({ finish, back, gradient }: {
+  finish: () => void; back: () => void; gradient: string;
+}) {
+  const authUser = useStore(s => s.authUser);
+  const addSubject = useStore(s => s.addSubject);
+  const importSharedSchedule = useStore(s => s.importSharedSchedule);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ ownerName?: string; subjects: number; lessons: number; payload: import('@/lib/scheduleShare').SharePayload } | null>(null);
+
+  async function lookup() {
+    setError(null);
+    setBusy(true);
+    try {
+      const mod = await import('@/lib/scheduleShare');
+      const info = await mod.fetchScheduleShare(code);
+      setPreview({
+        ownerName: info.payload.ownerName,
+        subjects: info.payload.subjects.length,
+        lessons: info.payload.lessons.length,
+        payload: info.payload,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function adoptAndFinish() {
+    if (!preview) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Erst die normalen Fächer aus dem Onboarding-Buffer schreiben + onboarded:true
+      // Das macht finish() schon. Aber wir wollen NACH finish noch die geteilten
+      // Lessons übernehmen. Trick: finish() ruft load(), das setzt activeSchoolYearId.
+      await finish();
+      // Kleine Verzögerung, damit Store geladen ist.
+      await new Promise(r => setTimeout(r, 200));
+      await importSharedSchedule(preview.payload, 'replace');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  void addSubject; // wird nur via finish() benutzt
+
+  if (!authUser) {
+    // Ohne Account macht der Code keinen Sinn → direkt durch.
+    return (
+      <GlassCard className="p-8 text-center">
+        <BackBtn onClick={back} />
+        <h2 className="font-display text-2xl font-extrabold text-ink-900">Fast fertig!</h2>
+        <p className="text-ink-500 text-sm mt-2">Klick weiter, dann landen wir im Dashboard.</p>
+        <div className="mt-6">
+          <PrimaryBtn onClick={finish} gradient={gradient}>
+            Los geht's <ChevronRight className="size-4" />
+          </PrimaryBtn>
+        </div>
+      </GlassCard>
+    );
+  }
+
+  if (preview) {
+    return (
+      <GlassCard className="p-8">
+        <BackBtn onClick={() => { setPreview(null); setCode(''); setError(null); }} />
+        <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan gefunden!</h2>
+        <div className="mt-4 rounded-2xl bg-white/55 border border-white/65 p-4">
+          <div className="text-xs uppercase tracking-wider font-semibold text-ink-500 mb-1">Vorschau</div>
+          <div className="font-display font-bold text-lg text-ink-900">
+            {preview.ownerName ? `${preview.ownerName}s Stundenplan` : 'Stundenplan'}
+          </div>
+          <div className="text-sm text-ink-600 mt-0.5">
+            {preview.subjects} Fächer · {preview.lessons} Stunden
+          </div>
+        </div>
+        <div className="text-xs text-ink-500 mt-3 leading-relaxed">
+          Wenn du übernimmst, werden die Fächer aus dem Code zu deinen hinzugefügt
+          (gleichnamige werden zusammengeführt) und alle Stunden in dein aktuelles
+          Schuljahr eingetragen.
+        </div>
+        <div className="mt-5 space-y-2">
+          <PrimaryBtn onClick={adoptAndFinish} disabled={busy} gradient={gradient}>
+            {busy ? <><Loader2 className="size-4 animate-spin" />Übernehme …</> : <>Übernehmen & los geht's</>}
+          </PrimaryBtn>
+          <button
+            onClick={finish}
+            disabled={busy}
+            className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition"
+          >
+            Ohne übernehmen weiter
+          </button>
+        </div>
+        {error && <div className="text-xs text-rose-600 mt-2 px-1">{error}</div>}
+      </GlassCard>
+    );
+  }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan vom Freund?</h2>
+      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
+        Wenn jemand aus deiner Klasse dir einen 4-stelligen Code geschickt hat,
+        kannst du den jetzt eingeben. Sonst einfach überspringen.
+      </p>
+
+      <div className="mt-6 space-y-3">
+        <FriendCodeBoxes value={code} onChange={setCode} />
+        <PrimaryBtn
+          onClick={lookup}
+          disabled={busy || code.length !== 4}
+          gradient={gradient}
+        >
+          {busy ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen <ChevronRight className="size-4" /></>}
+        </PrimaryBtn>
+        {error && (
+          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 flex items-start gap-2">
+            <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />{error}
+          </div>
+        )}
+        <button
+          onClick={finish}
+          className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition"
+        >
+          Habe keinen Code – überspringen
+        </button>
+      </div>
+    </GlassCard>
+  );
+}
+
+function FriendCodeBoxes({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  function normalize(raw: string): string {
+    return raw.toUpperCase().split('').filter(c => ALPHABET.includes(c)).join('').slice(0, 4);
+  }
+  const chars = value.padEnd(4, ' ').slice(0, 4).split('');
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 justify-center">
+        {chars.map((c, i) => (
+          <div key={i}
+            className={`size-14 md:size-16 rounded-2xl border-2 grid place-items-center font-display font-extrabold text-3xl md:text-4xl transition ${
+              c.trim() ? 'border-white/80 bg-white/70 text-ink-900' : 'border-white/40 bg-white/25 text-white/40'
+            }`}>
+            {c.trim() || '·'}
+          </div>
+        ))}
+      </div>
+      <input
+        autoFocus
+        value={value}
+        onChange={e => onChange(normalize(e.target.value))}
+        placeholder="ABCD"
+        maxLength={4}
+        inputMode="text"
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        className="w-full px-4 py-3.5 rounded-2xl bg-white/40 border border-white/50 text-ink-900 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-white/70 focus:bg-white/60 transition text-center text-2xl font-display font-bold tracking-[0.3em] uppercase"
+      />
+    </div>
   );
 }
 

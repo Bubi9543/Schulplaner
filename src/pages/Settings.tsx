@@ -6,6 +6,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
+import { SchoolYearOnboardingDialog } from '@/components/dialogs/SchoolYearOnboardingDialog';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { db } from '@/lib/db';
@@ -1163,6 +1164,7 @@ function SchoolYearsSection() {
   });
   const [copySubjects, setCopySubjects] = useState(true);
   const [copyLessons, setCopyLessons] = useState(true);
+  const [yearOnboarding, setYearOnboarding] = useState<{ open: boolean; yearName: string }>({ open: false, yearName: '' });
 
   function suggestName() {
     const [y] = newStart.split('-').map(Number);
@@ -1171,6 +1173,7 @@ function SchoolYearsSection() {
 
   async function create() {
     const name = newName.trim() || suggestName();
+    const skipCopy = !copySubjects || !activeId;
     await addSchoolYear({
       name,
       startDate: new Date(newStart).getTime(),
@@ -1179,6 +1182,10 @@ function SchoolYearsSection() {
     });
     setShowForm(false);
     setNewName('');
+    // Wenn nicht kopiert wurde, ist das Jahr leer → kleines Onboarding öffnen.
+    if (skipCopy) {
+      setYearOnboarding({ open: true, yearName: name });
+    }
   }
 
   const fmtDate = (ts: number) => new Date(ts).toLocaleDateString('de', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -1286,6 +1293,12 @@ function SchoolYearsSection() {
           </div>
         )}
       </Card>
+
+      <SchoolYearOnboardingDialog
+        open={yearOnboarding.open}
+        yearName={yearOnboarding.yearName}
+        onClose={() => setYearOnboarding({ open: false, yearName: '' })}
+      />
     </div>
   );
 }
