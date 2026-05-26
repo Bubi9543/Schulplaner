@@ -6,12 +6,13 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend, BarChart, Bar,
 } from 'recharts';
 import {
   Plus, ListTodo, GraduationCap, NotebookPen, CheckCircle2, Circle,
   TrendingUp, TrendingDown, Sparkles, ArrowRight, Briefcase, FileText,
   Calendar, GripHorizontal, X, Award, Clock, BookOpen, BarChart2, Pencil,
+  Target, Trophy, Layers, AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
@@ -42,7 +43,11 @@ type WidgetType =
   | 'recent-grades'
   | 'pending-grades'
   | 'grade-distribution'
-  | 'subjects';
+  | 'subjects'
+  | 'upcoming-exams'
+  | 'subject-leaderboard'
+  | 'weekly-progress'
+  | 'group-averages';
 
 interface WidgetInstance { id: string; type: WidgetType; }
 
@@ -84,6 +89,10 @@ const WIDGET_META: Record<WidgetType, {
   'pending-grades':     { label: 'Ausstehende Noten',    icon: Clock,       defaultSize: { w: 6, h: 6 } },
   'grade-distribution': { label: 'Notenverteilung',      icon: BarChart2,   defaultSize: { w: 5, h: 7 } },
   'subjects':           { label: 'Fächer',               icon: BookOpen,    defaultSize: { w: 7, h: 7 } },
+  'upcoming-exams':     { label: 'Anstehende Klausuren', icon: Target,      defaultSize: { w: 6, h: 7 } },
+  'subject-leaderboard':{ label: 'Top & Flop Fächer',    icon: Trophy,      defaultSize: { w: 6, h: 7 } },
+  'weekly-progress':    { label: 'Wochenfortschritt',    icon: CheckCircle2, defaultSize: { w: 5, h: 6 } },
+  'group-averages':     { label: 'Schnitt pro Gruppe',   icon: Layers,      defaultSize: { w: 6, h: 6 } },
 };
 
 const QUICK_BUTTON_META: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -482,6 +491,334 @@ function SubjectsWidget() {
   );
 }
 
+// ─── Neue Widgets ──────────────────────────────────────────────────────────
+
+/**
+ * Anstehende Klausuren/Tests-Countdown. Sammelt:
+ * - pending Grades vom Typ schulaufgabe/klausur (= geplante große Leistungen)
+ * - Tasks vom Typ test/schulaufgabe mit dueDate
+ * Sortiert nach Datum, zeigt max 5 mit „in X Tagen"-Pille.
+ */
+function UpcomingExamsWidget({
+  onSelectGrade, onSelectTask,
+}: {
+  onSelectGrade: (g: Grade) => void;
+  onSelectTask: (t: AppTask) => void;
+}) {
+  const { subjects, grades, tasks } = useStore();
+
+  const items = useMemo(() => {
+    const out: Array<{ kind: 'grade' | 'task'; date: number; title: string; subjectId?: string; raw: Grade | AppTask }> = [];
+    const now = Date.now();
+    for (const g of grades) {
+      if (g.isPending && (g.kind === 'schulaufgabe' || g.kind === 'klausur') && g.date >= now - 86400000) {
+        out.push({ kind: 'grade', date: g.date, title: g.title ?? 'Schulaufgabe', subjectId: g.subjectId, raw: g });
+      }
+    }
+    for (const t of tasks) {
+      if (!t.done && (t.kind === 'test' || t.kind === 'schulaufgabe') && t.dueDate && t.dueDate >= now - 86400000) {
+        out.push({ kind: 'task', date: t.dueDate, title: t.title, subjectId: t.subjectId, raw: t });
+      }
+    }
+    return out.sort((a, b) => a.date - b.date).slice(0, 5);
+  }, [grades, tasks]);
+
+  return (
+    <div className="h-full flex flex-col widget-pad">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="h3 flex items-center gap-2"><Target className="size-5 text-rose-500" />Anstehende Klausuren</h3>
+        <span className="chip">{items.length}</span>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">
+        {items.length === 0 ? (
+          <div className="h-full grid place-items-center text-sm text-ink-500 text-center px-4">
+            Nichts in Sicht. 🌿<br />
+            <span className="text-xs text-ink-400 mt-1">Trag geplante Klausuren als „ausstehende Note" ein.</span>
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {items.map(item => {
+              const subj = subjects.find(s => s.id === item.subjectId);
+              const d = daysUntil(item.date);
+              const urgent = d <= 3;
+              const tone = d <= 3 ? 'bg-rose-100 text-rose-700 border-rose-200'
+                : d <= 7 ? 'bg-amber-100 text-amber-700 border-amber-200'
+                : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+              return (
+                <li key={`${item.kind}-${item.raw.id}`}>
+                  <button
+                    onClick={() => item.kind === 'grade' ? onSelectGrade(item.raw as Grade) : onSelectTask(item.raw as AppTask)}
+                    className="w-full text-left rounded-2xl bg-white/70 hover:bg-white p-3 flex items-center gap-3 transition"
+                  >
+                    {urgent && d >= 0 && d <= 1 ? (
+                      <motion.div
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ duration: 1.4, repeat: Infinity }}
+                        className="size-10 rounded-xl bg-rose-500 text-white grid place-items-center flex-shrink-0"
+                      >
+                        <AlertTriangle className="size-5" />
+                      </motion.div>
+                    ) : (
+                      <div className="size-10 rounded-xl grid place-items-center text-white font-bold text-xs flex-shrink-0" style={{ background: subj?.color ?? '#64748b' }}>
+                        {subj?.short ?? '?'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-ink-800 truncate">{item.title}</div>
+                      <div className="text-xs text-ink-500 truncate">
+                        {subj?.name ?? 'Ohne Fach'} · {item.kind === 'grade' ? 'Schulaufgabe' : 'Test'}
+                      </div>
+                    </div>
+                    <span className={cn('chip text-[10px] flex-shrink-0', tone)}>
+                      {d === 0 ? 'heute' : d === 1 ? 'morgen' : d < 0 ? `vor ${-d}d` : `in ${d}d`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Top 3 + Flop 3 Fächer nach Schnitt. Springt zu Fach-Detail bei Klick. */
+function SubjectLeaderboardWidget() {
+  const { subjects, grades, settings } = useStore();
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const digits = settings?.averageDigits ?? 2;
+
+  const ranked = useMemo(() => {
+    const withAvg = subjects
+      .map(s => ({ subject: s, avg: subjectAverage(grades, s, config) }))
+      .filter(x => x.avg !== null) as Array<{ subject: typeof subjects[number]; avg: number }>;
+    if (withAvg.length === 0) return { top: [], flop: [] };
+
+    // System bestimmt Sortier-Richtung: bei goodIsLow ist niedriger besser
+    const firstMeta = getSystemMeta(withAvg[0].subject.system, config);
+    const sorted = [...withAvg].sort((a, b) => firstMeta.goodIsLow ? a.avg - b.avg : b.avg - a.avg);
+    const half = Math.min(3, Math.floor(sorted.length / 2));
+    const top = sorted.slice(0, Math.min(3, sorted.length));
+    const flop = sorted.length > 3 ? sorted.slice(-Math.min(3, half || 1)).reverse() : [];
+    return { top, flop };
+  }, [subjects, grades, config]);
+
+  function row(item: { subject: typeof subjects[number]; avg: number }, idx: number, kind: 'top' | 'flop') {
+    return (
+      <Link
+        key={item.subject.id}
+        to={`/noten/${item.subject.id}`}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-white/70 transition"
+      >
+        <div className={`size-6 rounded-full grid place-items-center text-[11px] font-extrabold flex-shrink-0 ${
+          kind === 'top' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+        }`}>
+          {idx + 1}
+        </div>
+        <div className="size-7 rounded-lg grid place-items-center text-white font-bold text-[10px] flex-shrink-0" style={{ background: item.subject.color }}>
+          {item.subject.short}
+        </div>
+        <div className="flex-1 min-w-0 text-sm font-medium text-ink-800 truncate">{item.subject.name}</div>
+        <GradeBadge value={item.avg} system={item.subject.system} size="sm" />
+      </Link>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col widget-pad">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="h3 flex items-center gap-2"><Trophy className="size-5 text-amber-500" />Top & Flop</h3>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0">
+        {ranked.top.length === 0 ? (
+          <div className="h-full grid place-items-center text-sm text-ink-500 text-center px-4">
+            Noch keine Noten erfasst.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-emerald-700 mb-1 pl-1">Beste</div>
+              <div className="space-y-0.5">{ranked.top.map((x, i) => row(x, i, 'top'))}</div>
+            </div>
+            {ranked.flop.length > 0 && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-rose-600 mb-1 pl-1">Brauchen Aufmerksamkeit</div>
+                <div className="space-y-0.5">{ranked.flop.map((x, i) => row(x, i, 'flop'))}</div>
+              </div>
+            )}
+            <div className="text-[10px] text-ink-400 text-center pt-1">
+              Schnitt mit {digits} Nachkommastellen · Klick öffnet Fach-Detail
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Wochenfortschritt – wieviele Tasks diese Woche erledigt vs. fällig. */
+function WeeklyProgressWidget() {
+  const { tasks } = useStore();
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const dow = (now.getDay() + 6) % 7; // 0 = Mo
+    const weekStart = new Date(now); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(weekStart.getDate() - dow);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
+
+    let dueThisWeek = 0;
+    let doneThisWeek = 0;
+    let overdueOpen = 0;
+    for (const t of tasks) {
+      if (!t.dueDate) continue;
+      const isInWeek = t.dueDate >= weekStart.getTime() && t.dueDate < weekEnd.getTime();
+      if (isInWeek) {
+        dueThisWeek++;
+        if (t.done) doneThisWeek++;
+      }
+      if (!t.done && t.dueDate < weekStart.getTime()) overdueOpen++;
+    }
+    const pct = dueThisWeek > 0 ? Math.round((doneThisWeek / dueThisWeek) * 100) : 0;
+    return { dueThisWeek, doneThisWeek, overdueOpen, pct };
+  }, [tasks]);
+
+  // Ring-Berechnung
+  const r = 42;
+  const C = 2 * Math.PI * r;
+  const dash = (stats.pct / 100) * C;
+
+  return (
+    <div className="h-full flex flex-col widget-pad">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="h3 flex items-center gap-2"><CheckCircle2 className="size-5 text-emerald-500" />Diese Woche</h3>
+        {stats.overdueOpen > 0 && (
+          <span className="chip bg-rose-100 text-rose-700 border-rose-200">
+            <AlertTriangle className="size-3" />{stats.overdueOpen} überfällig
+          </span>
+        )}
+      </div>
+      <div className="flex-1 min-h-0 grid place-items-center">
+        {stats.dueThisWeek === 0 ? (
+          <div className="text-sm text-ink-500 text-center">
+            Diese Woche keine Aufgaben fällig 🌿
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <svg width="120" height="120" viewBox="0 0 100 100" className="-rotate-90">
+                <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(15,18,32,0.08)" strokeWidth="10" />
+                <motion.circle
+                  cx="50" cy="50" r={r}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={`${dash} ${C}`}
+                  className="text-emerald-500"
+                  initial={{ strokeDasharray: `0 ${C}` }}
+                  animate={{ strokeDasharray: `${dash} ${C}` }}
+                  transition={{ duration: 0.9, ease: 'easeOut' }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="font-display font-extrabold text-2xl text-ink-900">{stats.pct}%</div>
+                <div className="text-[10px] text-ink-500 uppercase tracking-wider font-semibold">erledigt</div>
+              </div>
+            </div>
+            <div className="text-sm text-ink-600 text-center">
+              <span className="font-bold text-ink-900">{stats.doneThisWeek}</span> von <span className="font-bold text-ink-900">{stats.dueThisWeek}</span> erledigt
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Schnitt pro Fächergruppe als Bar-Chart. Wenn keine Gruppen definiert:
+ * freundlicher Hinweis mit Link zu Settings.
+ */
+function GroupAveragesWidget() {
+  const { subjects, grades, settings } = useStore();
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const groups = settings?.subjectGroups ?? [];
+  const digits = settings?.averageDigits ?? 2;
+  const system = subjects[0]?.system ?? 'bayern';
+  const systemMeta = getSystemMeta(system, config);
+
+  const data = useMemo(() => {
+    if (groups.length === 0) return [];
+    return groups
+      .map(g => {
+        const groupSubjects = subjects.filter(s => s.groupId === g.id);
+        const avgs = groupSubjects.map(s => subjectAverage(grades, s, config)).filter(a => a !== null) as number[];
+        if (avgs.length === 0) return null;
+        const avg = avgs.reduce((a, b) => a + b, 0) / avgs.length;
+        return {
+          name: g.label,
+          avg: +avg.toFixed(3),
+          color: gradeColor(avg, system, config),
+          count: groupSubjects.length,
+        };
+      })
+      .filter((x): x is { name: string; avg: number; color: string; count: number } => x !== null);
+  }, [subjects, grades, config, groups, system]);
+
+  if (groups.length === 0) {
+    return (
+      <div className="h-full flex flex-col widget-pad">
+        <div className="flex items-center justify-between mb-2 flex-shrink-0">
+          <h3 className="h3 flex items-center gap-2"><Layers className="size-5 text-violet-500" />Schnitt pro Gruppe</h3>
+        </div>
+        <div className="flex-1 grid place-items-center text-center text-sm text-ink-500 px-4">
+          Du hast noch keine Fächergruppen.<br />
+          <Link to="/einstellungen?section=subjects" className="inline-flex items-center gap-1 mt-2 text-theme-deep font-semibold hover:underline">
+            Anlegen in Einstellungen <ArrowRight className="size-3" />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col widget-pad">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="h3 flex items-center gap-2"><Layers className="size-5 text-violet-500" />Schnitt pro Gruppe</h3>
+      </div>
+      <div className="flex-1 min-h-0">
+        {data.length === 0 ? (
+          <div className="h-full grid place-items-center text-sm text-ink-500">Noch keine Noten in deinen Gruppen.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} layout="vertical" margin={{ top: 4, right: 40, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(15,18,32,0.06)" horizontal={false} />
+              <XAxis
+                type="number"
+                domain={systemMeta.goodIsLow ? [systemMeta.min, systemMeta.max] : [systemMeta.min, systemMeta.max]}
+                reversed={systemMeta.goodIsLow}
+                stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11}
+              />
+              <YAxis
+                type="category" dataKey="name"
+                stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={12} width={110}
+              />
+              <Tooltip
+                contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
+                formatter={(v: unknown) => typeof v === 'number' ? formatAverage(v, system, digits) : String(v)}
+              />
+              <Bar dataKey="avg" radius={[6, 6, 6, 6]}>
+                {data.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Widget router ─────────────────────────────────────────────────────────────
 
 function WidgetRouter({
@@ -502,6 +839,10 @@ function WidgetRouter({
     case 'pending-grades':     return <PendingGradesWidget onSelectGrade={onSelectGrade} />;
     case 'grade-distribution': return <GradeDistributionWidget />;
     case 'subjects':           return <SubjectsWidget />;
+    case 'upcoming-exams':     return <UpcomingExamsWidget onSelectGrade={onSelectGrade} onSelectTask={onSelectTask} />;
+    case 'subject-leaderboard':return <SubjectLeaderboardWidget />;
+    case 'weekly-progress':    return <WeeklyProgressWidget />;
+    case 'group-averages':     return <GroupAveragesWidget />;
   }
 }
 
