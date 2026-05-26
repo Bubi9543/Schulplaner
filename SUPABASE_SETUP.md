@@ -100,6 +100,28 @@ create table if not exists schedule_shares (
 create index if not exists schedule_shares_owner_idx on schedule_shares(owner_user_id);
 create index if not exists schedule_shares_expires_idx on schedule_shares(expires_at);
 
+-- Push-Notifications: Browser-Subscriptions pro Gerät.
+create table if not exists push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on push_subscriptions(user_id);
+
+-- Push-Notification-Log (Dedup): pro (user, event_key) nur einmal senden.
+create table if not exists notification_log (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  event_key text not null,
+  sent_at timestamptz not null default now()
+);
+create unique index if not exists notification_log_unique on notification_log(user_id, event_key);
+create index if not exists notification_log_sent_idx on notification_log(sent_at);
+
 -- RLS einschalten
 alter table subjects     enable row level security;
 alter table grades       enable row level security;
@@ -110,6 +132,8 @@ alter table photos       enable row level security;
 alter table user_settings enable row level security;
 alter table schedule_shares enable row level security;
 alter table calendar_tokens enable row level security;
+alter table push_subscriptions enable row level security;
+alter table notification_log enable row level security;
 
 -- Policies: User sieht/ändert nur eigene Zeilen
 create policy "own subjects"      on subjects     for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -135,6 +159,16 @@ create policy "owner delete" on schedule_shares for delete
 -- in der Edge Function läuft mit dem Service-Role-Key und umgeht RLS.
 create policy "own calendar tokens" on calendar_tokens for all
   to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- push_subscriptions: User verwaltet nur eigene Geräte-Endpoints. Die
+-- Edge Function push-runner liest mit Service-Role-Key über RLS hinweg.
+create policy "own push subscriptions" on push_subscriptions for all
+  to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- notification_log: User sieht nur eigene Log-Einträge. INSERT macht
+-- ohnehin nur die Edge Function mit Service-Role.
+create policy "own notification log" on notification_log for select
+  to authenticated using (user_id = auth.uid());
 
 -- Realtime-Publication: Voraussetzung für Live-Sync zwischen Geräten.
 -- (Ignoriert Fehler, falls Tabellen schon Teil der Publication sind.)
@@ -212,7 +246,104 @@ https://<PROJECT_REF>.supabase.co/functions/v1/calendar/<TOKEN>.ics
 Die App generiert pro User einen zufälligen 32-Zeichen-Token (gespeichert
 in `calendar_tokens`) und bietet den Link über die Einstellungen an.
 
-## 6. Fertig
+## 6. Edge Function: Push-Benachrichtigungen
+
+Damit die App Push-Notifications schicken kann (Hausaufgaben-Erinnerung,
+Klausuren-Vorlauf, Stundenbeginn, Lerndeadline) brauchst du:
+
+### 6.1 VAPID-Keys erzeugen
+
+VAPID = Voluntary Application Server Identification. Ein einmaliges
+Schlüsselpaar, mit dem dein Server sich gegenüber den Push-Diensten der
+Browser ausweist. Im Projekt-Root:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Du bekommst:
+```
+Public Key:  BLn... (87 Zeichen, beginnt mit B)
+Private Key: K8h... (43 Zeichen)
+```
+
+**Public Key** kommt ins Frontend als `VITE_VAPID_PUBLIC_KEY`
+(Vercel-Env-Var setzen + neu deployen, oder lokal in `.env.local`).
+
+**Private Key** kommt nur in die Supabase-Function als Secret:
+
+```bash
+cd /Users/conorbecker/Documents/notenapp
+supabase secrets set \
+  VAPID_PUBLIC_KEY='BLn...' \
+  VAPID_PRIVATE_KEY='K8h...' \
+  VAPID_SUBJECT='mailto:du@deine-mail.de'
+```
+
+`VAPID_SUBJECT` muss ein gültiger `mailto:`-Link oder `https://`-URL sein
+(Browser-Push-Dienste verlangen das).
+
+### 6.2 Function deployen
+
+```bash
+supabase functions deploy push-runner
+```
+
+`push-runner` läuft mit Service-Role-Key, also kein `--no-verify-jwt`
+nötig – sie wird nur intern via pg_cron getriggert.
+
+### 6.3 pg_cron einrichten
+
+In Supabase SQL-Editor (einmalig):
+
+```sql
+-- Extensions aktivieren (idempotent)
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+-- Helper, der die Edge Function aufruft. Service-Role-Key liest er aus
+-- dem Vault.
+create or replace function trigger_push_runner()
+returns void language plpgsql security definer as $$
+declare
+  result bigint;
+begin
+  select net.http_post(
+    url := 'https://<DEIN_PROJECT_REF>.supabase.co/functions/v1/push-runner',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
+    )
+  ) into result;
+end $$;
+
+-- Service-Role-Key im Vault speichern (mit deinem echten Key ersetzen)
+select vault.create_secret('eyJhbGc...DEIN_SERVICE_ROLE_KEY...', 'service_role_key');
+
+-- Alle 5 Minuten ausführen
+select cron.schedule(
+  'push-runner-every-5min',
+  '*/5 * * * *',
+  $$ select trigger_push_runner() $$
+);
+```
+
+Du findest den Service-Role-Key unter **Project Settings → API → service_role secret**
+(nicht den anon-key!).
+
+Zum Stoppen später: `select cron.unschedule('push-runner-every-5min');`
+
+### 6.4 Frontend-Env
+
+In Vercel (oder lokal `.env.local`):
+```
+VITE_VAPID_PUBLIC_KEY=BLn...derselbe Public-Key wie oben...
+```
+
+Danach neu deployen. In den App-Einstellungen erscheint dann der neue
+„Benachrichtigungen"-Tab.
+
+## 7. Fertig
 
 Im Settings → Cloud Sync der App einloggen. Sobald du auf einem zweiten Gerät eingeloggt bist, **synchronisieren sich Änderungen automatisch in Echtzeit** – kein manueller Upload nötig. Fotos werden ab dem Login direkt in den `photos`-Bucket hochgeladen und beim Wechseln auf andere Geräte automatisch heruntergeladen.
 

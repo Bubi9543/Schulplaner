@@ -7,8 +7,14 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon.svg'],
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+      },
       manifest: {
         name: 'Notenapp',
         short_name: 'Noten',
@@ -23,9 +29,6 @@ export default defineConfig({
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
         ],
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
       },
     }),
   ],

@@ -5,3 +5,6 @@ project_id = "notenapp"
 
 [functions.calendar]
 verify_jwt = false
+
+# push-runner wird via pg_cron getriggert; JWT bleibt aktiviert (Service-Role
+# wird im Authorization-Header mitgesendet).

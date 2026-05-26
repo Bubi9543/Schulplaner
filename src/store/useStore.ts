@@ -27,6 +27,18 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
       g && typeof g === 'object' && typeof g.id === 'string' && typeof g.label === 'string',
     );
   }
+  // Notifications: alte Settings ohne das Feld bekommen Default; bestehende
+  // werden mit Defaults „aufgefüllt" für fehlende Unter-Keys.
+  const def = DEFAULT_SETTINGS.notifications;
+  const n = (stored.notifications ?? {}) as Partial<typeof def>;
+  merged.notifications = {
+    enabled: n.enabled ?? def.enabled,
+    homework: { ...def.homework, ...(n.homework ?? {}) },
+    exam: { ...def.exam, ...(n.exam ?? {}) },
+    lessonStart: { ...def.lessonStart, ...(n.lessonStart ?? {}) },
+    studyDeadline: { ...def.studyDeadline, ...(n.studyDeadline ?? {}) },
+    quietHours: { ...def.quietHours, ...(n.quietHours ?? {}) },
+  };
   return merged;
 }
 

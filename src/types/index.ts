@@ -223,7 +223,60 @@ export interface AppSettings {
   gradingConfig: GradingSystemConfig;
   /** Vom User angelegte Fächergruppen. */
   subjectGroups: SubjectGroup[];
+  /** Push-Notification-Konfiguration. */
+  notifications: NotificationSettings;
 }
+
+/** Konfiguration der Push-Benachrichtigungen – pro Event-Typ einzeln steuerbar. */
+export interface NotificationSettings {
+  /** Master-Switch. Wenn false, wird gar nichts gesendet. */
+  enabled: boolean;
+  /** Hausaufgaben-Erinnerung. */
+  homework: {
+    enabled: boolean;
+    /** Wieviele Stunden vor `dueDate` benachrichtigen. */
+    hoursBefore: number;
+  };
+  /** Klausuren & Tests. */
+  exam: {
+    enabled: boolean;
+    /** Erste Benachrichtigung in X Tagen vorher (0 = aus). */
+    daysBefore: number;
+    /** Zweite Benachrichtigung in X Stunden vorher (0 = aus). */
+    hoursBefore: number;
+  };
+  /** Stundenbeginn-Erinnerung. */
+  lessonStart: {
+    enabled: boolean;
+    /** Minuten vor Stundenbeginn. */
+    minutesBefore: number;
+    /** Nur Montag–Freitag. */
+    onlyWeekdays: boolean;
+  };
+  /** Lerncheckliste-Deadline (studyDeadline). */
+  studyDeadline: {
+    enabled: boolean;
+    /** Stunden vor `studyDeadline`. */
+    hoursBefore: number;
+  };
+  /** Stille Zeit – während dieses Fensters nicht benachrichtigen. */
+  quietHours: {
+    enabled: boolean;
+    /** HH:MM Start (z. B. "22:00"). */
+    from: string;
+    /** HH:MM Ende (z. B. "07:00"). Wenn from > to, läuft das Fenster über Mitternacht. */
+    to: string;
+  };
+}
+
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: false,
+  homework: { enabled: true, hoursBefore: 12 },
+  exam: { enabled: true, daysBefore: 3, hoursBefore: 12 },
+  lessonStart: { enabled: false, minutesBefore: 10, onlyWeekdays: true },
+  studyDeadline: { enabled: true, hoursBefore: 24 },
+  quietHours: { enabled: true, from: '22:00', to: '07:00' },
+};
 
 export const SUBJECT_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
@@ -283,6 +336,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   trendThreshold: 0.2,
   gradingConfig: DEFAULT_GRADING_CONFIG,
   subjectGroups: [],
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
 };
 
 function structuredCloneSafe<T>(v: T): T {

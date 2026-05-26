@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -17,20 +17,21 @@ import { CATEGORY_DESCRIPTION } from '@/lib/grading';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'profile',     label: 'Profil',          icon: User },
-  { id: 'appearance',  label: 'Erscheinung',     icon: Palette },
-  { id: 'dashboard',   label: 'Dashboard',       icon: LayoutDashboard },
-  { id: 'grading',     label: 'Noten & Aufgaben', icon: GraduationCap },
-  { id: 'subjects',    label: 'Fächer',          icon: BookOpen },
-  { id: 'schoolyears', label: 'Schuljahre',      icon: Calendar },
-  { id: 'data',        label: 'Daten & Sync',    icon: Database },
-  { id: 'about',       label: 'Über',            icon: Info },
+  { id: 'profile',       label: 'Profil',            icon: User },
+  { id: 'appearance',    label: 'Erscheinung',       icon: Palette },
+  { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
+  { id: 'grading',       label: 'Noten & Aufgaben',  icon: GraduationCap },
+  { id: 'subjects',      label: 'Fächer',            icon: BookOpen },
+  { id: 'schoolyears',   label: 'Schuljahre',        icon: Calendar },
+  { id: 'notifications', label: 'Benachrichtigungen', icon: Bell },
+  { id: 'data',          label: 'Daten & Sync',      icon: Database },
+  { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -89,6 +90,7 @@ export function SettingsPage() {
               {section === 'grading' && <GradingSection />}
               {section === 'subjects' && <SubjectsSection />}
               {section === 'schoolyears' && <SchoolYearsSection />}
+              {section === 'notifications' && <NotificationsSection />}
               {section === 'data' && <DataSection />}
               {section === 'about' && <AboutSection />}
             </motion.div>
@@ -1299,6 +1301,324 @@ function SchoolYearsSection() {
         yearName={yearOnboarding.yearName}
         onClose={() => setYearOnboarding({ open: false, yearName: '' })}
       />
+    </div>
+  );
+}
+
+/* ─── Benachrichtigungen ─────────────────────────────────────────────── */
+
+function NotificationsSection() {
+  const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
+  const authUser = useStore(s => s.authUser);
+  const n = settings.notifications;
+
+  const [permission, setPermission] = useState<import('@/lib/push').PushPermission>('default');
+  const [supported, setSupported] = useState(true);
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const mod = await import('@/lib/push');
+      if (cancelled) return;
+      setSupported(mod.isPushSupported());
+      setPermission(mod.currentPermission());
+      const sub = await mod.getActiveSubscription();
+      if (!cancelled) setSubscribed(!!sub);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function patchN(patch: Partial<typeof n>) {
+    setSettings({ notifications: { ...n, ...patch } });
+  }
+  function patchSub<K extends keyof typeof n>(key: K, patch: Partial<typeof n[K]>) {
+    setSettings({ notifications: { ...n, [key]: { ...(n[key] as object), ...patch } } });
+  }
+
+  async function enableAll() {
+    setBusy(true); setMsg(null);
+    try {
+      const mod = await import('@/lib/push');
+      let perm = mod.currentPermission();
+      if (perm !== 'granted') perm = await mod.requestPermission();
+      setPermission(perm);
+      if (perm !== 'granted') {
+        setMsg({ kind: 'err', text: 'Browser hat die Erlaubnis abgelehnt – im Browser-Setting wieder aktivierbar.' });
+        return;
+      }
+      const res = await mod.subscribePush();
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: res.error ?? 'Unbekannter Fehler.' });
+        return;
+      }
+      setSubscribed(true);
+      patchN({ enabled: true });
+      setMsg({ kind: 'ok', text: 'Push aktiviert! Du bekommst ab jetzt Benachrichtigungen auf diesem Gerät.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disable() {
+    setBusy(true); setMsg(null);
+    try {
+      const mod = await import('@/lib/push');
+      await mod.unsubscribePush();
+      setSubscribed(false);
+      patchN({ enabled: false });
+      setMsg({ kind: 'ok', text: 'Push deaktiviert auf diesem Gerät.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    setBusy(true); setMsg(null);
+    try {
+      const mod = await import('@/lib/push');
+      await mod.showLocalTestNotification();
+      setMsg({ kind: 'ok', text: 'Test-Notification ausgelöst – schau in deinen System-Notification-Bereich.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!supported) {
+    return (
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><BellOff className="size-5 text-ink-400" />Benachrichtigungen</h3>
+        <p className="text-sm text-ink-500">
+          Dieses Gerät unterstützt keine Push-Benachrichtigungen. Auf iOS funktioniert das
+          nur, wenn du die App über „Zum Home-Bildschirm" installierst.
+        </p>
+      </Card>
+    );
+  }
+
+  if (!supabase) {
+    return (
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><BellOff className="size-5 text-ink-400" />Benachrichtigungen</h3>
+        <p className="text-sm text-ink-500">Cloud-Sync ist nicht eingerichtet.</p>
+      </Card>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Bell className="size-5 text-theme" />Benachrichtigungen</h3>
+        <p className="text-sm text-ink-500">
+          Logge dich erst ein – dann kannst du Push-Benachrichtigungen aktivieren.
+        </p>
+      </Card>
+    );
+  }
+
+  const masterOn = n.enabled && subscribed && permission === 'granted';
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Bell className="size-5 text-theme" />Benachrichtigungen</h3>
+        <p className="subtle mb-3">
+          Lass dich an Hausaufgaben, Klausuren, Stundenbeginn und Lern-Deadlines erinnern.
+          Funktioniert auch wenn der Browser geschlossen ist (außer iOS-Safari ohne PWA-Install).
+        </p>
+
+        <div className={`rounded-2xl p-4 mb-3 ${masterOn ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-200'}`}>
+          <div className="flex items-start gap-3">
+            <div className={`size-10 rounded-2xl grid place-items-center text-white flex-shrink-0 ${masterOn ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+              {masterOn ? <Bell className="size-5" /> : <BellOff className="size-5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`font-semibold text-sm ${masterOn ? 'text-emerald-800' : 'text-amber-900'}`}>
+                {masterOn ? 'Aktiv auf diesem Gerät' : 'Noch nicht aktiviert'}
+              </div>
+              <div className={`text-xs mt-0.5 ${masterOn ? 'text-emerald-700' : 'text-amber-800'}`}>
+                {masterOn
+                  ? 'Browser-Erlaubnis erteilt, Gerät registriert.'
+                  : permission === 'denied'
+                    ? 'Im Browser blockiert. Du musst die Erlaubnis manuell in den Browser-Einstellungen wieder erlauben.'
+                    : 'Klick „Aktivieren" und erlaube Benachrichtigungen.'}
+              </div>
+            </div>
+            {masterOn ? (
+              <button onClick={disable} disabled={busy} className="btn-soft text-rose-600">
+                <BellOff className="size-4" />Deaktivieren
+              </button>
+            ) : (
+              <button onClick={enableAll} disabled={busy || permission === 'denied'} className="btn-primary">
+                {busy ? <><Loader2 className="size-4 animate-spin" />…</> : <><Bell className="size-4" />Aktivieren</>}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {msg && (
+          <div className={`rounded-2xl p-3 text-sm mb-3 ${msg.kind === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
+            {msg.text}
+          </div>
+        )}
+
+        {masterOn && (
+          <button onClick={sendTest} disabled={busy} className="btn-ghost text-xs w-full justify-center">
+            <Send className="size-3.5" />Test-Benachrichtigung schicken
+          </button>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Volume2 className="size-5 text-theme" />Was und wann</h3>
+        <p className="subtle mb-3">Pro Event-Typ einzeln steuerbar. Funktioniert nur wenn oben aktiviert.</p>
+
+        <EventBlock
+          icon="📝"
+          title="Hausaufgaben"
+          subtitle="Erinnerung vor dem Fälligkeitsdatum"
+          enabled={n.homework.enabled}
+          onToggle={v => patchSub('homework', { enabled: v })}
+        >
+          <Row label="Vorlauf" hint="Wieviele Stunden vor der Fälligkeit du erinnert werden willst.">
+            <NumberInput value={n.homework.hoursBefore} unit="h" min={1} max={72} step={1}
+              onChange={v => patchSub('homework', { hoursBefore: v })} />
+          </Row>
+        </EventBlock>
+
+        <EventBlock
+          icon="🎯"
+          title="Klausuren & Tests"
+          subtitle="Vorlauf für große Leistungen"
+          enabled={n.exam.enabled}
+          onToggle={v => patchSub('exam', { enabled: v })}
+        >
+          <Row label="Erste Erinnerung" hint="Tage vorher. 0 = aus.">
+            <NumberInput value={n.exam.daysBefore} unit="Tage" min={0} max={14} step={1}
+              onChange={v => patchSub('exam', { daysBefore: v })} />
+          </Row>
+          <Row label="Zweite Erinnerung" hint="Stunden vorher. 0 = aus.">
+            <NumberInput value={n.exam.hoursBefore} unit="h" min={0} max={48} step={1}
+              onChange={v => patchSub('exam', { hoursBefore: v })} />
+          </Row>
+        </EventBlock>
+
+        <EventBlock
+          icon="⏰"
+          title="Stundenbeginn"
+          subtitle="Kurz vor einer Schulstunde"
+          enabled={n.lessonStart.enabled}
+          onToggle={v => patchSub('lessonStart', { enabled: v })}
+        >
+          <Row label="Vorlauf" hint="Minuten vor Stundenbeginn.">
+            <NumberInput value={n.lessonStart.minutesBefore} unit="Min" min={1} max={60} step={1}
+              onChange={v => patchSub('lessonStart', { minutesBefore: v })} />
+          </Row>
+          <Row label="Nur Mo–Fr" hint="Am Wochenende keine Stunden-Erinnerungen.">
+            <Toggle checked={n.lessonStart.onlyWeekdays}
+              onChange={v => patchSub('lessonStart', { onlyWeekdays: v })} />
+          </Row>
+        </EventBlock>
+
+        <EventBlock
+          icon="📚"
+          title="Lern-Deadlines"
+          subtitle="Wenn du in der Lerncheckliste ein Ziel-Datum gesetzt hast"
+          enabled={n.studyDeadline.enabled}
+          onToggle={v => patchSub('studyDeadline', { enabled: v })}
+        >
+          <Row label="Vorlauf" hint="Stunden vor der Lern-Deadline.">
+            <NumberInput value={n.studyDeadline.hoursBefore} unit="h" min={1} max={168} step={1}
+              onChange={v => patchSub('studyDeadline', { hoursBefore: v })} />
+          </Row>
+        </EventBlock>
+      </Card>
+
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Moon className="size-5 text-indigo-500" />Stille Zeit</h3>
+        <p className="subtle mb-3">Während dieses Fensters kommen keine Benachrichtigungen durch.</p>
+
+        <Row label="Stille Zeit aktiv">
+          <Toggle checked={n.quietHours.enabled}
+            onChange={v => patchSub('quietHours', { enabled: v })} />
+        </Row>
+        {n.quietHours.enabled && (
+          <Row label="Von – Bis" hint="Über Mitternacht erlaubt (z. B. 22:00 → 07:00).">
+            <input
+              type="time"
+              value={n.quietHours.from}
+              onChange={e => patchSub('quietHours', { from: e.target.value })}
+              className="input max-w-[120px]"
+            />
+            <span className="text-ink-500">bis</span>
+            <input
+              type="time"
+              value={n.quietHours.to}
+              onChange={e => patchSub('quietHours', { to: e.target.value })}
+              className="input max-w-[120px]"
+            />
+          </Row>
+        )}
+      </Card>
+
+      <div className="text-[11px] text-ink-400 leading-relaxed px-1">
+        💡 Push muss auf jedem Gerät einzeln aktiviert werden. Die Einstellungen
+        (welche Events / Vorlauf / Stille Zeit) gelten global für deinen Account.
+      </div>
+    </div>
+  );
+}
+
+function EventBlock({ icon, title, subtitle, enabled, onToggle, children }: {
+  icon: string; title: string; subtitle: string;
+  enabled: boolean; onToggle: (v: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl bg-white/60 border border-white/60 p-3 mb-3 last:mb-0">
+      <div className="flex items-center gap-3">
+        <div className="size-9 rounded-xl bg-white grid place-items-center text-lg flex-shrink-0">{icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm text-ink-800">{title}</div>
+          <div className="text-xs text-ink-500">{subtitle}</div>
+        </div>
+        <Toggle checked={enabled} onChange={onToggle} />
+      </div>
+      {enabled && (
+        <div className="pl-12 pt-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NumberInput({ value, onChange, unit, min, max, step }: {
+  value: number; onChange: (v: number) => void; unit: string;
+  min: number; max: number; step: number;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1">
+      <button
+        onClick={() => onChange(Math.max(min, value - step))}
+        className="size-7 grid place-items-center rounded-full bg-white/80 hover:bg-white text-ink-700"
+        type="button"
+      >
+        −
+      </button>
+      <span className="font-bold text-ink-800 tabular-nums w-12 text-center">
+        {value} {unit}
+      </span>
+      <button
+        onClick={() => onChange(Math.min(max, value + step))}
+        className="size-7 grid place-items-center rounded-full bg-white/80 hover:bg-white text-ink-700"
+        type="button"
+      >
+        +
+      </button>
     </div>
   );
 }
