@@ -24,12 +24,17 @@ function fmtFullDate(ts: number): string {
   return new Date(ts).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
+export function TaskDetailDialog({ open, task: taskProp, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
   const config = useStore(s => s.settings?.gradingConfig);
   const toggleTask = useStore(s => s.toggleTask);
   const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
+  // Aus dem Store den frischen Task ziehen, damit Updates (Checkliste,
+  // Deadline, etc.) live sichtbar werden. Fallback auf die Prop solange
+  // der Store noch nicht geladen ist.
+  const liveTask = useStore(s => taskProp ? s.tasks.find(t => t.id === taskProp.id) : undefined);
+  const task = liveTask ?? taskProp;
 
   useEffect(() => {
     if (!open) return;
@@ -208,6 +213,10 @@ export function TaskDetailDialog({ open, task, onClose, onEdit }: Props) {
                   items={task.studyChecklist ?? []}
                   onChange={(items: StudyChecklistItem[]) => {
                     void updateTask(task.id, { studyChecklist: items });
+                  }}
+                  deadline={task.studyDeadline}
+                  onDeadlineChange={(d) => {
+                    void updateTask(task.id, { studyDeadline: d });
                   }}
                 />
               )}

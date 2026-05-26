@@ -121,6 +121,8 @@ export interface Grade {
   schoolYearId?: string;
   /** Lerncheckliste – Themen die du können musst, mit Ampel-Status. */
   studyChecklist?: StudyChecklistItem[];
+  /** Ziel-Datum bis wann du die Checkliste durchhaben willst (ms timestamp). */
+  studyDeadline?: number;
 }
 
 export type StudyStatus = 'red' | 'yellow' | 'green';
@@ -157,6 +159,8 @@ export interface AppTask {
   schoolYearId?: string;
   /** Lerncheckliste – Themen die du können musst, mit Ampel-Status. */
   studyChecklist?: StudyChecklistItem[];
+  /** Ziel-Datum bis wann du die Checkliste durchhaben willst (ms timestamp). */
+  studyDeadline?: number;
 }
 
 export interface Lesson {

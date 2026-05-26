@@ -19,11 +19,15 @@ function fmtFullDate(ts: number): string {
   return new Date(ts).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-export function GradeDetailDialog({ open, grade, onClose, onEdit }: Props) {
+export function GradeDetailDialog({ open, grade: gradeProp, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
   const deleteGrade = useStore(s => s.deleteGrade);
   const updateGrade = useStore(s => s.updateGrade);
+  // Aus dem Store den frischen Grade ziehen, damit Updates (Checkliste,
+  // Deadline, etc.) live sichtbar werden.
+  const liveGrade = useStore(s => gradeProp ? s.grades.find(g => g.id === gradeProp.id) : undefined);
+  const grade = liveGrade ?? gradeProp;
 
   useEffect(() => {
     if (!open) return;
@@ -158,6 +162,10 @@ export function GradeDetailDialog({ open, grade, onClose, onEdit }: Props) {
                   items={grade.studyChecklist ?? []}
                   onChange={(items: StudyChecklistItem[]) => {
                     void updateGrade(grade.id, { studyChecklist: items });
+                  }}
+                  deadline={grade.studyDeadline}
+                  onDeadlineChange={(d) => {
+                    void updateGrade(grade.id, { studyDeadline: d });
                   }}
                 />
               )}

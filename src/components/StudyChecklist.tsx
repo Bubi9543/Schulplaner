@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, BookOpen, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, BookOpen, CheckCircle2, Calendar, X } from 'lucide-react';
 import type { StudyChecklistItem, StudyStatus } from '@/types';
 
 /**
@@ -9,11 +9,11 @@ import type { StudyChecklistItem, StudyStatus } from '@/types';
  * - 🟡 gelb = verstanden, aber noch nicht sicher
  * - 🔴 rot  = nicht verstanden
  *
- * Oben ein gestapelter Fortschrittsbalken, der die Verteilung über alle
- * Punkte zeigt (z. B. 30 % grün, 50 % gelb, 20 % rot).
+ * Oben ein gestapelter Fortschrittsbalken (Verteilung über alle Punkte) und
+ * optional ein Ziel-Datum mit Wochentag + Countdown.
  *
- * Komponente ist „dumm": bekommt items + onChange-Callback, persistiert nicht
- * selber. Aufrufer kümmert sich um Speichern (z. B. in updateTask).
+ * Komponente ist „dumm": bekommt items/deadline + onChange-Callbacks, persistiert
+ * nicht selbst. Aufrufer kümmert sich um Speichern (z. B. updateTask).
  */
 
 const STATUS_META: Record<StudyStatus, { color: string; bg: string; label: string; ring: string }> = {
@@ -22,19 +22,49 @@ const STATUS_META: Record<StudyStatus, { color: string; bg: string; label: strin
   green:  { color: '#10b981', bg: 'bg-emerald-500', label: 'Bereit',           ring: 'ring-emerald-500' },
 };
 
-const STATUS_ORDER: StudyStatus[] = ['green', 'yellow', 'red'];
+/** Reihenfolge der Ampel-Buttons – links rot, rechts grün (intuitiv: schlecht→gut). */
+const STATUS_ORDER: StudyStatus[] = ['red', 'yellow', 'green'];
+
+const WEEKDAYS_DE_LONG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+function startOfDay(ts: number): number {
+  const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime();
+}
+
+function fmtCountdown(deadline: number): { text: string; tone: 'good' | 'warn' | 'bad' | 'past' } {
+  const today = startOfDay(Date.now());
+  const target = startOfDay(deadline);
+  const diff = Math.round((target - today) / 86400000);
+  if (diff < 0) return { text: `vor ${-diff} ${-diff === 1 ? 'Tag' : 'Tagen'}`, tone: 'past' };
+  if (diff === 0) return { text: 'heute', tone: 'bad' };
+  if (diff === 1) return { text: 'morgen', tone: 'bad' };
+  if (diff <= 3) return { text: `in ${diff} Tagen`, tone: 'bad' };
+  if (diff <= 7) return { text: `in ${diff} Tagen`, tone: 'warn' };
+  return { text: `in ${diff} Tagen`, tone: 'good' };
+}
+
+function toDateInput(ts: number | undefined): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 interface Props {
   items: StudyChecklistItem[];
   onChange: (items: StudyChecklistItem[]) => void;
+  /** Ziel-Datum, bis wann die Checkliste durch sein soll. */
+  deadline?: number;
+  /** Callback um das Ziel-Datum zu ändern; undefined löscht es. */
+  onDeadlineChange?: (deadline: number | undefined) => void;
   /** Optionaler Titel oben — Default: „Lerncheckliste". */
   title?: string;
   /** Wenn true, hat die Komponente eine helle Karten-Umrandung. */
   framed?: boolean;
 }
 
-export function StudyChecklist({ items, onChange, title = 'Lerncheckliste', framed = true }: Props) {
+export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, title = 'Lerncheckliste', framed = true }: Props) {
   const [newLabel, setNewLabel] = useState('');
+  const [showDeadlineInput, setShowDeadlineInput] = useState(false);
 
   function add() {
     const label = newLabel.trim();
@@ -70,6 +100,13 @@ export function StudyChecklist({ items, onChange, title = 'Lerncheckliste', fram
   const total = items.length;
   const pct = (n: number) => total === 0 ? 0 : (n / total) * 100;
   const readyPct = Math.round(pct(counts.green));
+
+  // ─── Deadline-Anzeige ──────────────────────────────────────────────────
+  const deadlineInfo = deadline ? fmtCountdown(deadline) : null;
+  const deadlineWeekday = deadline ? WEEKDAYS_DE_LONG[new Date(deadline).getDay()] : null;
+  const deadlineDateText = deadline
+    ? new Date(deadline).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null;
 
   return (
     <div className={framed ? 'rounded-2xl bg-white/60 p-4' : ''}>
@@ -137,6 +174,75 @@ export function StudyChecklist({ items, onChange, title = 'Lerncheckliste', fram
         </div>
       )}
 
+      {/* Ziel-Datum */}
+      {onDeadlineChange && (
+        <div className="mb-3">
+          {deadline ? (
+            <div className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm ${
+              deadlineInfo?.tone === 'bad'  ? 'bg-rose-50 text-rose-800'
+              : deadlineInfo?.tone === 'warn' ? 'bg-amber-50 text-amber-800'
+              : deadlineInfo?.tone === 'past' ? 'bg-ink-100 text-ink-600'
+              : 'bg-emerald-50 text-emerald-800'
+            }`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <Calendar className="size-4 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold truncate">
+                    {deadlineWeekday}, {deadlineDateText}
+                  </div>
+                  <div className="text-[11px] opacity-80">
+                    Ziel · {deadlineInfo?.text}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <input
+                  type="date"
+                  value={toDateInput(deadline)}
+                  onChange={e => {
+                    if (!e.target.value) onDeadlineChange(undefined);
+                    else onDeadlineChange(new Date(e.target.value).getTime());
+                  }}
+                  className="text-[11px] bg-white/60 rounded-lg px-2 py-1 border border-white/60 focus:outline-none focus:ring-1 focus:ring-theme-soft"
+                />
+                <button
+                  onClick={() => onDeadlineChange(undefined)}
+                  className="size-6 grid place-items-center rounded-full hover:bg-white/70 transition"
+                  title="Ziel entfernen"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            </div>
+          ) : showDeadlineInput ? (
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                type="date"
+                onChange={e => {
+                  if (e.target.value) {
+                    onDeadlineChange(new Date(e.target.value).getTime());
+                    setShowDeadlineInput(false);
+                  }
+                }}
+                className="flex-1 input text-sm"
+              />
+              <button onClick={() => setShowDeadlineInput(false)} className="btn-ghost text-xs">
+                Abbrechen
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowDeadlineInput(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-ink-500 hover:text-ink-800 transition"
+            >
+              <Calendar className="size-3.5" />
+              Ziel-Datum festlegen
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Items */}
       <AnimatePresence initial={false}>
         {items.length > 0 && (
@@ -153,7 +259,15 @@ export function StudyChecklist({ items, onChange, title = 'Lerncheckliste', fram
                 layout
                 className="flex items-center gap-2 rounded-xl bg-white/70 px-2.5 py-2"
               >
-                {/* Ampel-Buttons */}
+                {/* Label links */}
+                <input
+                  value={item.label}
+                  onChange={e => updateItem(item.id, { label: e.target.value })}
+                  onDoubleClick={() => cycleStatus(item.id, item.status)}
+                  className="flex-1 min-w-0 bg-transparent text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition py-0.5"
+                  placeholder="Thema beschreiben"
+                />
+                {/* Ampel-Buttons rechts */}
                 <div className="flex gap-1 flex-shrink-0">
                   {STATUS_ORDER.map(s => (
                     <button
@@ -167,14 +281,6 @@ export function StudyChecklist({ items, onChange, title = 'Lerncheckliste', fram
                     />
                   ))}
                 </div>
-                {/* Klickbarer Label-Bereich: cyclet auch den Status (Quick-Action) */}
-                <input
-                  value={item.label}
-                  onChange={e => updateItem(item.id, { label: e.target.value })}
-                  onDoubleClick={() => cycleStatus(item.id, item.status)}
-                  className="flex-1 min-w-0 bg-transparent text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition py-0.5"
-                  placeholder="Thema beschreiben"
-                />
                 <button
                   onClick={() => removeItem(item.id)}
                   className="size-7 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition flex-shrink-0"
