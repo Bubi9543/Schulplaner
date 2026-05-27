@@ -43,8 +43,8 @@ function gradeRgb(value: number, system: GradingSystem, config: AppSettings['gra
  */
 export async function generateReportPdf(input: ReportInput): Promise<string> {
   const { default: jsPDF } = await import('jspdf');
-  // jspdf-autotable mutiert das jsPDF-Prototype beim Import.
-  await import('jspdf-autotable');
+  // jspdf-autotable v5: als Funktion aufrufen, autoTable(doc, options).
+  const { default: autoTable } = await import('jspdf-autotable');
 
   const { subjects, grades, settings, schoolYear } = input;
   const config = settings.gradingConfig;
@@ -150,9 +150,7 @@ export async function generateReportPdf(input: ReportInput): Promise<string> {
       grades: grades.filter(g => g.subjectId === s.id && !g.isPending).sort((a, b) => a.date - b.date),
     }));
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const autoTable = (doc as any).autoTable as (opts: Record<string, unknown>) => void;
-  autoTable({
+  autoTable(doc, {
     startY: y + 6,
     head: [['Fach', 'Noten', 'Endnote']],
     body: rows.map(r => {
@@ -188,7 +186,7 @@ export async function generateReportPdf(input: ReportInput): Promise<string> {
     },
     margin: { left: margin, right: margin },
     // Pro Zeile: Endnote-Spalte einfärben nach Note.
-    didParseCell: (data: { section: string; column: { index: number }; row: { index: number }; cell: { styles: Record<string, unknown> } }) => {
+    didParseCell: (data) => {
       if (data.section === 'body' && data.column.index === 2) {
         const row = rows[data.row.index];
         if (row?.avg != null) {
