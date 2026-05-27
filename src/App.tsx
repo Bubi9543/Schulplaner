@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
+import { Analytics } from '@vercel/analytics/react';
 import { useStore } from '@/store/useStore';
 import { Sidebar, MobileTabBar } from '@/components/Sidebar';
 import { WelcomeTour, shouldShowTour } from '@/components/WelcomeTour';
@@ -93,6 +94,7 @@ export default function App() {
       </main>
       {settings?.onboarded && <MobileTabBar />}
       {tourOpen && <WelcomeTour onFinish={() => setTourOpen(false)} />}
+      <Analytics />
     </div>
   );
 }
