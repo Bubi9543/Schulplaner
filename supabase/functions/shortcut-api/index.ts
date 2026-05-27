@@ -30,6 +30,8 @@ interface Subject {
   color?: string;
   category?: string;
   schoolYearId?: string;
+  position?: number;
+  groupId?: string;
 }
 
 interface SchoolYear {
@@ -37,6 +39,19 @@ interface SchoolYear {
   name: string;
   active: boolean;
 }
+
+interface Lesson {
+  id: string;
+  subjectId: string;
+  weekday: number; // 0=So .. 6=Sa (JS Date.getDay())
+  start: string;   // 'HH:MM'
+  end: string;
+  weekParity?: 'A' | 'B' | 'ALL';
+  schoolYearId?: string;
+}
+
+/** Prefix vor dem Aktuellen Fach in der Auswahl-Liste. */
+const CURRENT_PREFIX = 'Aktuelles Fach: ';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -130,7 +145,73 @@ async function loadActiveSubjects(userId: string): Promise<Subject[]> {
   return (data ?? [])
     .map((r: { data: Subject }) => r.data)
     .filter((s) => !activeYear || !s.schoolYearId || s.schoolYearId === activeYear)
-    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    .sort((a, b) => {
+      // Gleiche Logik wie in der App-Einstellung: zuerst nach position
+      // (fehlende Position ans Ende), dann alphabetisch.
+      const pa = a.position ?? Number.POSITIVE_INFINITY;
+      const pb = b.position ?? Number.POSITIVE_INFINITY;
+      if (pa !== pb) return pa - pb;
+      return a.name.localeCompare(b.name, 'de');
+    });
+}
+
+/**
+ * Liest die aktuelle Uhrzeit & den Wochentag in Europe/Berlin (egal wo der
+ * Edge-Function-Container läuft). Wochentag: 0=Sonntag … 6=Samstag.
+ */
+function berlinClockState(): { weekday: number; minutes: number } {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  });
+  const parts: Record<string, string> = {};
+  for (const p of fmt.formatToParts(new Date())) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  const y = +parts.year;
+  const m = +parts.month;
+  const d = +parts.day;
+  // en-US mit hour12:false kann "24" für Mitternacht liefern.
+  const hh = +parts.hour === 24 ? 0 : +parts.hour;
+  const mm = +parts.minute;
+  // Wochentag aus dem Datum: UTC-Konstruktor reicht (wir wollen den Wochentag-Index).
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return { weekday, minutes: hh * 60 + mm };
+}
+
+/**
+ * Welches Fach läuft *gerade jetzt*? Schaut in lessons, vergleicht Wochentag
+ * und Uhrzeit (Europe/Berlin) mit start/end. weekParity wird ignoriert
+ * (würde extra Setup-State erfordern – falls eine A-/B-Woche-Stunde gerade
+ * läuft, wird sie trotzdem akzeptiert).
+ */
+async function currentSubjectIdForUser(userId: string): Promise<string | null> {
+  const db = admin();
+  const activeYear = await activeSchoolYearId(db, userId);
+  const { data } = await db.from('lessons').select('data').eq('user_id', userId);
+  const lessons: Lesson[] = (data ?? [])
+    .map((r: { data: Lesson }) => r.data)
+    .filter((l) => !activeYear || !l.schoolYearId || l.schoolYearId === activeYear);
+
+  const { weekday, minutes } = berlinClockState();
+
+  for (const l of lessons) {
+    if (l.weekday !== weekday) continue;
+    const [sh, sm] = l.start.split(':').map(Number);
+    const [eh, em] = l.end.split(':').map(Number);
+    if (!Number.isFinite(sh) || !Number.isFinite(eh)) continue;
+    const startMin = sh * 60 + (sm || 0);
+    const endMin = eh * 60 + (em || 0);
+    if (minutes >= startMin && minutes < endMin) {
+      return l.subjectId;
+    }
+  }
+  return null;
 }
 
 async function handleSubjects(token: string, format: 'json' | 'names'): Promise<Response> {
@@ -139,10 +220,17 @@ async function handleSubjects(token: string, format: 'json' | 'names'): Promise<
   const subjects = await loadActiveSubjects(userId);
 
   if (format === 'names') {
-    // Nur die Fächernamen als JSON-Array. Apple-Shortcuts „Inhalt von URL
-    // abrufen" parsed das automatisch zu einer Liste, und „Aus Liste auswählen"
-    // kann direkt damit arbeiten – kein Splitten, kein Indexieren nötig.
-    return json(subjects.map((s) => s.name));
+    // Reihenfolge: erst „Aktuelles Fach: …" (falls gerade eine Stunde läuft),
+    // danach die Fächer in der App-Reihenfolge (position). Der Aktuelles-Fach-
+    // Eintrag ist NUR ein Komfort-Topping; das Fach steht trotzdem auch
+    // unten als regulärer Eintrag, falls der User den Prefix nicht mag.
+    const names = subjects.map((s) => s.name);
+    const currentId = await currentSubjectIdForUser(userId);
+    if (currentId) {
+      const cur = subjects.find((s) => s.id === currentId);
+      if (cur) names.unshift(`${CURRENT_PREFIX}${cur.name}`);
+    }
+    return json(names);
   }
   return json(subjects.map((s) => ({
     id: s.id, name: s.name, short: s.short, color: s.color, category: s.category,
@@ -185,13 +273,19 @@ async function handleCreateTask(token: string, body: TaskPayload): Promise<Respo
   const db = admin();
 
   // subjectId hat Vorrang. Fallback: subjectName per case-insensitive Match
-  // gegen Fächer im aktiven Schuljahr auflösen.
+  // gegen Fächer im aktiven Schuljahr auflösen. Falls der Name mit
+  // "Aktuelles Fach: …" anfängt (Shortcut-Komfort-Topping), schneiden wir
+  // den Prefix ab und matchen nur gegen den eigentlichen Fachnamen.
   let resolvedSubjectId: string | undefined = body.subjectId || undefined;
   if (!resolvedSubjectId && body.subjectName) {
+    let cleaned = body.subjectName.trim();
+    if (cleaned.toLowerCase().startsWith(CURRENT_PREFIX.toLowerCase())) {
+      cleaned = cleaned.slice(CURRENT_PREFIX.length).trim();
+    }
     const all = await loadActiveSubjects(userId);
-    const wanted = body.subjectName.trim().toLowerCase();
+    const wanted = cleaned.toLowerCase();
     const hit = all.find((s) => s.name.trim().toLowerCase() === wanted);
-    if (!hit) return errText(`Unknown subject "${body.subjectName}"`, 404);
+    if (!hit) return errText(`Unknown subject "${cleaned}"`, 404);
     resolvedSubjectId = hit.id;
   }
   if (resolvedSubjectId) {
