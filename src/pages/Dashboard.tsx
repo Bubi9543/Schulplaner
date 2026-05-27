@@ -26,7 +26,7 @@ import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { useStore } from '@/store/useStore';
 import {
   effectiveWeight, formatAverage, gradeTrend, overallAverage,
-  subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL,
+  subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel,
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
@@ -822,8 +822,26 @@ function GroupAveragesWidget() {
 }
 
 /** Countdown bis zu den nächsten Ferien (oder aktive Ferien). */
+function fmtCountdown(d: number): string {
+  if (d === 0) return 'heute';
+  if (d < 7) return `${d} ${d === 1 ? 'Tag' : 'Tage'}`;
+  const weeks = Math.floor(d / 7);
+  const rem = d % 7;
+  const wStr = `${weeks} ${weeks === 1 ? 'Woche' : 'Wochen'}`;
+  return rem > 0 ? `${wStr} ${rem} ${rem === 1 ? 'Tag' : 'Tage'}` : wStr;
+}
+
+function prevSaturday(d: Date): Date {
+  const r = new Date(d);
+  // (dayOfWeek + 1) % 7 → days to subtract to reach preceding Saturday
+  r.setDate(r.getDate() - (r.getDay() + 1) % 7);
+  return r;
+}
+
 function NextHolidayWidget() {
   const region = useStore(s => s.settings?.region);
+  const tasks = useStore(s => s.tasks);
+  const config = useStore(s => s.settings?.gradingConfig);
   const [holiday, setHoliday] = useState<import('@/types').SchoolHoliday | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -878,14 +896,43 @@ function NextHolidayWidget() {
   }
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const start = new Date(holiday.startDate); start.setHours(0, 0, 0, 0);
+  const officialStart = new Date(holiday.startDate); officialStart.setHours(0, 0, 0, 0);
   const end = new Date(holiday.endDate); end.setHours(0, 0, 0, 0);
-  const isActive = today >= start && today <= end;
-  const days = Math.round((isActive
-    ? (end.getTime() - today.getTime())
-    : (start.getTime() - today.getTime())) / 86_400_000);
-  const totalDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
-  const fmtDate = (d: Date) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  // Ferien beginnen gefühlt am Samstag davor
+  const effectiveStart = prevSaturday(officialStart);
+  effectiveStart.setHours(0, 0, 0, 0);
+
+  const isActive = today >= effectiveStart && today <= end;
+  const days = Math.round(
+    (isActive ? end.getTime() - today.getTime() : effectiveStart.getTime() - today.getTime()) / 86_400_000
+  );
+  const totalDays = Math.round((end.getTime() - effectiveStart.getTime()) / 86_400_000) + 1;
+
+  // Progressbar: aktiv = wie weit durch die Ferien; davor = wie nah wir rankommen (6-Wochen-Fenster)
+  const COUNTDOWN_WINDOW = 42;
+  const progress = isActive
+    ? Math.min(1, (today.getTime() - effectiveStart.getTime()) / (end.getTime() - effectiveStart.getTime()))
+    : Math.max(0, 1 - days / COUNTDOWN_WINDOW);
+
+  const fmtDate = (d: Date) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+
+  // Anstehende Tests/Schulaufgaben bis Ferienstart
+  const upcomingExams = !isActive
+    ? tasks.filter(t =>
+        !t.done &&
+        t.dueDate != null &&
+        t.dueDate < effectiveStart.getTime() &&
+        !['hausaufgabe', 'todo'].includes(t.kind ?? '')
+      )
+    : [];
+
+  const examsByKind = upcomingExams.reduce<Record<string, number>>((acc, t) => {
+    const k = t.kind ?? 'sonstiges';
+    acc[k] = (acc[k] ?? 0) + 1;
+    return acc;
+  }, {});
+  const examKinds = Object.entries(examsByKind).sort((a, b) => b[1] - a[1]);
 
   return (
     <div
@@ -897,26 +944,64 @@ function NextHolidayWidget() {
     >
       <div className="absolute -top-10 -right-10 size-40 rounded-full bg-white/15 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-12 -left-10 size-32 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-      <div className="relative flex items-center gap-2 mb-2">
-        <Palmtree className="size-5" />
-        <h3 className="font-display font-bold text-base">
-          {isActive ? 'Ferien laufen! 🎉' : 'Nächste Ferien'}
+
+      {/* Header */}
+      <div className="relative flex items-center gap-2 mb-3">
+        <Palmtree className="size-4 flex-shrink-0" />
+        <h3 className="font-display font-bold text-sm leading-tight">
+          {isActive ? 'Ferien laufen!' : 'Nächste Ferien'}
         </h3>
       </div>
-      <div className="relative flex-1 flex flex-col justify-center">
-        <div className="text-[11px] uppercase tracking-wider opacity-85 font-semibold">{holiday.name}</div>
-        <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 'clamp(2.5rem, 12cqi, 4rem)' }}>
-          {days}
+
+      {/* Name + Countdown */}
+      <div className="relative flex-1 flex flex-col justify-center gap-1 min-h-0">
+        <div className="text-[10px] uppercase tracking-widest opacity-75 font-bold">{holiday.name}</div>
+        <div className="font-display font-extrabold leading-none" style={{ fontSize: 'clamp(1.6rem, 9cqi, 2.8rem)' }}>
+          {isActive ? 'noch ' : ''}{fmtCountdown(days)}
         </div>
-        <div className="text-sm opacity-90 mt-1">
+        <div className="text-xs opacity-80">
           {isActive
-            ? (days === 0 ? 'endet heute' : `noch ${days === 1 ? 'einen Tag' : days + ' Tage'}`)
-            : (days === 0 ? 'starten heute' : `${days === 1 ? 'morgen' : `in ${days} Tagen`}`)}
+            ? (days === 0 ? 'Ferien enden heute' : 'bis Ferienende')
+            : (days === 0 ? 'starten heute' : 'bis Ferienstart')}
         </div>
+
+        {/* Progressbar */}
+        <div className="mt-2 h-1.5 rounded-full bg-white/25 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-white transition-all duration-700"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+        </div>
+        <div className="text-[10px] opacity-60 -mt-0.5">
+          {isActive
+            ? `${Math.round(progress * 100)} % der Ferien vorbei`
+            : `${Math.round(progress * 100)} % der Wartezeit vorbei`}
+        </div>
+
+        {/* Anstehende Prüfungen */}
+        {examKinds.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-white/20 space-y-0.5">
+            <div className="text-[10px] uppercase tracking-wider opacity-75 font-bold mb-1">Bis dahin</div>
+            {examKinds.map(([kind, count]) => (
+              <div key={kind} className="flex items-center justify-between text-xs">
+                <span className="opacity-90">{getTaskKindLabel(kind, config)}</span>
+                <span className="font-bold tabular-nums">{count}</span>
+              </div>
+            ))}
+            {examKinds.length > 1 && (
+              <div className="flex items-center justify-between text-xs border-t border-white/15 pt-1 mt-1 font-semibold">
+                <span className="opacity-90">Gesamt</span>
+                <span className="tabular-nums">{upcomingExams.length}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      <div className="relative text-xs opacity-90 mt-2 flex items-center justify-between flex-wrap gap-1">
-        <span>{fmtDate(start)} – {fmtDate(end)}</span>
-        <span className="chip bg-white/20 text-white border-white/25">{totalDays} {totalDays === 1 ? 'Tag' : 'Tage'}</span>
+
+      {/* Footer: Datum + Dauer */}
+      <div className="relative text-[10px] opacity-70 mt-2 flex items-center justify-between">
+        <span>{fmtDate(effectiveStart)} – {fmtDate(end)}</span>
+        <span>{totalDays} {totalDays === 1 ? 'Tag' : 'Tage'}</span>
       </div>
     </div>
   );
