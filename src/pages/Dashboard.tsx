@@ -17,7 +17,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
 import { GradeBadge } from '@/components/GradeBadge';
-import { AverageRing } from '@/components/AverageRing';
 import { TodayTimeline } from '@/components/TodayTimeline';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
@@ -149,37 +148,61 @@ function GradeOverviewWidget() {
     [grades, subjects, config, settings?.trendThreshold]);
   const gradeCount = grades.filter(g => !g.isPending).length;
 
+  const delta = useMemo(() => {
+    const sorted = [...grades].filter(g => !g.isPending).sort((a, b) => a.date - b.date);
+    if (sorted.length < 2) return null;
+    const half = Math.floor(sorted.length / 2) || 1;
+    const olderAvg = overallAverage(sorted.slice(0, half), subjects, config);
+    const newerAvg = overallAverage(sorted.slice(half), subjects, config);
+    if (olderAvg == null || newerAvg == null) return null;
+    return newerAvg - olderAvg;
+  }, [grades, subjects, config]);
+
+  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Sparkles;
+  const trendArrow = trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
+
   return (
     <div className="h-full w-full flex flex-col theme-gradient text-white widget-pad relative overflow-hidden">
       <div className="absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-20 -left-10 size-40 rounded-full bg-black/15 blur-3xl pointer-events-none" />
+      {/* Header row */}
       <div className="flex items-center justify-between flex-shrink-0 relative">
         <div className="text-[clamp(0.625rem,3.5cqi,0.75rem)] uppercase tracking-[0.12em] font-semibold text-white/80">Gesamtschnitt</div>
         <span className={cn('chip',
           trend === 'up' ? 'bg-emerald-400/30 text-white border-emerald-200/40' :
           trend === 'down' ? 'bg-rose-400/30 text-white border-rose-200/40' :
           'bg-white/20 text-white border-white/25')}>
-          {trend === 'up' ? <TrendingUp className="size-3.5" /> : trend === 'down' ? <TrendingDown className="size-3.5" /> : <Sparkles className="size-3.5" />}
+          <TrendIcon className="size-3.5" />
           {trend === 'up' ? 'Besser' : trend === 'down' ? 'Schlechter' : 'Stabil'}
         </span>
       </div>
-      <div className="flex-1 flex items-center gap-4 mt-2 min-h-0 min-w-0 relative">
-        <div className="h-full aspect-square flex-shrink-0 max-h-full">
-          <AverageRing value={overall} system={system} tone="invert" />
-        </div>
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
-          <div>
-            <div className="font-display font-bold text-[clamp(0.95rem,5.5cqi,1.5rem)] leading-tight">
-              {subjects.length} {subjects.length === 1 ? 'Fach' : 'Fächer'}
+      {/* Big number + delta */}
+      <div className="flex-1 flex flex-col items-center justify-center relative min-h-0">
+        {overall != null ? (
+          <>
+            <div className="font-display font-extrabold leading-none text-[clamp(2.75rem,16cqi,4.5rem)] drop-shadow-sm">
+              {formatAverage(overall, system)}
             </div>
-            <div className="text-white/70 text-[clamp(0.6rem,3cqi,0.875rem)] mt-0.5 leading-tight">
-              {gradeCount} {gradeCount === 1 ? 'Note' : 'Noten'} erfasst
-            </div>
-          </div>
-          <Link to="/noten" className="inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,2.8cqi,0.875rem)] font-semibold w-fit border-b border-white/40 hover:border-white/80 pb-0.5">
-            Alle Details <ArrowRight className="size-3.5" />
-          </Link>
+            {delta != null && (
+              <div className="flex items-center gap-1 mt-1.5 text-white/75 text-[clamp(0.625rem,3.5cqi,0.875rem)] font-semibold">
+                <span>{trendArrow}</span>
+                <span>{formatAverage(Math.abs(delta), system, 2)}</span>
+                <span className="text-white/50 font-normal">seit Halbjahr</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-white/50 text-[clamp(0.75rem,4cqi,1rem)] text-center px-2">Noch keine Noten</div>
+        )}
+      </div>
+      {/* Footer row */}
+      <div className="flex items-center justify-between flex-shrink-0 relative">
+        <div className="text-white/70 text-[clamp(0.6rem,3cqi,0.8rem)]">
+          {subjects.length} {subjects.length === 1 ? 'Fach' : 'Fächer'} · {gradeCount} {gradeCount === 1 ? 'Note' : 'Noten'}
         </div>
+        <Link to="/noten" className="inline-flex items-center gap-1 text-white/95 hover:text-white text-[clamp(0.625rem,2.8cqi,0.875rem)] font-semibold border-b border-white/40 hover:border-white/80 pb-0.5">
+          Details <ArrowRight className="size-3.5" />
+        </Link>
       </div>
     </div>
   );
