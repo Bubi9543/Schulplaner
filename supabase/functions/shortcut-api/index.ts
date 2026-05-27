@@ -55,6 +55,35 @@ function errText(msg: string, status = 400): Response {
   return json({ error: msg }, status);
 }
 
+/**
+ * Lockerer Datums-Parser. Akzeptiert:
+ *   - ms-Number (≥ 1.000.000.000.000 = ~2001 in ms)
+ *   - ISO 8601 ("2026-05-27T14:00:00")
+ *   - Deutsche Schreibweise ("27.05.2026, 14:00" / "27.5.2026 14:00" / "27.05.2026")
+ *   - US-Schreibweise ("5/27/2026, 2:00 PM")
+ *
+ * Liefert ms-Timestamp oder null.
+ */
+function parseLooseDate(v: string | number): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+
+  // Versuch 1: Date.parse (kann ISO + ein paar Localized-Strings).
+  const native = Date.parse(s);
+  if (Number.isFinite(native)) return native;
+
+  // Versuch 2: Deutsche Schreibweise "DD.MM.YYYY[, HH:MM[:SS]]".
+  const de = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (de) {
+    const [, d, m, y, hh, mm, ss] = de;
+    const t = Date.UTC(+y, +m - 1, +d, hh ? +hh : 0, mm ? +mm : 0, ss ? +ss : 0);
+    if (Number.isFinite(t)) return t;
+  }
+
+  return null;
+}
+
 function uuid(): string {
   // RFC4122 v4
   const b = new Uint8Array(16);
@@ -94,24 +123,37 @@ async function activeSchoolYearId(db: ReturnType<typeof admin>, userId: string):
   return act?.id ?? null;
 }
 
-async function handleSubjects(token: string): Promise<Response> {
-  const userId = await userIdFromToken(token);
-  if (!userId) return errText('Invalid token', 401);
+async function loadActiveSubjects(userId: string): Promise<Subject[]> {
   const db = admin();
   const activeYear = await activeSchoolYearId(db, userId);
-  const { data, error } = await db.from('subjects').select('data').eq('user_id', userId);
-  if (error) return errText(error.message, 500);
-  const subjects: Subject[] = (data ?? [])
+  const { data } = await db.from('subjects').select('data').eq('user_id', userId);
+  return (data ?? [])
     .map((r: { data: Subject }) => r.data)
     .filter((s) => !activeYear || !s.schoolYearId || s.schoolYearId === activeYear)
-    .map((s) => ({ id: s.id, name: s.name, short: s.short, color: s.color, category: s.category }))
     .sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  return json(subjects);
+}
+
+async function handleSubjects(token: string, format: 'json' | 'names'): Promise<Response> {
+  const userId = await userIdFromToken(token);
+  if (!userId) return errText('Invalid token', 401);
+  const subjects = await loadActiveSubjects(userId);
+
+  if (format === 'names') {
+    // Nur die Fächernamen als JSON-Array. Apple-Shortcuts „Inhalt von URL
+    // abrufen" parsed das automatisch zu einer Liste, und „Aus Liste auswählen"
+    // kann direkt damit arbeiten – kein Splitten, kein Indexieren nötig.
+    return json(subjects.map((s) => s.name));
+  }
+  return json(subjects.map((s) => ({
+    id: s.id, name: s.name, short: s.short, color: s.color, category: s.category,
+  })));
 }
 
 interface TaskPayload {
   title?: string;
   subjectId?: string;
+  /** Alternative zu subjectId: Fachname (case-insensitive Match gegen aktives Schuljahr). */
+  subjectName?: string;
   kind?: string;
   dueDate?: string | number;
   priority?: number;
@@ -125,12 +167,13 @@ async function handleCreateTask(token: string, body: TaskPayload): Promise<Respo
   const title = (body.title ?? '').trim();
   if (!title) return errText('Missing title', 400);
 
-  // dueDate kann ISO-String, Datumstring oder ms-Number sein.
+  // dueDate kann ISO-String, ms-Number, ODER ein lokalisiertes Datum sein,
+  // das Apple-Shortcuts an JSON-Bodies anhängt (z. B. "27.5.2026, 14:00" /
+  // "5/27/2026, 2:00 PM"). Wir versuchen mehrere Parser nacheinander.
   let dueDate: number | undefined;
   if (body.dueDate != null && body.dueDate !== '') {
-    const n = typeof body.dueDate === 'number' ? body.dueDate : Date.parse(String(body.dueDate));
-    if (!Number.isFinite(n)) return errText('Invalid dueDate', 400);
-    dueDate = n;
+    dueDate = parseLooseDate(body.dueDate);
+    if (dueDate == null) return errText('Invalid dueDate', 400);
   }
 
   const priority = (() => {
@@ -141,13 +184,23 @@ async function handleCreateTask(token: string, body: TaskPayload): Promise<Respo
 
   const db = admin();
 
-  // Falls subjectId angegeben: gehört das Fach dem User? (Schutz vor Cross-User)
-  if (body.subjectId) {
+  // subjectId hat Vorrang. Fallback: subjectName per case-insensitive Match
+  // gegen Fächer im aktiven Schuljahr auflösen.
+  let resolvedSubjectId: string | undefined = body.subjectId || undefined;
+  if (!resolvedSubjectId && body.subjectName) {
+    const all = await loadActiveSubjects(userId);
+    const wanted = body.subjectName.trim().toLowerCase();
+    const hit = all.find((s) => s.name.trim().toLowerCase() === wanted);
+    if (!hit) return errText(`Unknown subject "${body.subjectName}"`, 404);
+    resolvedSubjectId = hit.id;
+  }
+  if (resolvedSubjectId) {
+    // Schutz: gehört das Fach wirklich dem User?
     const { data } = await db
       .from('subjects')
       .select('id')
       .eq('user_id', userId)
-      .eq('id', body.subjectId)
+      .eq('id', resolvedSubjectId)
       .maybeSingle();
     if (!data) return errText('Subject not found', 404);
   }
@@ -160,7 +213,7 @@ async function handleCreateTask(token: string, body: TaskPayload): Promise<Respo
     id,
     title,
     description: body.description?.trim() || undefined,
-    subjectId: body.subjectId || undefined,
+    subjectId: resolvedSubjectId,
     kind: body.kind || 'hausaufgabe',
     dueDate,
     done: false,
@@ -195,7 +248,8 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     if (req.method === 'GET' && route === 'subjects') {
-      return await handleSubjects(token);
+      const format = url.searchParams.get('format') === 'names' ? 'names' : 'json';
+      return await handleSubjects(token, format);
     }
     if (req.method === 'POST' && route === 'task') {
       let body: TaskPayload = {};

@@ -97,6 +97,14 @@ export function buildSubjectsUrl(token: string): string {
   return `${baseUrl()}/subjects?token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Liefert nur die Fächernamen als JSON-Array – ideal für Apple-Shortcuts
+ * (Direkt-Konsum durch „Aus Liste auswählen", kein Parsen nötig).
+ */
+export function buildSubjectNamesUrl(token: string): string {
+  return `${baseUrl()}/subjects?format=names&token=${encodeURIComponent(token)}`;
+}
+
 export function buildTaskUrl(token: string): string {
   return `${baseUrl()}/task?token=${encodeURIComponent(token)}`;
 }
@@ -104,3 +112,16 @@ export function buildTaskUrl(token: string): string {
 export function buildPingUrl(token: string): string {
   return `${baseUrl()}/ping?token=${encodeURIComponent(token)}`;
 }
+
+/**
+ * iCloud-Link des fertig gebauten Apple-Shortcuts.
+ *
+ * → Erstmal `null`. Sobald der Entwickler den Shortcut einmal auf seinem
+ * iPhone/iPad gebaut hat (siehe README), trägt er hier den iCloud-Link ein
+ * und ab dem nächsten Deploy können alle User den Shortcut mit einem Tap
+ * installieren.
+ *
+ * Format: 'https://www.icloud.com/shortcuts/<uuid>'
+ */
+export const SHORTCUT_ICLOUD_URL: string | null = 'https://www.icloud.com/shortcuts/930d235b0b1c4f7a8896f52face35762';
+

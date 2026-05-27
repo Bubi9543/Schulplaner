@@ -1998,7 +1998,7 @@ function ShortcutTokenView({
   copied: string | null;
   onCopy: (v: string, k: string) => void;
 }) {
-  const [urls, setUrls] = useState<{ subjects: string; task: string; ping: string } | null>(null);
+  const [urls, setUrls] = useState<{ subjects: string; subjectNames: string; task: string; ping: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2006,6 +2006,7 @@ function ShortcutTokenView({
       if (cancelled) return;
       setUrls({
         subjects: mod.buildSubjectsUrl(token.token),
+        subjectNames: mod.buildSubjectNamesUrl(token.token),
         task: mod.buildTaskUrl(token.token),
         ping: mod.buildPingUrl(token.token),
       });
@@ -2034,14 +2035,18 @@ function ShortcutTokenView({
         <div className="text-[11px] text-ink-500 mt-1.5">Zuletzt genutzt: {last}</div>
       </div>
 
-      {/* URLs für den Shortcut */}
-      <div className="space-y-2">
-        <UrlRow label="GET — Fächer abrufen" url={urls.subjects} k="subjects" copied={copied} onCopy={onCopy} />
-        <UrlRow label="POST — Aufgabe anlegen" url={urls.task} k="task" copied={copied} onCopy={onCopy} />
-      </div>
+      {/* Installations-Anleitung */}
+      <ShortcutGuide token={token.token} onCopy={onCopy} copied={copied} />
 
-      {/* Schritt-für-Schritt-Anleitung */}
-      <ShortcutGuide subjectsUrl={urls.subjects} taskUrl={urls.task} onCopy={onCopy} copied={copied} />
+      {/* URLs für Power-User / falls jemand den Shortcut selbst nachbauen will */}
+      <details className="text-[11px] text-ink-500">
+        <summary className="cursor-pointer font-semibold hover:text-ink-700">Roh-Endpoints (für Shortcut-Bau)</summary>
+        <div className="space-y-2 mt-2">
+          <UrlRow label="GET — Fächernamen (JSON-Array, direkt für die Listen-Auswahl)" url={urls.subjectNames} k="subject-names" copied={copied} onCopy={onCopy} />
+          <UrlRow label="POST — Aufgabe anlegen (JSON-Body mit subjectName)" url={urls.task} k="task" copied={copied} onCopy={onCopy} />
+          <UrlRow label="GET — Fächer mit IDs (Full-JSON, falls du Power-Tools baust)" url={urls.subjects} k="subjects-json" copied={copied} onCopy={onCopy} />
+        </div>
+      </details>
 
       <div className="flex gap-2">
         <button onClick={onRegenerate} disabled={busy} className="btn-ghost flex-1 text-xs">
@@ -2070,86 +2075,57 @@ function UrlRow({ label, url, k, copied, onCopy }: { label: string; url: string;
   );
 }
 
-function ShortcutGuide({ subjectsUrl, taskUrl, onCopy, copied }: { subjectsUrl: string; taskUrl: string; onCopy: (v: string, k: string) => void; copied: string | null }) {
-  // Beispiel-JSON-Body, den Apple-Shortcut als Request-Body verschickt
-  const jsonBody = `{
-  "title": "TITEL_VARIABLE",
-  "subjectId": "SUBJECT_ID_VARIABLE",
-  "dueDate": "DATUM_VARIABLE",
-  "kind": "hausaufgabe"
-}`;
+function ShortcutGuide({ token, onCopy, copied }: { token: string; onCopy: (v: string, k: string) => void; copied: string | null }) {
+  const [installUrl, setInstallUrl] = useState<string | null>(null);
+  useEffect(() => {
+    import('@/lib/shortcutToken').then(mod => setInstallUrl(mod.SHORTCUT_ICLOUD_URL));
+  }, []);
+
+  if (!installUrl) {
+    // Shortcut existiert noch nicht – Hinweis statt Anleitung.
+    return (
+      <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-900 leading-relaxed">
+        <div className="flex items-center gap-2 mb-1.5">
+          <AlertTriangle className="size-4 flex-shrink-0" />
+          <strong className="text-sm">Shortcut wird vorbereitet</strong>
+        </div>
+        Der fertige Apple Shortcut zum 1-Klick-Installieren ist noch nicht hinterlegt. Sobald der Entwickler
+        ihn auf einem iPhone/iPad gebaut und den iCloud-Link eingetragen hat, erscheint hier ein
+        „Installieren"-Button. Bis dahin kannst du den Token oben bereits erstellen und sichern – er bleibt
+        gültig.
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl bg-theme-soft/30 border border-theme-soft p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Smartphone className="size-4 text-theme" />
-        <strong className="text-sm text-ink-800">So baust du den Shortcut auf iPhone/iPad</strong>
+        <strong className="text-sm text-ink-800">Shortcut auf dein iPhone/iPad holen</strong>
       </div>
 
       <ol className="text-xs text-ink-700 leading-relaxed space-y-2 list-decimal list-inside">
-        <li>App <strong>„Kurzbefehle"</strong> öffnen → oben <strong>+</strong> für neuen Shortcut.</li>
-        <li>
-          <strong>Aktion „Inhalt von URL abrufen"</strong> hinzufügen → URL einfügen:
-          <CopyInline value={subjectsUrl} k="g-subjects" copied={copied} onCopy={onCopy} />
-          <span className="text-ink-500">Methode: <strong>GET</strong> (Standard). Liefert die Liste deiner Fächer.</span>
-        </li>
-        <li>
-          <strong>Aktion „Wörterbuch aus Eingabe abrufen"</strong> hinzufügen (Input = das Ergebnis aus Schritt 2).
-        </li>
-        <li>
-          <strong>Aktion „Aus Liste auswählen"</strong> hinzufügen — als Liste das <em>Wörterbuch</em> aus Schritt 3 wählen.
-          Unter „Erweitert" Schlüssel zur Anzeige auf <code className="font-mono bg-white/60 px-1 rounded">name</code> stellen.
-          Das gibt dir auf dem iPad einen Auswahldialog mit deinen echten Fächern.
-        </li>
-        <li>
-          <strong>Aktion „Wörterbuchwert abrufen"</strong> hinzufügen → Schlüssel <code className="font-mono bg-white/60 px-1 rounded">id</code> aus dem Ergebnis von Schritt 4. Ergebnis in Variable „SubjectId" speichern.
-        </li>
-        <li>
-          <strong>Aktion „Nach Eingabe fragen"</strong> hinzufügen → Frage: „Was ist zu tun?". Speichere in Variable „Titel".
-        </li>
-        <li>
-          <strong>Aktion „Nach Eingabe fragen"</strong> hinzufügen → Eingabetyp <strong>Datum</strong>, Frage: „Bis wann?". Speichere in Variable „Faellig".
-        </li>
-        <li>
-          <strong>Aktion „Inhalt von URL abrufen"</strong> hinzufügen:
-          <CopyInline value={taskUrl} k="g-task" copied={copied} onCopy={onCopy} />
-          <span className="text-ink-500">Pfeil zum Aufklappen → Methode: <strong>POST</strong>, Header <code className="font-mono bg-white/60 px-1 rounded">Content-Type: application/json</code>, Anforderungstext: <strong>JSON</strong> mit Feldern:</span>
-          <ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
-            <li><code className="font-mono">title</code> — Text → Variable „Titel"</li>
-            <li><code className="font-mono">subjectId</code> — Text → Variable „SubjectId"</li>
-            <li><code className="font-mono">dueDate</code> — Text → Variable „Faellig" (Datum, ISO-Format akzeptiert)</li>
-            <li><code className="font-mono">kind</code> — Text → <code className="font-mono">hausaufgabe</code> (oder <code className="font-mono">test</code>, <code className="font-mono">schulaufgabe</code>, <code className="font-mono">projekt</code>, <code className="font-mono">todo</code>)</li>
-          </ul>
-        </li>
-        <li>
-          Optional: Aktion <strong>„Mitteilung einblenden"</strong> mit Text „Aufgabe angelegt ✅".
-        </li>
-        <li>
-          Shortcut benennen („Neue Aufgabe") und speichern. Per <strong>Lange-Drücken → Zum Home-Bildschirm</strong> oder als Widget anpinnen.
-        </li>
+        <li><strong>Token kopieren</strong> (Button oben unter „Dein Token"). Du brauchst ihn gleich genau einmal.</li>
+        <li><strong>„Shortcut installieren"</strong> tippen → iOS fragt: „Shortcut hinzufügen?" → bestätigen.</li>
+        <li>Beim ersten Start fragt der Shortcut: „Notenapp-Token einfügen". Token einsetzen → fertig.</li>
+        <li>Shortcut zu Home-Bildschirm oder Widget hinzufügen — und Aufgaben künftig per Tap anlegen.</li>
       </ol>
 
-      <details className="text-[11px] text-ink-600">
-        <summary className="cursor-pointer font-semibold">Body-Beispiel zum Nachschlagen</summary>
-        <pre className="mt-2 bg-white/60 rounded-xl p-2 overflow-x-auto font-mono text-[10px] leading-snug">{jsonBody}</pre>
-      </details>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+        <button onClick={() => onCopy(token, 'token-cta')} className="btn-ghost justify-center">
+          {copied === 'token-cta' ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+          Token kopieren
+        </button>
+        <a href={installUrl} target="_blank" rel="noopener noreferrer" className="btn-primary justify-center">
+          <ExternalLink className="size-4" />Shortcut installieren
+        </a>
+      </div>
 
       <div className="text-[11px] text-ink-500 leading-relaxed border-t border-white/60 pt-2">
-        Tipp: Der Token in den URLs ist dein Schlüssel — wer ihn hat, kann Aufgaben in deinem Account
-        anlegen. Falls dir ein iPad abhanden kommt: einfach „Zurückziehen" klicken, der alte Token
-        ist sofort tot.
+        Tipp: Der Token ist dein Schlüssel — wer ihn hat, kann Aufgaben in deinem Account anlegen.
+        Falls dir ein iPad abhanden kommt: oben „Zurückziehen" — der alte Token ist sofort tot.
       </div>
     </div>
   );
 }
 
-function CopyInline({ value, k, copied, onCopy }: { value: string; k: string; copied: string | null; onCopy: (v: string, k: string) => void }) {
-  return (
-    <div className="flex items-center gap-1.5 my-1.5">
-      <code className="flex-1 min-w-0 text-[10px] bg-white/60 rounded-lg px-2 py-1 truncate font-mono">{value}</code>
-      <button onClick={() => onCopy(value, k)} className="btn-ghost py-0.5 px-1.5 text-[10px]">
-        {copied === k ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-      </button>
-    </div>
-  );
-}
