@@ -5,7 +5,6 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { AverageRing } from '@/components/AverageRing';
 import { GradeBadge } from '@/components/GradeBadge';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
@@ -43,6 +42,19 @@ export function GradesPage() {
   const subjFor = (gid: string) => subjects.find(s => s.id === gid);
   const overall = useMemo(() => overallAverage(grades, subjects, config), [grades, subjects, config]);
   const trend = useMemo(() => gradeTrend(grades, g => subjFor(g.subjectId), config, settings?.trendThreshold ?? 0.2), [grades, subjects, config, settings?.trendThreshold]);
+
+  const delta = useMemo(() => {
+    const sorted = [...grades].filter(g => !g.isPending).sort((a, b) => a.date - b.date);
+    if (sorted.length < 2) return null;
+    const half = Math.floor(sorted.length / 2) || 1;
+    const olderAvg = overallAverage(sorted.slice(0, half), subjects, config);
+    const newerAvg = overallAverage(sorted.slice(half), subjects, config);
+    if (olderAvg == null || newerAvg == null) return null;
+    return newerAvg - olderAvg;
+  }, [grades, subjects, config]);
+
+  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Sparkles;
+  const trendArrow = trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
 
   const attentionSubjects = useMemo(() => subjects.filter(s => needsAttention(grades, s, config)), [subjects, grades, config]);
 
@@ -129,13 +141,21 @@ export function GradesPage() {
       }
     >
       <div className="grid grid-cols-12 gap-4 md:gap-5">
-        <Card delay={0} className="col-span-12 md:col-span-4 lg:col-span-3 text-center theme-gradient !text-white border-0">
-          <div className="text-xs uppercase tracking-wider opacity-90">Gesamtschnitt</div>
-          <div className="mt-3 mx-auto bg-white/15 rounded-3xl p-3 inline-block">
-            <AverageRing value={overall} system={system} size={140} tone="invert" />
+        <Card delay={0} className="col-span-12 md:col-span-4 lg:col-span-3 theme-gradient !text-white border-0 flex flex-col items-center justify-center py-6 gap-1">
+          <div className="text-xs uppercase tracking-widest opacity-80 font-semibold">Gesamtschnitt</div>
+          <div className="font-display font-extrabold text-6xl leading-none mt-2 drop-shadow-sm">
+            {overall != null ? formatAverage(overall, system) : '–'}
           </div>
-          <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold">
-            {trend === 'up' ? <><TrendingUp className="size-4" />Trend: besser</> : trend === 'down' ? <><TrendingDown className="size-4" />Trend: schlechter</> : 'Stabil'}
+          {delta != null && (
+            <div className="flex items-center gap-1 mt-1 text-white/70 text-sm font-semibold">
+              <span>{trendArrow}</span>
+              <span>{formatAverage(Math.abs(delta), system, 2)}</span>
+              <span className="text-white/50 font-normal">seit Halbjahr</span>
+            </div>
+          )}
+          <div className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold">
+            <TrendIcon className="size-4" />
+            {trend === 'up' ? 'Besser' : trend === 'down' ? 'Schlechter' : 'Stabil'}
           </div>
         </Card>
 
