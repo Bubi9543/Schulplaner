@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Filter, Palmtree } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
@@ -8,14 +8,26 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
-import type { AppTask, TaskKind } from '@/types';
+import { fetchUpcomingHolidays, isoLocal } from '@/lib/holidays';
+import type { AppTask, TaskKind, SchoolHoliday } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
 
 export function CalendarPage() {
   const tasks = useStore(s => s.tasks);
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
+  const region = settings?.region;
   const customKinds = settings?.gradingConfig.customKinds ?? [];
+
+  const [holidays, setHolidays] = useState<SchoolHoliday[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!region) { setHolidays([]); return; }
+    // Subdivision wird für DE/AT empfohlen, sonst kommen evtl. zu viele.
+    if (region.country === 'DE' && !region.subdivision) { setHolidays([]); return; }
+    fetchUpcomingHolidays(region).then(h => { if (!cancelled) setHolidays(h); });
+    return () => { cancelled = true; };
+  }, [region?.country, region?.subdivision]);
   const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
     ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
     ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
@@ -72,6 +84,7 @@ export function CalendarPage() {
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
         <CalendarView
           tasks={filtered}
+          holidays={holidays}
           onSelect={t => setDetail({ open: true, task: t })}
           onNew={d => setEditor({ open: true, task: { dueDate: d.getTime() } })}
         />
@@ -96,7 +109,7 @@ export function CalendarPage() {
   );
 }
 
-function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: (t: AppTask) => void; onNew: (d: Date) => void }) {
+function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; holidays: SchoolHoliday[]; onSelect: (t: AppTask) => void; onNew: (d: Date) => void }) {
   const subjects = useStore(s => s.subjects);
   const [cursor, setCursor] = useState<Date>(() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
@@ -119,6 +132,22 @@ function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: 
     return m;
   }, [tasks]);
 
+  /** Pro Datum: zugehörige Ferienzeit + ob's der erste Tag der Ferien ist. */
+  const holidayByDay = useMemo(() => {
+    const m = new Map<string, { holiday: SchoolHoliday; isStart: boolean }>();
+    for (const h of holidays) {
+      const start = new Date(h.startDate); start.setHours(0, 0, 0, 0);
+      const end = new Date(h.endDate); end.setHours(0, 0, 0, 0);
+      const cur = new Date(start);
+      while (cur <= end) {
+        const key = isoLocal(cur);
+        if (!m.has(key)) m.set(key, { holiday: h, isStart: cur.getTime() === start.getTime() });
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    return m;
+  }, [holidays]);
+
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
@@ -138,15 +167,34 @@ function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: 
           const isToday = isSameDay(d, new Date());
           const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
           const day = tasksByDay.get(key) ?? [];
+          const isoKey = isoLocal(d);
+          const hol = holidayByDay.get(isoKey);
+
+          const baseCls = isToday
+            ? 'theme-gradient-soft border-theme-soft'
+            : hol
+              ? (inMonth
+                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100/70'
+                  : 'bg-amber-50/40 border-amber-100')
+              : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent';
+
           return (
             <div
               key={i}
               onClick={() => onNew(d)}
-              className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${
-                isToday ? 'theme-gradient-soft border-theme-soft' : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent'
-              }`}
+              title={hol ? hol.holiday.name : undefined}
+              className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${baseCls}`}
             >
-              <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
+              <div className="flex items-center justify-between gap-1">
+                <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : hol && inMonth ? 'text-amber-800' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
+                {hol && inMonth && <Palmtree className="size-3 text-amber-600 flex-shrink-0" />}
+              </div>
+              {/* Ferien-Name am ersten Tag */}
+              {hol?.isStart && inMonth && (
+                <div className="mt-0.5 text-[9px] font-bold text-amber-700 uppercase tracking-wide truncate">
+                  {hol.holiday.name}
+                </div>
+              )}
               <div className="mt-1 flex flex-col gap-0.5">
                 {day.slice(0, 3).map(t => {
                   const subj = subjects.find(s => s.id === t.subjectId);
@@ -164,6 +212,12 @@ function CalendarView({ tasks, onSelect, onNew }: { tasks: AppTask[]; onSelect: 
           );
         })}
       </div>
+      {holidays.length > 0 && (
+        <div className="mt-3 text-[11px] text-ink-500 flex items-center gap-1.5">
+          <Palmtree className="size-3.5 text-amber-600" />
+          <span>Schulferien werden hervorgehoben.</span>
+        </div>
+      )}
     </Card>
   );
 }
