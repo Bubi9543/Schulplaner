@@ -906,12 +906,12 @@ function NextHolidayWidget() {
       <div className="relative flex-1 flex flex-col justify-center">
         <div className="text-[11px] uppercase tracking-wider opacity-85 font-semibold">{holiday.name}</div>
         <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 'clamp(2.5rem, 12cqi, 4rem)' }}>
-          {isActive ? days + 1 : days}
+          {days}
         </div>
         <div className="text-sm opacity-90 mt-1">
           {isActive
-            ? (days === 0 ? 'noch heute' : `noch ${days === 1 ? 'einen Tag' : days + ' Tage'}`)
-            : (days === 0 ? 'starten heute' : `Tag${days !== 1 ? 'e' : ''} ab heute`)}
+            ? (days === 0 ? 'endet heute' : `noch ${days === 1 ? 'einen Tag' : days + ' Tage'}`)
+            : (days === 0 ? 'starten heute' : `${days === 1 ? 'morgen' : `in ${days} Tagen`}`)}
         </div>
       </div>
       <div className="relative text-xs opacity-90 mt-2 flex items-center justify-between flex-wrap gap-1">
