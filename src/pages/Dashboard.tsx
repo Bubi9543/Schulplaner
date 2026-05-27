@@ -831,11 +831,22 @@ function fmtCountdown(d: number): string {
   return rem > 0 ? `${wStr} ${rem} ${rem === 1 ? 'Tag' : 'Tage'}` : wStr;
 }
 
-function prevSaturday(d: Date): Date {
-  const r = new Date(d);
-  // (dayOfWeek + 1) % 7 → days to subtract to reach preceding Saturday
-  r.setDate(r.getDate() - (r.getDay() + 1) % 7);
-  return r;
+/** Wenn Ferien am Sonntag oder Montag starten → Samstag davor dazu. */
+function effectiveHolidayStart(officialStart: Date): Date {
+  const d = new Date(officialStart); d.setHours(0, 0, 0, 0);
+  const dow = d.getDay();
+  if (dow === 1) d.setDate(d.getDate() - 2); // Montag → Samstag
+  else if (dow === 0) d.setDate(d.getDate() - 1); // Sonntag → Samstag
+  return d;
+}
+
+/** Wenn Ferien am Freitag oder Samstag enden → Sonntag danach dazu. */
+function effectiveHolidayEnd(officialEnd: Date): Date {
+  const d = new Date(officialEnd); d.setHours(0, 0, 0, 0);
+  const dow = d.getDay();
+  if (dow === 5) d.setDate(d.getDate() + 2); // Freitag → Sonntag
+  else if (dow === 6) d.setDate(d.getDate() + 1); // Samstag → Sonntag
+  return d;
 }
 
 function NextHolidayWidget() {
@@ -897,22 +908,22 @@ function NextHolidayWidget() {
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const officialStart = new Date(holiday.startDate); officialStart.setHours(0, 0, 0, 0);
-  const end = new Date(holiday.endDate); end.setHours(0, 0, 0, 0);
+  const officialEnd = new Date(holiday.endDate); officialEnd.setHours(0, 0, 0, 0);
 
-  // Ferien beginnen gefühlt am Samstag davor
-  const effectiveStart = prevSaturday(officialStart);
-  effectiveStart.setHours(0, 0, 0, 0);
+  // Wochenende davor (So/Mo → Samstag) und danach (Fr/Sa → Sonntag) einbeziehen
+  const effectiveStart = effectiveHolidayStart(officialStart);
+  const effectiveEnd = effectiveHolidayEnd(officialEnd);
 
-  const isActive = today >= effectiveStart && today <= end;
+  const isActive = today >= effectiveStart && today <= effectiveEnd;
   const days = Math.round(
-    (isActive ? end.getTime() - today.getTime() : effectiveStart.getTime() - today.getTime()) / 86_400_000
+    (isActive ? effectiveEnd.getTime() - today.getTime() : effectiveStart.getTime() - today.getTime()) / 86_400_000
   );
-  const totalDays = Math.round((end.getTime() - effectiveStart.getTime()) / 86_400_000) + 1;
+  const totalDays = Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / 86_400_000) + 1;
 
   // Progressbar: aktiv = wie weit durch die Ferien; davor = wie nah wir rankommen (6-Wochen-Fenster)
   const COUNTDOWN_WINDOW = 42;
   const progress = isActive
-    ? Math.min(1, (today.getTime() - effectiveStart.getTime()) / (end.getTime() - effectiveStart.getTime()))
+    ? Math.min(1, (today.getTime() - effectiveStart.getTime()) / (effectiveEnd.getTime() - effectiveStart.getTime()))
     : Math.max(0, 1 - days / COUNTDOWN_WINDOW);
 
   const fmtDate = (d: Date) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
@@ -1000,7 +1011,7 @@ function NextHolidayWidget() {
 
       {/* Footer: Datum + Dauer */}
       <div className="relative text-[10px] opacity-70 mt-2 flex items-center justify-between">
-        <span>{fmtDate(effectiveStart)} – {fmtDate(end)}</span>
+        <span>{fmtDate(effectiveStart)} – {fmtDate(effectiveEnd)}</span>
         <span>{totalDays} {totalDays === 1 ? 'Tag' : 'Tage'}</span>
       </div>
     </div>
