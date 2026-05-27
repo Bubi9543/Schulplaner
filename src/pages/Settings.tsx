@@ -18,7 +18,7 @@ import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
@@ -28,11 +28,12 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'subjects',      label: 'Fächer',            icon: BookOpen },
   { id: 'schoolyears',   label: 'Schuljahre',        icon: Calendar },
   { id: 'notifications', label: 'Benachrichtigungen', icon: Bell },
+  { id: 'shortcut',      label: 'Apple Shortcut',    icon: Zap },
   { id: 'data',          label: 'Daten & Sync',      icon: Database },
   { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -92,6 +93,7 @@ export function SettingsPage() {
               {section === 'subjects' && <SubjectsSection />}
               {section === 'schoolyears' && <SchoolYearsSection />}
               {section === 'notifications' && <NotificationsSection />}
+              {section === 'shortcut' && <ShortcutSection />}
               {section === 'data' && <DataSection />}
               {section === 'about' && <AboutSection />}
             </motion.div>
@@ -1845,6 +1847,309 @@ function AboutSection() {
           bei Supabase in der EU. Keine Tracker, kein Werbe-Sharing.
         </div>
       </Card>
+    </div>
+  );
+}
+
+/* ─── Apple-Shortcut ────────────────────────────────────────────────── */
+
+function ShortcutSection() {
+  const [authUser, setAuthUser] = useState<{ id: string } | null>(null);
+  const [token, setToken] = useState<import('@/lib/shortcutToken').ShortcutToken | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) { setLoading(false); return; }
+    supabase.auth.getUser().then(({ data }) => setAuthUser(data.user ? { id: data.user.id } : null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setAuthUser(session?.user ? { id: session.user.id } : null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) { setToken(null); setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    import('@/lib/shortcutToken').then(async (mod) => {
+      try {
+        const t = await mod.getActiveShortcutToken();
+        if (!cancelled) setToken(t);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [authUser]);
+
+  async function generate() {
+    setBusy(true); setError(null);
+    try {
+      const mod = await import('@/lib/shortcutToken');
+      const t = await mod.createShortcutToken('Apple Shortcut');
+      setToken(t);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke() {
+    if (!confirm('Shortcut-Token zurückziehen? Dein Apple Shortcut funktioniert dann nicht mehr.')) return;
+    setBusy(true); setError(null);
+    try {
+      const mod = await import('@/lib/shortcutToken');
+      await mod.revokeShortcutTokens();
+      setToken(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy(value: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    } catch { /* ignore */ }
+  }
+
+  if (!supabase) {
+    return (
+      <Card>
+        <h3 className="h3 mb-2 flex items-center gap-2"><Zap className="size-5 text-theme" />Apple Shortcut</h3>
+        <p className="text-sm text-ink-500">Cloud-Sync ist nicht eingerichtet – Shortcut-Zugriff geht nur mit aktiviertem Cloud-Account.</p>
+      </Card>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <Card>
+        <h3 className="h3 mb-2 flex items-center gap-2"><Zap className="size-5 text-theme" />Apple Shortcut</h3>
+        <p className="text-sm text-ink-500">Logge dich erst unter „Daten & Sync" ein – der Shortcut braucht einen Cloud-Account, damit angelegte Aufgaben auf all deinen Geräten landen.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <h3 className="h3 mb-1 flex items-center gap-2">
+        <Zap className="size-5 text-theme" />
+        Apple Shortcut
+      </h3>
+      <p className="subtle mb-3">
+        Lege Aufgaben mit einem Tap auf deinem iPhone, iPad oder Mac an – ohne die App zu öffnen.
+        Der Shortcut zeigt deine echten Fächer zur Auswahl, fragt Titel und Fälligkeit ab und
+        speichert die Aufgabe direkt in deinem Account.
+      </p>
+
+      {loading ? (
+        <div className="rounded-2xl bg-white/60 p-6 grid place-items-center">
+          <Loader2 className="size-5 text-theme animate-spin" />
+        </div>
+      ) : token ? (
+        <ShortcutTokenView
+          token={token}
+          onRevoke={revoke}
+          onRegenerate={generate}
+          busy={busy}
+          copied={copied}
+          onCopy={copy}
+        />
+      ) : (
+        <div className="space-y-3">
+          <button onClick={generate} disabled={busy} className="btn-primary w-full">
+            {busy ? <><Loader2 className="size-4 animate-spin" />Erstelle …</> : <><KeyRound className="size-4" />Shortcut-Token erstellen</>}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 flex items-start gap-2">
+          <AlertTriangle className="size-4 flex-shrink-0 mt-0.5" />
+          {error}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ShortcutTokenView({
+  token,
+  onRevoke,
+  onRegenerate,
+  busy,
+  copied,
+  onCopy,
+}: {
+  token: import('@/lib/shortcutToken').ShortcutToken;
+  onRevoke: () => void;
+  onRegenerate: () => void;
+  busy: boolean;
+  copied: string | null;
+  onCopy: (v: string, k: string) => void;
+}) {
+  const [urls, setUrls] = useState<{ subjects: string; task: string; ping: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    import('@/lib/shortcutToken').then((mod) => {
+      if (cancelled) return;
+      setUrls({
+        subjects: mod.buildSubjectsUrl(token.token),
+        task: mod.buildTaskUrl(token.token),
+        ping: mod.buildPingUrl(token.token),
+      });
+    });
+    return () => { cancelled = true; };
+  }, [token.token]);
+
+  if (!urls) return <div className="rounded-2xl bg-white/60 p-6 grid place-items-center"><Loader2 className="size-5 text-theme animate-spin" /></div>;
+
+  const last = token.lastUsedAt
+    ? new Date(token.lastUsedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : 'noch nie benutzt';
+
+  return (
+    <div className="space-y-4">
+      {/* Dein Token */}
+      <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+        <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1">Dein Token</div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 min-w-0 text-xs bg-white/70 rounded-xl px-2 py-1.5 truncate font-mono text-ink-800">{token.token}</code>
+          <button onClick={() => onCopy(token.token, 'token')} className="btn-ghost py-1 px-2 text-xs">
+            {copied === 'token' ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+            {copied === 'token' ? 'Kopiert' : 'Kopieren'}
+          </button>
+        </div>
+        <div className="text-[11px] text-ink-500 mt-1.5">Zuletzt genutzt: {last}</div>
+      </div>
+
+      {/* URLs für den Shortcut */}
+      <div className="space-y-2">
+        <UrlRow label="GET — Fächer abrufen" url={urls.subjects} k="subjects" copied={copied} onCopy={onCopy} />
+        <UrlRow label="POST — Aufgabe anlegen" url={urls.task} k="task" copied={copied} onCopy={onCopy} />
+      </div>
+
+      {/* Schritt-für-Schritt-Anleitung */}
+      <ShortcutGuide subjectsUrl={urls.subjects} taskUrl={urls.task} onCopy={onCopy} copied={copied} />
+
+      <div className="flex gap-2">
+        <button onClick={onRegenerate} disabled={busy} className="btn-ghost flex-1 text-xs">
+          <RefreshCw className="size-3.5" />Neuen Token erstellen
+        </button>
+        <button onClick={onRevoke} disabled={busy} className="btn-soft flex-1 text-xs text-rose-600">
+          <Trash2 className="size-3.5" />Zurückziehen
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UrlRow({ label, url, k, copied, onCopy }: { label: string; url: string; k: string; copied: string | null; onCopy: (v: string, k: string) => void }) {
+  return (
+    <div className="rounded-2xl border border-white/60 bg-white/60 p-3">
+      <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 mb-1">{label}</div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 min-w-0 text-[11px] bg-white/70 rounded-xl px-2 py-1.5 truncate font-mono text-ink-800">{url}</code>
+        <button onClick={() => onCopy(url, k)} className="btn-ghost py-1 px-2 text-xs">
+          {copied === k ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          {copied === k ? 'Kopiert' : 'Kopieren'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShortcutGuide({ subjectsUrl, taskUrl, onCopy, copied }: { subjectsUrl: string; taskUrl: string; onCopy: (v: string, k: string) => void; copied: string | null }) {
+  // Beispiel-JSON-Body, den Apple-Shortcut als Request-Body verschickt
+  const jsonBody = `{
+  "title": "TITEL_VARIABLE",
+  "subjectId": "SUBJECT_ID_VARIABLE",
+  "dueDate": "DATUM_VARIABLE",
+  "kind": "hausaufgabe"
+}`;
+
+  return (
+    <div className="rounded-2xl bg-theme-soft/30 border border-theme-soft p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Smartphone className="size-4 text-theme" />
+        <strong className="text-sm text-ink-800">So baust du den Shortcut auf iPhone/iPad</strong>
+      </div>
+
+      <ol className="text-xs text-ink-700 leading-relaxed space-y-2 list-decimal list-inside">
+        <li>App <strong>„Kurzbefehle"</strong> öffnen → oben <strong>+</strong> für neuen Shortcut.</li>
+        <li>
+          <strong>Aktion „Inhalt von URL abrufen"</strong> hinzufügen → URL einfügen:
+          <CopyInline value={subjectsUrl} k="g-subjects" copied={copied} onCopy={onCopy} />
+          <span className="text-ink-500">Methode: <strong>GET</strong> (Standard). Liefert die Liste deiner Fächer.</span>
+        </li>
+        <li>
+          <strong>Aktion „Wörterbuch aus Eingabe abrufen"</strong> hinzufügen (Input = das Ergebnis aus Schritt 2).
+        </li>
+        <li>
+          <strong>Aktion „Aus Liste auswählen"</strong> hinzufügen — als Liste das <em>Wörterbuch</em> aus Schritt 3 wählen.
+          Unter „Erweitert" Schlüssel zur Anzeige auf <code className="font-mono bg-white/60 px-1 rounded">name</code> stellen.
+          Das gibt dir auf dem iPad einen Auswahldialog mit deinen echten Fächern.
+        </li>
+        <li>
+          <strong>Aktion „Wörterbuchwert abrufen"</strong> hinzufügen → Schlüssel <code className="font-mono bg-white/60 px-1 rounded">id</code> aus dem Ergebnis von Schritt 4. Ergebnis in Variable „SubjectId" speichern.
+        </li>
+        <li>
+          <strong>Aktion „Nach Eingabe fragen"</strong> hinzufügen → Frage: „Was ist zu tun?". Speichere in Variable „Titel".
+        </li>
+        <li>
+          <strong>Aktion „Nach Eingabe fragen"</strong> hinzufügen → Eingabetyp <strong>Datum</strong>, Frage: „Bis wann?". Speichere in Variable „Faellig".
+        </li>
+        <li>
+          <strong>Aktion „Inhalt von URL abrufen"</strong> hinzufügen:
+          <CopyInline value={taskUrl} k="g-task" copied={copied} onCopy={onCopy} />
+          <span className="text-ink-500">Pfeil zum Aufklappen → Methode: <strong>POST</strong>, Header <code className="font-mono bg-white/60 px-1 rounded">Content-Type: application/json</code>, Anforderungstext: <strong>JSON</strong> mit Feldern:</span>
+          <ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
+            <li><code className="font-mono">title</code> — Text → Variable „Titel"</li>
+            <li><code className="font-mono">subjectId</code> — Text → Variable „SubjectId"</li>
+            <li><code className="font-mono">dueDate</code> — Text → Variable „Faellig" (Datum, ISO-Format akzeptiert)</li>
+            <li><code className="font-mono">kind</code> — Text → <code className="font-mono">hausaufgabe</code> (oder <code className="font-mono">test</code>, <code className="font-mono">schulaufgabe</code>, <code className="font-mono">projekt</code>, <code className="font-mono">todo</code>)</li>
+          </ul>
+        </li>
+        <li>
+          Optional: Aktion <strong>„Mitteilung einblenden"</strong> mit Text „Aufgabe angelegt ✅".
+        </li>
+        <li>
+          Shortcut benennen („Neue Aufgabe") und speichern. Per <strong>Lange-Drücken → Zum Home-Bildschirm</strong> oder als Widget anpinnen.
+        </li>
+      </ol>
+
+      <details className="text-[11px] text-ink-600">
+        <summary className="cursor-pointer font-semibold">Body-Beispiel zum Nachschlagen</summary>
+        <pre className="mt-2 bg-white/60 rounded-xl p-2 overflow-x-auto font-mono text-[10px] leading-snug">{jsonBody}</pre>
+      </details>
+
+      <div className="text-[11px] text-ink-500 leading-relaxed border-t border-white/60 pt-2">
+        Tipp: Der Token in den URLs ist dein Schlüssel — wer ihn hat, kann Aufgaben in deinem Account
+        anlegen. Falls dir ein iPad abhanden kommt: einfach „Zurückziehen" klicken, der alte Token
+        ist sofort tot.
+      </div>
+    </div>
+  );
+}
+
+function CopyInline({ value, k, copied, onCopy }: { value: string; k: string; copied: string | null; onCopy: (v: string, k: string) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 my-1.5">
+      <code className="flex-1 min-w-0 text-[10px] bg-white/60 rounded-lg px-2 py-1 truncate font-mono">{value}</code>
+      <button onClick={() => onCopy(value, k)} className="btn-ghost py-0.5 px-1.5 text-[10px]">
+        {copied === k ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+      </button>
     </div>
   );
 }

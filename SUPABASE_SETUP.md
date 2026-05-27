@@ -88,6 +88,16 @@ create table if not exists calendar_tokens (
 );
 create index if not exists calendar_tokens_user_idx on calendar_tokens(user_id);
 
+-- Shortcut-API: Tokens, mit denen Apple Shortcuts Aufgaben anlegen dürfen.
+create table if not exists shortcut_tokens (
+  token text primary key check (char_length(token) >= 24),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  label text,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+create index if not exists shortcut_tokens_user_idx on shortcut_tokens(user_id);
+
 -- Stundenplan-Sharing über 4-stellige Codes
 create table if not exists schedule_shares (
   code text primary key check (char_length(code) between 4 and 12),
@@ -132,6 +142,7 @@ alter table photos       enable row level security;
 alter table user_settings enable row level security;
 alter table schedule_shares enable row level security;
 alter table calendar_tokens enable row level security;
+alter table shortcut_tokens enable row level security;
 alter table push_subscriptions enable row level security;
 alter table notification_log enable row level security;
 
@@ -158,6 +169,10 @@ create policy "owner delete" on schedule_shares for delete
 -- calendar_tokens: User verwaltet nur eigene Tokens. Der Token-→-User-Lookup
 -- in der Edge Function läuft mit dem Service-Role-Key und umgeht RLS.
 create policy "own calendar tokens" on calendar_tokens for all
+  to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- shortcut_tokens: identische Logik. Lookup in Edge Function läuft mit Service-Role.
+create policy "own shortcut tokens" on shortcut_tokens for all
   to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- push_subscriptions: User verwaltet nur eigene Geräte-Endpoints. Die
