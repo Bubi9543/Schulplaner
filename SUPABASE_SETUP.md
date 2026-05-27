@@ -358,7 +358,36 @@ VITE_VAPID_PUBLIC_KEY=BLn...derselbe Public-Key wie oben...
 Danach neu deployen. In den App-Einstellungen erscheint dann der neue
 „Benachrichtigungen"-Tab.
 
-## 7. Fertig
+## 7. Feedback-Tabelle
+
+Damit User aus den Einstellungen Bug-Reports und Ideen schicken können:
+
+```sql
+create table if not exists feedback (
+  id bigint generated always as identity primary key,
+  type text not null default 'idee',
+  title text not null,
+  description text,
+  email text,
+  name text,
+  school text,
+  created_at timestamptz not null default now()
+);
+
+alter table feedback enable row level security;
+
+-- Jeder (auch nicht eingeloggt) darf Feedback schreiben
+create policy "anyone can insert feedback" on feedback
+  for insert to anon, authenticated
+  with check (true);
+
+-- Nur du (über Supabase Dashboard / Service Key) kannst lesen
+-- Kein SELECT-Policy = kein User kann Feedback anderer lesen
+```
+
+Feedback lesen: über das Supabase Dashboard → Table Editor → `feedback`.
+
+## 8. Fertig
 
 Im Settings → Cloud Sync der App einloggen. Sobald du auf einem zweiten Gerät eingeloggt bist, **synchronisieren sich Änderungen automatisch in Echtzeit** – kein manueller Upload nötig. Fotos werden ab dem Login direkt in den `photos`-Bucket hochgeladen und beim Wechseln auf andere Geräte automatisch heruntergeladen.
 

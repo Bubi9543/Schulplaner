@@ -1855,9 +1855,6 @@ function AboutSection() {
 
 /* ─── Feedback ─────────────────────────────────────────────────────── */
 
-const FEEDBACK_URL = (import.meta.env.VITE_FEEDBACK_SHEET_URL as string | undefined)
-  || 'https://script.google.com/macros/s/AKfycbxRvGvYPks9FACTUP42lxqgaa-EedbV0PwubLddRgiEZlRp2IVfVM5_tiUFRbHidefydg/exec';
-
 type FeedbackType = 'bug' | 'idee' | 'sonstiges';
 
 function FeedbackSection() {
@@ -1873,25 +1870,20 @@ function FeedbackSection() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    if (!FEEDBACK_URL) { setError('Feedback-URL ist nicht konfiguriert.'); return; }
+    if (!supabase) { setError('Cloud-Sync ist nicht eingerichtet.'); return; }
 
     setBusy(true);
     setError(null);
     try {
-      await fetch(FEEDBACK_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          type,
-          title: title.trim(),
-          description: desc.trim(),
-          email: email.trim() || undefined,
-          name: settings?.name || undefined,
-          school: settings?.school || undefined,
-          timestamp: new Date().toISOString(),
-        }),
+      const { error: dbErr } = await supabase.from('feedback').insert({
+        type,
+        title: title.trim(),
+        description: desc.trim() || null,
+        email: email.trim() || null,
+        name: settings?.name || null,
+        school: settings?.school || null,
       });
+      if (dbErr) throw new Error(dbErr.message);
       setSent(true);
       setTitle('');
       setDesc('');
