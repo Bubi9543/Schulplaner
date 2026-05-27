@@ -1929,7 +1929,7 @@ function FeedbackSection() {
               {([['bug', 'Bug'], ['idee', 'Idee'], ['sonstiges', 'Sonstiges']] as const).map(([val, lbl]) => (
                 <button key={val} type="button" onClick={() => setType(val)}
                   className={`px-3 py-1.5 rounded-xl text-sm font-medium transition ${type === val ? 'bg-theme-soft text-theme-deep ring-1 ring-theme/30' : 'bg-white/70 text-ink-600 hover:bg-white'}`}>
-                  {val === 'bug' ? '🐛 ' : val === 'idee' ? '💡 ' : '📝 '}{lbl}
+                  {lbl}
                 </button>
               ))}
             </div>
