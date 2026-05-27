@@ -61,7 +61,7 @@ export function CalendarPage() {
       <Card className="mb-4">
         <div className="flex flex-wrap gap-2 items-center">
           <Filter className="size-4 text-ink-400" />
-          <button onClick={() => setFilterKind(null)} className={`chip ${!filterKind ? 'bg-ink-900 text-white border-ink-900' : ''}`}>Alle</button>
+          <button onClick={() => setFilterKind(null)} className={`chip ${!filterKind ? 'bg-ink-900 text-ink-50 border-ink-900' : ''}`}>Alle</button>
           {allKinds.map(k => (
             <button key={k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}
               className={`chip ${filterKind === k.id ? 'bg-orange-500 text-white border-orange-500' : ''}`}>

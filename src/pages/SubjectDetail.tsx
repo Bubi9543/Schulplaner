@@ -515,7 +515,7 @@ function HypotheticalRowEditor({
                 onClick={() => onChange({ kind: k })}
                 className={`text-[11px] px-2 py-0.5 rounded-full border transition ${
                   row.kind === k
-                    ? 'bg-ink-900 text-white border-ink-900'
+                    ? 'bg-ink-900 text-ink-50 border-ink-900'
                     : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
                 }`}
               >
