@@ -14,6 +14,7 @@ import { installDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
 import { CATEGORY_LABEL } from '@/lib/grading';
 import { CATEGORY_DESCRIPTION } from '@/lib/grading';
+import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
@@ -143,8 +144,19 @@ function ProfileSection() {
   const [school, setSchool] = useState(settings.school ?? '');
   const [classLevel, setClassLevel] = useState(settings.classLevel ?? '');
 
+  const region = settings.region ?? { country: 'DE' };
+  const subOptions = subdivisionsForCountry(region.country);
+
   function save() {
     setSettings({ name: name.trim() || undefined, school: school.trim() || undefined, classLevel: classLevel.trim() || undefined });
+  }
+
+  function setCountry(country: string) {
+    // Land gewechselt → Bundesland zurücksetzen
+    setSettings({ region: { country, subdivision: undefined } });
+  }
+  function setSubdivision(sub: string) {
+    setSettings({ region: { ...region, subdivision: sub || undefined } });
   }
 
   return (
@@ -159,6 +171,19 @@ function ProfileSection() {
       <Row label="Klassenstufe (optional)">
         <input className="input max-w-[160px]" value={classLevel} onChange={e => setClassLevel(e.target.value)} onBlur={save} placeholder="z.B. 11" />
       </Row>
+      <Row label="Land" hint="Für Ferien & Feiertage.">
+        <select className="input max-w-[200px]" value={region.country} onChange={e => setCountry(e.target.value)}>
+          {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+        </select>
+      </Row>
+      {subOptions.length > 0 && (
+        <Row label="Bundesland" hint="Schulferien sind regional unterschiedlich.">
+          <select className="input max-w-[260px]" value={region.subdivision ?? ''} onChange={e => setSubdivision(e.target.value)}>
+            <option value="">– wählen –</option>
+            {subOptions.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+          </select>
+        </Row>
+      )}
     </Card>
   );
 }

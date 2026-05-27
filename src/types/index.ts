@@ -225,6 +225,29 @@ export interface AppSettings {
   subjectGroups: SubjectGroup[];
   /** Push-Notification-Konfiguration. */
   notifications: NotificationSettings;
+  /** Region für Schulferien-Lookup (z. B. DE-BY, DE-NW, AT-9). */
+  region?: RegionCode;
+}
+
+/** ISO 3166-2 Subdivision Code; null = nur Country, kein Bundesland (z. B. nur "DE"). */
+export interface RegionCode {
+  /** ISO-Country-Code, z. B. 'DE', 'AT'. */
+  country: string;
+  /** ISO-Subdivision-Code, z. B. 'DE-BY', 'AT-9'. */
+  subdivision?: string;
+}
+
+/** Eine Ferienzeit, wie sie von openholidaysapi.org kommt. */
+export interface SchoolHoliday {
+  id: string;
+  /** YYYY-MM-DD lokal */
+  startDate: string;
+  /** YYYY-MM-DD lokal (inkl., letzter Schulferientag) */
+  endDate: string;
+  /** Lokaler Name, z. B. "Herbstferien". */
+  name: string;
+  /** Cache-Key zum Aufräumen, z. B. "DE-BY:2025". */
+  cacheKey: string;
 }
 
 /** Konfiguration der Push-Benachrichtigungen – pro Event-Typ einzeln steuerbar. */
@@ -337,6 +360,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   gradingConfig: DEFAULT_GRADING_CONFIG,
   subjectGroups: [],
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
+  region: { country: 'DE' },
 };
 
 function structuredCloneSafe<T>(v: T): T {

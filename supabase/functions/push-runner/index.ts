@@ -34,6 +34,12 @@ interface NotificationSettings {
 interface AppSettings {
   name?: string;
   notifications?: NotificationSettings;
+  region?: { country: string; subdivision?: string };
+}
+
+interface RawHoliday {
+  startDate: string;
+  endDate: string;
 }
 
 interface Lesson {
@@ -215,6 +221,30 @@ function berlinOffsetMinutes(d: Date): number {
  */
 const WINDOW_MS = 6 * 60_000;
 
+/** Lädt Ferien für ein Jahr in einer Region (server-side, kein Caching). */
+async function fetchHolidaysForYear(region: { country: string; subdivision?: string }, year: number): Promise<Array<{ start: string; end: string }>> {
+  const params = new URLSearchParams({
+    countryIsoCode: region.country,
+    validFrom: `${year}-01-01`,
+    validTo: `${year}-12-31`,
+    languageIsoCode: 'DE',
+  });
+  if (region.subdivision) params.set('subdivisionCode', region.subdivision);
+  try {
+    const res = await fetch(`https://openholidaysapi.org/SchoolHolidays?${params.toString()}`);
+    if (!res.ok) return [];
+    const raw = (await res.json()) as RawHoliday[];
+    return raw.map(h => ({ start: h.startDate, end: h.endDate }));
+  } catch {
+    return [];
+  }
+}
+
+function isDateInHolidays(date: Date, holidays: Array<{ start: string; end: string }>): boolean {
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return holidays.some(h => h.start <= day && day <= h.end);
+}
+
 function eventsForUser(opts: {
   now: Date;
   settings: NotificationSettings;
@@ -223,8 +253,9 @@ function eventsForUser(opts: {
   lessons: Lesson[];
   subjects: Subject[];
   activeYearId: string | null;
+  holidays: Array<{ start: string; end: string }>;
 }): NotificationEvent[] {
-  const { now, settings, tasks, grades, lessons, subjects, activeYearId } = opts;
+  const { now, settings, tasks, grades, lessons, subjects, activeYearId, holidays } = opts;
   const out: NotificationEvent[] = [];
 
   if (!settings.enabled) return out;
@@ -302,6 +333,8 @@ function eventsForUser(opts: {
       const startTs = lessonOccurrenceTs(l.weekday, l.start, now);
       const trigger = startTs - offset;
       if (!inWindow(trigger)) continue;
+      // Skippe Stunden, die in Schulferien liegen.
+      if (holidays.length && isDateInHolidays(toBerlinDate(new Date(startTs)), holidays)) continue;
       const subj = subjMap.get(l.subjectId);
       if (!subj) continue;
       // Dedup-Key inkl. Tagesdatum, damit nächste Woche neuer Event entsteht.
@@ -421,7 +454,18 @@ Deno.serve(async (req) => {
     const schoolYears = ((yearRes.data ?? []) as Array<{ data: SchoolYear }>).map(r => r.data);
     const activeYearId = schoolYears.find(y => y.active)?.id ?? null;
 
-    const events = eventsForUser({ now, settings, tasks, grades, lessons, subjects, activeYearId });
+    // Ferien laden (nur wenn Region gesetzt + lessonStart-Notif aktiv – sonst sparen)
+    let holidays: Array<{ start: string; end: string }> = [];
+    if (settingsRaw.region && settings.lessonStart.enabled) {
+      const year = now.getFullYear();
+      const [a, b] = await Promise.all([
+        fetchHolidaysForYear(settingsRaw.region, year),
+        fetchHolidaysForYear(settingsRaw.region, year + 1),
+      ]);
+      holidays = [...a, ...b];
+    }
+
+    const events = eventsForUser({ now, settings, tasks, grades, lessons, subjects, activeYearId, holidays });
     if (events.length === 0) continue;
 
     // 3) Dedup gegen notification_log.

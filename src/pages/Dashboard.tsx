@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { GridLayout, useContainerWidth } from 'react-grid-layout';
 import type { LayoutItem } from 'react-grid-layout';
@@ -12,7 +12,7 @@ import {
   Plus, ListTodo, GraduationCap, NotebookPen, CheckCircle2, Circle,
   TrendingUp, TrendingDown, Sparkles, ArrowRight, Briefcase, FileText,
   Calendar, GripHorizontal, X, Award, Clock, BookOpen, BarChart2, Pencil,
-  Target, Trophy, Layers, AlertTriangle,
+  Target, Trophy, Layers, AlertTriangle, Palmtree, Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
@@ -47,7 +47,8 @@ type WidgetType =
   | 'upcoming-exams'
   | 'subject-leaderboard'
   | 'weekly-progress'
-  | 'group-averages';
+  | 'group-averages'
+  | 'next-holiday';
 
 interface WidgetInstance { id: string; type: WidgetType; }
 
@@ -93,6 +94,7 @@ const WIDGET_META: Record<WidgetType, {
   'subject-leaderboard':{ label: 'Top & Flop Fächer',    icon: Trophy,      defaultSize: { w: 6, h: 7 } },
   'weekly-progress':    { label: 'Wochenfortschritt',    icon: CheckCircle2, defaultSize: { w: 5, h: 6 } },
   'group-averages':     { label: 'Schnitt pro Gruppe',   icon: Layers,      defaultSize: { w: 6, h: 6 } },
+  'next-holiday':       { label: 'Nächste Ferien',       icon: Palmtree,    defaultSize: { w: 5, h: 5 } },
 };
 
 const QUICK_BUTTON_META: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -819,6 +821,107 @@ function GroupAveragesWidget() {
   );
 }
 
+/** Countdown bis zu den nächsten Ferien (oder aktive Ferien). */
+function NextHolidayWidget() {
+  const region = useStore(s => s.settings?.region);
+  const [holiday, setHoliday] = useState<import('@/types').SchoolHoliday | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const mod = await import('@/lib/holidays');
+      if (!region) { if (!cancelled) { setHoliday(null); setLoading(false); } return; }
+      try {
+        const all = await mod.fetchUpcomingHolidays(region);
+        if (cancelled) return;
+        setHoliday(mod.getNextHoliday(all));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [region?.country, region?.subdivision]);
+
+  if (!region || (!region.subdivision && region.country === 'DE')) {
+    return (
+      <div className="h-full flex flex-col widget-pad">
+        <h3 className="h3 mb-2 flex-shrink-0 flex items-center gap-2"><Palmtree className="size-5 text-amber-500" />Nächste Ferien</h3>
+        <div className="flex-1 grid place-items-center text-sm text-ink-500 text-center px-4">
+          Wähle dein Bundesland in den Einstellungen → Profil.
+          <Link to="/einstellungen?section=profile" className="block mt-2 text-theme-deep font-semibold hover:underline">
+            Jetzt einrichten →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="h-full grid place-items-center widget-pad">
+        <Loader2 className="size-5 animate-spin text-theme" />
+      </div>
+    );
+  }
+
+  if (!holiday) {
+    return (
+      <div className="h-full flex flex-col widget-pad">
+        <h3 className="h3 mb-2 flex-shrink-0 flex items-center gap-2"><Palmtree className="size-5 text-amber-500" />Nächste Ferien</h3>
+        <div className="flex-1 grid place-items-center text-sm text-ink-500 text-center">
+          Keine kommenden Ferien gefunden.
+        </div>
+      </div>
+    );
+  }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(holiday.startDate); start.setHours(0, 0, 0, 0);
+  const end = new Date(holiday.endDate); end.setHours(0, 0, 0, 0);
+  const isActive = today >= start && today <= end;
+  const days = Math.round((isActive
+    ? (end.getTime() - today.getTime())
+    : (start.getTime() - today.getTime())) / 86_400_000);
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const fmtDate = (d: Date) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  return (
+    <div
+      className="h-full flex flex-col widget-pad text-white relative overflow-hidden"
+      style={{ background: isActive
+        ? 'linear-gradient(135deg, #10b981, #06b6d4)'
+        : 'linear-gradient(135deg, #f59e0b, #ec4899)'
+      }}
+    >
+      <div className="absolute -top-10 -right-10 size-40 rounded-full bg-white/15 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-12 -left-10 size-32 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+      <div className="relative flex items-center gap-2 mb-2">
+        <Palmtree className="size-5" />
+        <h3 className="font-display font-bold text-base">
+          {isActive ? 'Ferien laufen! 🎉' : 'Nächste Ferien'}
+        </h3>
+      </div>
+      <div className="relative flex-1 flex flex-col justify-center">
+        <div className="text-[11px] uppercase tracking-wider opacity-85 font-semibold">{holiday.name}</div>
+        <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 'clamp(2.5rem, 12cqi, 4rem)' }}>
+          {isActive ? days + 1 : days}
+        </div>
+        <div className="text-sm opacity-90 mt-1">
+          {isActive
+            ? (days === 0 ? 'noch heute' : `noch ${days === 1 ? 'einen Tag' : days + ' Tage'}`)
+            : (days === 0 ? 'starten heute' : `Tag${days !== 1 ? 'e' : ''} ab heute`)}
+        </div>
+      </div>
+      <div className="relative text-xs opacity-90 mt-2 flex items-center justify-between flex-wrap gap-1">
+        <span>{fmtDate(start)} – {fmtDate(end)}</span>
+        <span className="chip bg-white/20 text-white border-white/25">{totalDays} {totalDays === 1 ? 'Tag' : 'Tage'}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Widget router ─────────────────────────────────────────────────────────────
 
 function WidgetRouter({
@@ -843,6 +946,7 @@ function WidgetRouter({
     case 'subject-leaderboard':return <SubjectLeaderboardWidget />;
     case 'weekly-progress':    return <WeeklyProgressWidget />;
     case 'group-averages':     return <GroupAveragesWidget />;
+    case 'next-holiday':       return <NextHolidayWidget />;
   }
 }
 
