@@ -1855,7 +1855,8 @@ function AboutSection() {
 
 /* ─── Feedback ─────────────────────────────────────────────────────── */
 
-const FEEDBACK_URL = import.meta.env.VITE_FEEDBACK_SHEET_URL as string | undefined;
+const FEEDBACK_URL = (import.meta.env.VITE_FEEDBACK_SHEET_URL as string | undefined)
+  || 'https://script.google.com/macros/s/AKfycbxRvGvYPks9FACTUP42lxqgaa-EedbV0PwubLddRgiEZlRp2IVfVM5_tiUFRbHidefydg/exec';
 
 type FeedbackType = 'bug' | 'idee' | 'sonstiges';
 
@@ -1877,8 +1878,9 @@ function FeedbackSection() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(FEEDBACK_URL, {
+      await fetch(FEEDBACK_URL, {
         method: 'POST',
+        mode: 'no-cors',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           type,
@@ -1890,7 +1892,6 @@ function FeedbackSection() {
           timestamp: new Date().toISOString(),
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSent(true);
       setTitle('');
       setDesc('');
