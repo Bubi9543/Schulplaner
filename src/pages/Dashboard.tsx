@@ -831,11 +831,16 @@ function fmtCountdown(d: number): string {
   return rem > 0 ? `${wStr} ${rem} ${rem === 1 ? 'Tag' : 'Tage'}` : wStr;
 }
 
-/** Wenn Ferien am Sonntag oder Montag starten → Samstag davor dazu. */
+/**
+ * Effektiver Ferienstart: immer zurück zum vorherigen Samstag, wenn die
+ * Ferien am So, Mo oder Di beginnen (So/Mo = normaler Wochenend-Vorlauf;
+ * Di = Ferien starten nach einem Feiertag-Montag wie Pfingstmontag).
+ */
 function effectiveHolidayStart(officialStart: Date): Date {
   const d = new Date(officialStart); d.setHours(0, 0, 0, 0);
   const dow = d.getDay();
-  if (dow === 1) d.setDate(d.getDate() - 2); // Montag → Samstag
+  if (dow === 2) d.setDate(d.getDate() - 3); // Dienstag → Samstag (nach Feiertag-Mo)
+  else if (dow === 1) d.setDate(d.getDate() - 2); // Montag → Samstag
   else if (dow === 0) d.setDate(d.getDate() - 1); // Sonntag → Samstag
   return d;
 }
