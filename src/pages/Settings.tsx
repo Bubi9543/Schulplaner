@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -18,7 +18,7 @@ import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
@@ -29,11 +29,12 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'schoolyears',   label: 'Schuljahre',        icon: Calendar },
   { id: 'notifications', label: 'Benachrichtigungen', icon: Bell },
   { id: 'shortcut',      label: 'Apple Shortcut',    icon: Zap },
+  { id: 'feedback',      label: 'Feedback',          icon: MessageSquare },
   { id: 'data',          label: 'Daten & Sync',      icon: Database },
   { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -94,6 +95,7 @@ export function SettingsPage() {
               {section === 'schoolyears' && <SchoolYearsSection />}
               {section === 'notifications' && <NotificationsSection />}
               {section === 'shortcut' && <ShortcutSection />}
+              {section === 'feedback' && <FeedbackSection />}
               {section === 'data' && <DataSection />}
               {section === 'about' && <AboutSection />}
             </motion.div>
@@ -1846,6 +1848,129 @@ function AboutSection() {
           Daten liegen auf deinem Gerät (IndexedDB) und – wenn du eingeloggt bist – verschlüsselt
           bei Supabase in der EU. Keine Tracker, kein Werbe-Sharing.
         </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ─── Feedback ─────────────────────────────────────────────────────── */
+
+const FEEDBACK_URL = import.meta.env.VITE_FEEDBACK_SHEET_URL as string | undefined;
+
+type FeedbackType = 'bug' | 'idee' | 'sonstiges';
+
+function FeedbackSection() {
+  const settings = useStore(s => s.settings);
+  const [type, setType] = useState<FeedbackType>('idee');
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    if (!FEEDBACK_URL) { setError('Feedback-URL ist nicht konfiguriert.'); return; }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(FEEDBACK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          type,
+          title: title.trim(),
+          description: desc.trim(),
+          email: email.trim() || undefined,
+          name: settings?.name || undefined,
+          school: settings?.school || undefined,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSent(true);
+      setTitle('');
+      setDesc('');
+      setEmail('');
+    } catch (err) {
+      setError('Konnte nicht gesendet werden. Versuch es später nochmal.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <Card>
+        <div className="text-center py-8 space-y-3">
+          <div className="size-14 rounded-full bg-emerald-100 text-emerald-600 grid place-items-center mx-auto">
+            <Check className="size-7" />
+          </div>
+          <h3 className="font-display font-bold text-xl text-ink-900">Danke für dein Feedback!</h3>
+          <p className="text-sm text-ink-500">Deine Nachricht ist angekommen. Wir schauen uns das an.</p>
+          <button className="btn-ghost mt-2" onClick={() => setSent(false)}>
+            <MessageSquare className="size-4" />Noch etwas senden
+          </button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h3 className="h3 mb-1 flex items-center gap-2">
+          <MessageSquare className="size-5 text-theme" />Feedback & Bug-Reports
+        </h3>
+        <p className="text-sm text-ink-500 mb-4">
+          Hast du eine Idee, einen Bug gefunden oder Verbesserungsvorschläge? Schreib es hier rein — geht direkt an den Entwickler.
+        </p>
+
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="label mb-1.5">Typ</label>
+            <div className="flex gap-2">
+              {([['bug', 'Bug'], ['idee', 'Idee'], ['sonstiges', 'Sonstiges']] as const).map(([val, lbl]) => (
+                <button key={val} type="button" onClick={() => setType(val)}
+                  className={`px-3 py-1.5 rounded-xl text-sm font-medium transition ${type === val ? 'bg-theme-soft text-theme-deep ring-1 ring-theme/30' : 'bg-white/70 text-ink-600 hover:bg-white'}`}>
+                  {val === 'bug' ? '🐛 ' : val === 'idee' ? '💡 ' : '📝 '}{lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="label mb-1.5" htmlFor="fb-title">Titel *</label>
+            <input id="fb-title" type="text" className="input" placeholder={type === 'bug' ? 'Was funktioniert nicht?' : 'Worum geht es?'}
+              value={title} onChange={e => setTitle(e.target.value)} required maxLength={200} />
+          </div>
+
+          <div>
+            <label className="label mb-1.5" htmlFor="fb-desc">Beschreibung</label>
+            <textarea id="fb-desc" className="input min-h-[100px] resize-y" placeholder="Beschreib das Problem oder die Idee genauer…"
+              value={desc} onChange={e => setDesc(e.target.value)} maxLength={2000} />
+          </div>
+
+          <div>
+            <label className="label mb-1.5" htmlFor="fb-email">Email (optional)</label>
+            <input id="fb-email" type="email" className="input" placeholder="Falls wir nachfragen sollen"
+              value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2 flex items-center gap-2">
+              <AlertTriangle className="size-4 flex-shrink-0" />{error}
+            </div>
+          )}
+
+          <button type="submit" disabled={busy || !title.trim()} className="btn-primary w-full">
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            Feedback absenden
+          </button>
+        </form>
       </Card>
     </div>
   );
