@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles, FileText, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -16,9 +16,26 @@ import type { Subject, SubjectGroup } from '@/types';
 
 export function GradesPage() {
   const { subjects, grades, settings } = useStore();
+  const schoolYears = useStore(s => s.schoolYears);
+  const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const [gradeDialog, setGradeDialog] = useState(false);
   const [subjectDialog, setSubjectDialog] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+
+  async function downloadReport() {
+    if (!settings) return;
+    setPdfBusy(true);
+    try {
+      const mod = await import('@/lib/pdfReport');
+      const year = schoolYears.find(y => y.id === activeSchoolYearId) ?? null;
+      await mod.generateReportPdf({ subjects, grades, settings, schoolYear: year });
+    } catch (e) {
+      alert('PDF-Erstellung fehlgeschlagen: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
   const system = settings?.system ?? 'bayern';
   const meta = getSystemMeta(system, config);
   const digits = settings?.averageDigits ?? 2;
@@ -102,6 +119,10 @@ export function GradesPage() {
     <PageShell title="Noten" subtitle={`${grades.filter(g => !g.isPending).length} Noten in ${subjects.length} Fächern`}
       actions={
         <>
+          <button className="btn-ghost" onClick={downloadReport} disabled={pdfBusy} title="Zeugnis als PDF herunterladen">
+            {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <FileText className="size-4" />}
+            <span className="hidden sm:inline">Zeugnis</span>
+          </button>
           <button className="btn-ghost" onClick={() => setSubjectDialog(true)}><Plus className="size-4" />Fach</button>
           <button className="btn-primary" onClick={() => setGradeDialog(true)}><Plus className="size-4" />Note</button>
         </>
