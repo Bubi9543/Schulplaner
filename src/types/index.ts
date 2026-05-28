@@ -161,6 +161,49 @@ export interface AppTask {
   studyChecklist?: StudyChecklistItem[];
   /** Ziel-Datum bis wann du die Checkliste durchhaben willst (ms timestamp). */
   studyDeadline?: number;
+  /** Ob diese Hausaufgabe mit Mitschülern geteilt wird (wird in shared_tasks veröffentlicht). */
+  shared?: boolean;
+}
+
+/**
+ * Abonnement eines Mitschülers für geteilte Hausaufgaben.
+ * Wird in AppSettings.homeworkSubscriptions gespeichert.
+ */
+export interface HomeworkSubscription {
+  /** Supabase user_id des Mitschülers. */
+  userId: string;
+  /** Anzeigename des Mitschülers. */
+  displayName: string;
+  /** Der 6-stellige permanente Freundecode des Mitschülers. */
+  friendCode: string;
+  /**
+   * Fächerfilter:
+   * - `null` = alle Fächer empfangen
+   * - `string[]` = nur Hausaufgaben für diese Fachnamen empfangen (kann leer sein = nichts)
+   */
+  subjectFilter: string[] | null;
+  /** ms-Timestamp wann das Abo hinzugefügt wurde. */
+  addedAt: number;
+}
+
+/**
+ * Eine von einem Mitschüler geteilte Hausaufgabe.
+ * Wird lokal in der Dexie-Tabelle `friendTasks` gecacht.
+ */
+export interface FriendTask {
+  id: string;
+  ownerUserId: string;
+  /** Anzeigename des Mitschülers. */
+  ownerName: string;
+  title: string;
+  description?: string;
+  /** Fachname im Kontext des Mitschülers (plain text, kein subjectId). */
+  subjectName?: string;
+  kind: string;
+  dueDate?: number;
+  createdAt: number;
+  /** ms-Timestamp des letzten Fetches. */
+  fetchedAt: number;
 }
 
 export interface Lesson {
@@ -203,6 +246,10 @@ export interface AppSettings {
   system: GradingSystem;
   onboarded: boolean;
   demo: boolean;
+  /** Aktive Abonnements für geteilte Hausaufgaben. */
+  homeworkSubscriptions: HomeworkSubscription[];
+  /** Hausaufgaben standardmäßig teilen? */
+  homeworkShareByDefault: boolean;
   theme: ThemeMode;
   colorTheme: ColorThemeId;
   density: DensityMode;
@@ -340,6 +387,8 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   system: 'bayern',
   onboarded: false,
   demo: false,
+  homeworkSubscriptions: [],
+  homeworkShareByDefault: false,
   theme: 'auto',
   colorTheme: 'indigo',
   density: 'comfortable',

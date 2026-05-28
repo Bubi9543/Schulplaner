@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, ListTodo, Filter, CheckCircle2, Circle, AlertTriangle, Inbox } from 'lucide-react';
+import { Plus, ListTodo, Filter, CheckCircle2, Circle, AlertTriangle, Inbox, RefreshCw, Users } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
@@ -8,7 +8,7 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { relativeDate } from '@/lib/utils';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
-import type { AppTask, TaskKind } from '@/types';
+import type { AppTask, FriendTask, TaskKind } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
 
 type BucketKey = 'heute' | 'morgen' | 'thisWeek' | 'nextWeek' | 'later' | 'noDate' | 'overdue';
@@ -19,6 +19,8 @@ interface Bucket {
   hint?: string;
   tone: 'danger' | 'warn' | 'default' | 'muted';
   items: AppTask[];
+  /** Gefilterte Friend-Tasks für diesen Zeitraum */
+  friendItems: FriendTask[];
 }
 
 function startOfDay(ts: number): number {
@@ -32,8 +34,13 @@ export function TasksPage() {
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
   const toggleTask = useStore(s => s.toggleTask);
+  const friendTasks = useStore(s => s.friendTasks);
+  const friendTasksLoading = useStore(s => s.friendTasksLoading);
+  const refreshFriendTasks = useStore(s => s.refreshFriendTasks);
 
+  const subs = settings?.homeworkSubscriptions ?? [];
   const customKinds = settings?.gradingConfig.customKinds ?? [];
+
   // Alle Filter-Chips: Built-ins + User-Custom-Kategorien.
   const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
     ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
@@ -54,6 +61,29 @@ export function TasksPage() {
       return true;
     });
   }, [tasks, filterKind, filterSubject, showDone]);
+
+  // Friend tasks gefiltert und nach Subscription-SubjectFilter reduziert
+  const filteredFriendTasks = useMemo(() => {
+    return friendTasks.filter(ft => {
+      // Subscription-SubjectFilter anwenden
+      const sub = subs.find(s => s.userId === ft.ownerUserId);
+      if (!sub) return false; // kein aktives Abo → ignorieren
+      if (sub.subjectFilter !== null && sub.subjectFilter.length === 0) return false; // nichts gewünscht
+      if (sub.subjectFilter !== null && ft.subjectName) {
+        const normalizedFilter = sub.subjectFilter.map(n => n.toLowerCase());
+        const normalizedName = ft.subjectName.toLowerCase();
+        if (!normalizedFilter.includes(normalizedName)) return false;
+      }
+      // UI-Filter nach Kind
+      if (filterKind && ft.kind !== filterKind) return false;
+      // UI-Filter nach Fach (matching by name)
+      if (filterSubject) {
+        const subj = subjects.find(s => s.id === filterSubject);
+        if (subj && ft.subjectName?.toLowerCase() !== subj.name.toLowerCase()) return false;
+      }
+      return true;
+    });
+  }, [friendTasks, subs, filterKind, filterSubject, subjects]);
 
   const buckets = useMemo<Bucket[]>(() => {
     const today = startOfDay(Date.now());
@@ -76,7 +106,6 @@ export function TasksPage() {
         continue;
       }
       const due = startOfDay(t.dueDate);
-      // Überfällig: mehr als 1 Tag nach Fälligkeit UND noch offen
       if (!t.done && due < today - 86400000) {
         overdue.push(t);
         continue;
@@ -86,41 +115,79 @@ export function TasksPage() {
       else if (due >= dayAfterTomorrow && due < inAWeek) thisWeek.push(t);
       else if (due >= inAWeek && due < inTwoWeeks) nextWeek.push(t);
       else if (due >= inTwoWeeks) later.push(t);
-      else heute.push(t); // gestern noch nicht überfällig (Karenztag)
+      else heute.push(t);
+    }
+
+    // Friend tasks in Buckets einteilen (nur Hausaufgaben/kind=hausaufgabe)
+    const fOverdue: FriendTask[] = [];
+    const fHeute: FriendTask[] = [];
+    const fMorgen: FriendTask[] = [];
+    const fThisWeek: FriendTask[] = [];
+    const fNextWeek: FriendTask[] = [];
+    const fLater: FriendTask[] = [];
+    const fNoDate: FriendTask[] = [];
+
+    for (const ft of filteredFriendTasks) {
+      if (!ft.dueDate) { fNoDate.push(ft); continue; }
+      const due = startOfDay(ft.dueDate);
+      if (due < today - 86400000) { fOverdue.push(ft); continue; }
+      if (due === today) fHeute.push(ft);
+      else if (due === tomorrow) fMorgen.push(ft);
+      else if (due >= dayAfterTomorrow && due < inAWeek) fThisWeek.push(ft);
+      else if (due >= inAWeek && due < inTwoWeeks) fNextWeek.push(ft);
+      else if (due >= inTwoWeeks) fLater.push(ft);
+      else fHeute.push(ft);
     }
 
     const sortByDue = (a: AppTask, b: AppTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || a.priority - b.priority;
-    overdue.sort(sortByDue);
-    heute.sort(sortByDue);
-    morgen.sort(sortByDue);
-    thisWeek.sort(sortByDue);
-    nextWeek.sort(sortByDue);
-    later.sort(sortByDue);
+    const sortFByDue = (a: FriendTask, b: FriendTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity);
+
+    overdue.sort(sortByDue); heute.sort(sortByDue); morgen.sort(sortByDue);
+    thisWeek.sort(sortByDue); nextWeek.sort(sortByDue); later.sort(sortByDue);
     noDate.sort((a, b) => b.createdAt - a.createdAt);
 
+    fOverdue.sort(sortFByDue); fHeute.sort(sortFByDue); fMorgen.sort(sortFByDue);
+    fThisWeek.sort(sortFByDue); fNextWeek.sort(sortFByDue); fLater.sort(sortFByDue);
+
     return [
-      { key: 'heute',    label: 'Heute',         hint: 'Fällig heute',                tone: 'warn',    items: heute },
-      { key: 'morgen',   label: 'Morgen',        tone: 'default', items: morgen },
-      { key: 'thisWeek', label: 'Diese Woche',   tone: 'default', items: thisWeek },
-      { key: 'nextWeek', label: 'Nächste Woche', tone: 'default', items: nextWeek },
-      { key: 'later',    label: 'Später',        tone: 'muted',   items: later },
-      { key: 'noDate',   label: 'Ohne Datum',    tone: 'muted',   items: noDate },
-      { key: 'overdue',  label: 'Überfällig',    hint: 'Mehr als 1 Tag nach Fälligkeit, noch nicht erledigt', tone: 'danger', items: overdue },
+      { key: 'heute',    label: 'Heute',         hint: 'Fällig heute',                tone: 'warn',    items: heute,    friendItems: fHeute },
+      { key: 'morgen',   label: 'Morgen',        tone: 'default', items: morgen,   friendItems: fMorgen },
+      { key: 'thisWeek', label: 'Diese Woche',   tone: 'default', items: thisWeek, friendItems: fThisWeek },
+      { key: 'nextWeek', label: 'Nächste Woche', tone: 'default', items: nextWeek, friendItems: fNextWeek },
+      { key: 'later',    label: 'Später',        tone: 'muted',   items: later,    friendItems: fLater },
+      { key: 'noDate',   label: 'Ohne Datum',    tone: 'muted',   items: noDate,   friendItems: fNoDate },
+      { key: 'overdue',  label: 'Überfällig',    hint: 'Mehr als 1 Tag nach Fälligkeit, noch nicht erledigt', tone: 'danger', items: overdue, friendItems: fOverdue },
     ];
-  }, [filtered]);
+  }, [filtered, filteredFriendTasks]);
 
   const openCount = tasks.filter(t => !t.done).length;
   const doneCount = tasks.filter(t => t.done).length;
-  const totalShown = buckets.reduce((acc, b) => acc + b.items.length, 0);
+  const totalShown = buckets.reduce((acc, b) => acc + b.items.length + b.friendItems.length, 0);
 
   return (
     <PageShell
       title="Aufgaben"
       subtitle={`${openCount} offen · ${doneCount} erledigt`}
       actions={
-        <button className="btn-primary" onClick={() => setEditor({ open: true })}>
-          <Plus className="size-4" />Neu
-        </button>
+        <div className="flex items-center gap-2">
+          {subs.length > 0 && (
+            <button
+              className="btn-ghost relative"
+              onClick={() => refreshFriendTasks()}
+              title="Hausaufgaben von Mitschülern aktualisieren"
+            >
+              <RefreshCw className={`size-4 ${friendTasksLoading ? 'animate-spin' : ''}`} />
+              {friendTasks.length > 0 && (
+                <span className="absolute -top-1 -right-1 size-4 rounded-full bg-theme text-white text-[9px] grid place-items-center">
+                  {friendTasks.length > 9 ? '9+' : friendTasks.length}
+                </span>
+              )}
+            </button>
+          )}
+          <button className="btn-primary" onClick={() => setEditor({ open: true })}>
+            <Plus className="size-4" />Neu
+          </button>
+        </div>
       }
     >
       <Card className="mb-4">
@@ -159,11 +226,15 @@ export function TasksPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {buckets.map((b, idx) => b.items.length === 0 ? null : (
+          {buckets.map((b, idx) => (b.items.length === 0 && b.friendItems.length === 0) ? null : (
             <motion.div key={b.key}
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.03 }}>
-              <BucketCard bucket={b} onSelect={t => setDetail({ open: true, task: t })} onToggle={toggleTask} />
+              <BucketCard
+                bucket={b}
+                onSelect={t => setDetail({ open: true, task: t })}
+                onToggle={toggleTask}
+              />
             </motion.div>
           ))}
         </div>
@@ -187,7 +258,11 @@ export function TasksPage() {
   );
 }
 
-function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: (t: AppTask) => void; onToggle: (id: string) => void }) {
+function BucketCard({ bucket, onSelect, onToggle }: {
+  bucket: Bucket;
+  onSelect: (t: AppTask) => void;
+  onToggle: (id: string) => void;
+}) {
   const subjects = useStore(s => s.subjects);
   const config = useStore(s => s.settings?.gradingConfig);
   const toneClass = (() => {
@@ -207,6 +282,24 @@ function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: 
     }
   })();
   const cardClass = bucket.tone === 'danger' ? 'border-rose-200/80 bg-rose-50/40' : '';
+  const totalCount = bucket.items.length + bucket.friendItems.length;
+
+  // Eigene Aufgaben als Set (subjectName + dueDay) für "Duplicate"-Erkennung
+  const ownTaskKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const t of bucket.items) {
+      const subj = subjects.find(s => s.id === t.subjectId);
+      if (subj && t.dueDate) {
+        keys.add(`${subj.name.toLowerCase()}:${startOfDay(t.dueDate)}`);
+      }
+    }
+    return keys;
+  }, [bucket.items, subjects]);
+
+  function isSameTask(ft: FriendTask): boolean {
+    if (!ft.subjectName || !ft.dueDate) return false;
+    return ownTaskKeys.has(`${ft.subjectName.toLowerCase()}:${startOfDay(ft.dueDate)}`);
+  }
 
   return (
     <Card className={cardClass}>
@@ -214,10 +307,11 @@ function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: 
         {bucket.tone === 'danger' && <AlertTriangle className="size-5 text-rose-600" />}
         {bucket.tone !== 'danger' && bucket.key === 'heute' && <ListTodo className="size-5 text-orange-500" />}
         <h3 className={`h3 ${toneClass}`}>{bucket.label}</h3>
-        <span className={`chip ${chipClass}`}>{bucket.items.length}</span>
+        <span className={`chip ${chipClass}`}>{totalCount}</span>
         {bucket.hint && <span className="text-[11px] text-ink-400 ml-1 hidden sm:inline">{bucket.hint}</span>}
       </div>
       <ul className="divide-y divide-white/50">
+        {/* Eigene Aufgaben */}
         {bucket.items.map(t => {
           const subj = subjects.find(s => s.id === t.subjectId);
           return (
@@ -243,6 +337,7 @@ function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: 
                     </>
                   )}
                   {t.dueDate && <><span>·</span><span>{relativeDate(t.dueDate)}</span></>}
+                  {t.shared && <span className="text-theme-deep">· geteilt</span>}
                 </div>
               </button>
               <span
@@ -254,6 +349,43 @@ function BucketCard({ bucket, onSelect, onToggle }: { bucket: Bucket; onSelect: 
               >
                 {t.priority === 3 ? 'Hoch' : t.priority === 2 ? 'Normal' : 'Niedrig'}
               </span>
+            </li>
+          );
+        })}
+
+        {/* Freund-Aufgaben */}
+        {bucket.friendItems.map(ft => {
+          const isDuplicate = isSameTask(ft);
+          return (
+            <li
+              key={`friend-${ft.id}`}
+              className={`flex items-start gap-3 py-2.5 ${isDuplicate ? 'opacity-60' : ''}`}
+            >
+              {/* Kein Toggle – kann nicht erledigt werden */}
+              <div className="grid place-items-center size-7 rounded-full flex-shrink-0">
+                <Users className="size-4 text-ink-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-ink-700 truncate text-sm">
+                  {ft.title}
+                  {isDuplicate && (
+                    <span className="ml-2 text-[10px] text-ink-400 font-normal">· du hast das schon</span>
+                  )}
+                </div>
+                <div className="text-xs text-ink-400 flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-theme-deep font-semibold">{ft.ownerName}</span>
+                  {ft.subjectName && (
+                    <>
+                      <span>·</span>
+                      <span>{ft.subjectName}</span>
+                    </>
+                  )}
+                  {ft.dueDate && <><span>·</span><span>{relativeDate(ft.dueDate)}</span></>}
+                </div>
+                {ft.description && (
+                  <div className="text-xs text-ink-400 mt-0.5 line-clamp-1">{ft.description}</div>
+                )}
+              </div>
             </li>
           );
         })}

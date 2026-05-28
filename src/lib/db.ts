@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, SchoolHoliday } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, SchoolHoliday, FriendTask } from '@/types';
 
 export class NotenDB extends Dexie {
   subjects!: Table<Subject, string>;
@@ -11,6 +11,7 @@ export class NotenDB extends Dexie {
   photos!: Table<Photo, string>;
   schoolYears!: Table<SchoolYear, string>;
   holidays!: Table<SchoolHoliday, string>;
+  friendTasks!: Table<FriendTask, string>;
 
   constructor() {
     super('notenapp');
@@ -79,6 +80,18 @@ export class NotenDB extends Dexie {
       photos: 'id, refId, refType, createdAt',
       schoolYears: 'id, active, startDate, createdAt',
       holidays: 'id, cacheKey, startDate, endDate',
+    });
+
+    this.version(7).stores({
+      subjects: 'id, name, system, category, schoolYearId, createdAt',
+      grades: 'id, subjectId, schoolYearId, date, kind, isPending',
+      tasks: 'id, subjectId, schoolYearId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, schoolYearId, weekday, start',
+      settings: 'id',
+      photos: 'id, refId, refType, createdAt',
+      schoolYears: 'id, active, startDate, createdAt',
+      holidays: 'id, cacheKey, startDate, endDate',
+      friendTasks: 'id, ownerUserId, dueDate, fetchedAt',
     });
   }
 }

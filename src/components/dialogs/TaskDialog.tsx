@@ -7,7 +7,8 @@ import { uid } from '@/lib/db';
 import type { AppTask, TaskKind } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
-import { Sparkles } from 'lucide-react';
+import { Share2, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface Props {
   open: boolean;
@@ -34,6 +35,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const [autoChosen, setAutoChosen] = useState(false);
   const [dueDate, setDueDate] = useState<string>(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
   const [priority, setPriority] = useState<1 | 2 | 3>((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
+  const [shared, setShared] = useState<boolean>(initial?.shared ?? settings?.homeworkShareByDefault ?? false);
 
   useEffect(() => {
     if (!open) return;
@@ -50,11 +52,13 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
     setAutoChosen(auto);
     setDueDate(initial?.dueDate ? new Date(initial.dueDate).toISOString().slice(0, 10) : '');
     setPriority((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
+    setShared(initial?.shared ?? settings?.homeworkShareByDefault ?? false);
     taskIdRef.current = initial?.id ?? uid();
   }, [open, initial, defaultKind, editing, settings, lessons, subjects, now]);
 
   async function save() {
     if (!title.trim()) return;
+    const isHomework = kind === 'hausaufgabe';
     const payload = {
       id: taskIdRef.current,
       title: title.trim(),
@@ -65,6 +69,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
       priority,
       done: initial?.done ?? false,
       doneAt: initial?.doneAt,
+      shared: isHomework ? shared : false,
     };
     if (editing && initial?.id) {
       await updateTask(initial.id, payload);
@@ -80,6 +85,9 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
       onClose();
     }
   }
+
+  const isHomework = kind === 'hausaufgabe';
+  const hasSubscriptions = (settings?.homeworkSubscriptions?.length ?? 0) > 0;
 
   return (
     <Modal open={open} onClose={onClose} title={editing ? 'Aufgabe bearbeiten' : 'Neue Aufgabe'}
@@ -147,6 +155,39 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <label className="label">Notizen (optional)</label>
           <textarea className="input min-h-[80px]" value={description} onChange={e => setDescription(e.target.value)} />
         </div>
+
+        {/* Sharing-Toggle – nur bei Hausaufgaben sichtbar */}
+        {isHomework && (
+          <button
+            type="button"
+            onClick={() => setShared(v => !v)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition ${
+              shared
+                ? 'border-theme bg-theme-soft text-theme-deep'
+                : 'border-ink-200 bg-white/60 text-ink-600 hover:border-ink-300'
+            }`}
+          >
+            <div className={`relative w-10 h-5.5 rounded-full transition flex-shrink-0 ${shared ? 'bg-theme' : 'bg-ink-300'}`}
+              style={{ height: '22px', minWidth: '40px' }}>
+              <motion.span
+                className="absolute top-0.5 left-0.5 size-[18px] bg-white rounded-full shadow"
+                animate={{ x: shared ? 18 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </div>
+            <Share2 className="size-4 flex-shrink-0" />
+            <div className="text-left min-w-0">
+              <div className="text-sm font-semibold leading-tight">Mit Mitschülern teilen</div>
+              <div className="text-xs opacity-70 leading-tight mt-0.5">
+                {shared
+                  ? 'Wird für deine Abonnenten sichtbar'
+                  : hasSubscriptions
+                    ? 'Nur für dich (nicht geteilt)'
+                    : 'Aktiviere Freunde in den Einstellungen'}
+              </div>
+            </div>
+          </button>
+        )}
 
         <PhotoAttachment refId={taskIdRef.current} refType="task" />
       </div>

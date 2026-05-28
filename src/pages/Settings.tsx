@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { SchoolYearOnboardingDialog } from '@/components/dialogs/SchoolYearOnboardingDialog';
+import { HomeworkSubscribeDialog } from '@/components/dialogs/HomeworkSubscribeDialog';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
+import { getOrCreateMyProfile } from '@/lib/homeworkShare';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
@@ -18,7 +20,7 @@ import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
+type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'friends' | 'feedback' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
@@ -29,12 +31,13 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'schoolyears',   label: 'Schuljahre',        icon: Calendar },
   { id: 'notifications', label: 'Benachrichtigungen', icon: Bell },
   { id: 'shortcut',      label: 'Apple Shortcut',    icon: Zap },
+  { id: 'friends',       label: 'Freunde',           icon: Users },
   { id: 'feedback',      label: 'Feedback',          icon: MessageSquare },
   { id: 'data',          label: 'Daten & Sync',      icon: Database },
   { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'friends', 'feedback', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -95,6 +98,7 @@ export function SettingsPage() {
               {section === 'schoolyears' && <SchoolYearsSection />}
               {section === 'notifications' && <NotificationsSection />}
               {section === 'shortcut' && <ShortcutSection />}
+              {section === 'friends' && <FriendsSection />}
               {section === 'feedback' && <FeedbackSection />}
               {section === 'data' && <DataSection />}
               {section === 'about' && <AboutSection />}
@@ -2243,6 +2247,215 @@ function ShortcutGuide({ token, onCopy, copied }: { token: string; onCopy: (v: s
         Tipp: Der Token ist dein Schlüssel — wer ihn hat, kann Aufgaben in deinem Account anlegen.
         Falls dir ein iPad abhanden kommt: oben „Zurückziehen" — der alte Token ist sofort tot.
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Freunde-Sektion
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FriendsSection() {
+  const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
+  const subjects = useStore(s => s.subjects);
+  const authUser = useStore(s => s.authUser);
+  const removeHomeworkSubscription = useStore(s => s.removeHomeworkSubscription);
+  const updateHomeworkSubjectFilter = useStore(s => s.updateHomeworkSubjectFilter);
+  const refreshFriendTasks = useStore(s => s.refreshFriendTasks);
+  const friendTasksLoading = useStore(s => s.friendTasksLoading);
+
+  const subs = settings.homeworkSubscriptions ?? [];
+  const [myCode, setMyCode] = useState<string | null>(null);
+  const [loadingCode, setLoadingCode] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+
+  async function loadMyCode() {
+    if (!authUser) { setCodeError('Bitte erst anmelden (Daten & Sync).'); return; }
+    setLoadingCode(true);
+    setCodeError(null);
+    try {
+      const profile = await getOrCreateMyProfile(settings.name ?? undefined);
+      setMyCode(profile.friendCode);
+    } catch (e) {
+      setCodeError(e instanceof Error ? e.message : 'Fehler');
+    } finally {
+      setLoadingCode(false);
+    }
+  }
+
+  function copyCode() {
+    if (!myCode) return;
+    navigator.clipboard.writeText(myCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Users className="size-5 text-theme" />Freunde &amp; Hausaufgaben</h3>
+        <p className="text-sm text-ink-500 mb-4">
+          Tausche deinen Freundecode mit Mitschülern aus. Wer deinen Code abonniert, sieht deine
+          geteilten Hausaufgaben — und umgekehrt.
+        </p>
+
+        {/* Mein Freundecode */}
+        <div className="rounded-2xl bg-ink-50/80 border border-ink-200 p-4 mb-4">
+          <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-2">Mein Freundecode</div>
+          {myCode ? (
+            <div className="flex items-center gap-3">
+              <div className="font-mono font-bold text-2xl tracking-[0.25em] text-ink-800">{myCode}</div>
+              <button onClick={copyCode} className="btn-ghost py-1.5">
+                {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+                {copied ? 'Kopiert!' : 'Kopieren'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="font-mono text-xl tracking-[0.25em] text-ink-400">– – – – – –</div>
+              <button onClick={loadMyCode} className="btn-ghost py-1.5" disabled={loadingCode}>
+                {loadingCode ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                Code anzeigen
+              </button>
+            </div>
+          )}
+          {codeError && <p className="text-xs text-rose-600 mt-2">{codeError}</p>}
+          <p className="text-xs text-ink-500 mt-2">
+            Gib diesen Code deinen Mitschülern – er ist dauerhaft gültig (nicht wie der Stundenplan-Code).
+          </p>
+        </div>
+
+        {/* Standard: teilen */}
+        <Row label="Hausaufgaben standardmäßig teilen"
+          hint="Neues Standard-Verhalten beim Erstellen von Hausaufgaben. Du kannst es pro Aufgabe überschreiben.">
+          <Toggle
+            checked={settings.homeworkShareByDefault}
+            onChange={v => setSettings({ homeworkShareByDefault: v })}
+          />
+        </Row>
+      </Card>
+
+      {/* Abonnements */}
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="h3 flex items-center gap-2"><UserPlus className="size-5 text-theme" />Abonnierte Mitschüler</h3>
+          <div className="flex items-center gap-2">
+            {subs.length > 0 && (
+              <button
+                onClick={refreshFriendTasks}
+                disabled={friendTasksLoading}
+                className="btn-ghost py-1.5 text-xs"
+                title="Hausaufgaben jetzt aktualisieren"
+              >
+                <RefreshCw className={`size-3.5 ${friendTasksLoading ? 'animate-spin' : ''}`} />
+                Aktualisieren
+              </button>
+            )}
+            <button onClick={() => setAddOpen(true)} className="btn-primary py-1.5 text-sm">
+              <Plus className="size-4" />Mitschüler hinzufügen
+            </button>
+          </div>
+        </div>
+
+        {subs.length === 0 ? (
+          <div className="text-center py-8 text-ink-500 text-sm">
+            <Users className="size-8 mx-auto mb-2 opacity-40" />
+            <div>Noch keine Mitschüler abonniert.</div>
+            <div className="text-xs mt-1">Gib ihren 6-stelligen Freundecode ein.</div>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {subs.map(sub => (
+              <li key={sub.userId} className="rounded-2xl border border-ink-200 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="size-8 rounded-full bg-theme-soft grid place-items-center flex-shrink-0">
+                      <span className="text-sm font-bold text-theme">
+                        {sub.displayName.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-ink-800 text-sm">{sub.displayName}</div>
+                      <div className="text-xs font-mono text-ink-400">{sub.friendCode}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeHomeworkSubscription(sub.userId)}
+                    className="btn-ghost py-1 px-2 text-rose-500 hover:text-rose-700 flex-shrink-0"
+                    title="Abo entfernen"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+
+                {/* Fächerfilter */}
+                {subjects.length > 0 && (
+                  <div className="mt-2.5 pt-2.5 border-t border-ink-100">
+                    <div className="text-[11px] text-ink-500 mb-1.5 font-semibold">Empfangene Fächer:</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => updateHomeworkSubjectFilter(sub.userId, null)}
+                        className={`chip text-[11px] py-0.5 ${sub.subjectFilter === null ? 'chip-active' : ''}`}
+                      >
+                        Alle
+                      </button>
+                      {subjects.map(s => {
+                        const active = sub.subjectFilter === null || sub.subjectFilter.includes(s.name);
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              const current = sub.subjectFilter ?? subjects.map(x => x.name);
+                              const next = current.includes(s.name)
+                                ? current.filter(n => n !== s.name)
+                                : [...current, s.name];
+                              // Wenn alle aktiv → null (alle)
+                              updateHomeworkSubjectFilter(
+                                sub.userId,
+                                next.length === subjects.length ? null : next,
+                              );
+                            }}
+                            className={`chip text-[11px] py-0.5 ${active ? 'chip-active' : ''}`}
+                            style={active ? { background: s.color + '22', borderColor: s.color + '88', color: s.color } : {}}
+                          >
+                            {s.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {sub.subjectFilter !== null && sub.subjectFilter.length === 0 && (
+                      <p className="text-[11px] text-amber-600 mt-1">⚠ Kein Fach – du empfängst keine Aufgaben von {sub.displayName}.</p>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* Setup-Hinweis */}
+      <Card>
+        <div className="flex items-start gap-3 text-sm text-ink-700">
+          <AlertTriangle className="size-4 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <strong className="font-semibold">Supabase-Setup erforderlich</strong>
+            <p className="text-xs text-ink-500 mt-1">
+              Diese Funktion benötigt zwei neue Tabellen in Supabase. Sieh dir{' '}
+              <code className="font-mono text-[11px] bg-ink-100 px-1 rounded">HOMEWORK_SHARING_SETUP.md</code>{' '}
+              für die SQL-Befehle an.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <HomeworkSubscribeDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }

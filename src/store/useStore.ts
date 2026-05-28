@@ -5,10 +5,11 @@ import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime
 import type { SyncTable } from '@/lib/sync';
 import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
+import { fetchTasksFromUser, publishTask as publishSharedTask, unpublishTask as unpublishSharedTask } from '@/lib/homeworkShare';
 
 function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   const base: AppSettings = { ...DEFAULT_SETTINGS, id: 'app' };
@@ -27,6 +28,14 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
       g && typeof g === 'object' && typeof g.id === 'string' && typeof g.label === 'string',
     );
   }
+  // homeworkSubscriptions: Array sicherstellen
+  if (!Array.isArray(merged.homeworkSubscriptions)) {
+    merged.homeworkSubscriptions = [];
+  }
+  if (typeof merged.homeworkShareByDefault !== 'boolean') {
+    merged.homeworkShareByDefault = false;
+  }
+
   // Notifications: alte Settings ohne das Feld bekommen Default; bestehende
   // werden mit Defaults „aufgefüllt" für fehlende Unter-Keys.
   const def = DEFAULT_SETTINGS.notifications;
@@ -127,6 +136,9 @@ interface State {
   lastSyncedAt: number | null;
   /** Verbindungsstatus des Realtime-Channels. */
   liveSync: LiveSyncStatus;
+  /** Gecachte geteilte Hausaufgaben von abonnierten Mitschülern. */
+  friendTasks: FriendTask[];
+  friendTasksLoading: boolean;
 
   load: () => Promise<void>;
   setSettings: (patch: Partial<AppSettings>) => Promise<void>;
@@ -187,6 +199,19 @@ interface State {
   updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
   deleteSchoolYear: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
   setActiveSchoolYear: (id: string) => Promise<void>;
+
+  /** Holt alle geteilten Hausaufgaben von abonnierten Mitschülern neu aus der Cloud. */
+  refreshFriendTasks: () => Promise<void>;
+  /** Fügt ein Hausaufgaben-Abo hinzu und holt gleich die Tasks. */
+  addHomeworkSubscription: (sub: HomeworkSubscription) => Promise<void>;
+  /** Entfernt ein Abo und löscht die gecachten Tasks des Mitschülers. */
+  removeHomeworkSubscription: (userId: string) => Promise<void>;
+  /** Aktualisiert den Fächerfilter eines Abos. */
+  updateHomeworkSubjectFilter: (userId: string, subjectFilter: string[] | null) => Promise<void>;
+  /** Veröffentlicht eine Aufgabe in shared_tasks (wenn shared=true). */
+  publishTask: (task: AppTask) => Promise<void>;
+  /** Zieht eine Aufgabe aus shared_tasks zurück. */
+  unpublishTask: (taskId: string) => Promise<void>;
 }
 
 // ─── Modul-Singletons für Auth-Listener / Visibility-Listener ─────────────
@@ -262,15 +287,18 @@ export const useStore = create<State>((set, get) => ({
   syncStatus: 'idle',
   lastSyncedAt: null,
   liveSync: 'off',
+  friendTasks: [],
+  friendTasksLoading: false,
 
   async load() {
-    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears] = await Promise.all([
+    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
       db.tasks.toArray(),
       db.lessons.toArray(),
       db.schoolYears.toArray(),
+      db.friendTasks.toArray(),
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
     if (settings) {
@@ -307,6 +335,7 @@ export const useStore = create<State>((set, get) => ({
       grades: allGrades.filter(subjFilter),
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
+      friendTasks: allFriendTasks,
     });
 
     // ─── Auth-Init nur einmal ────────────────────────────────────────────
@@ -425,6 +454,8 @@ export const useStore = create<State>((set, get) => ({
       await downloadAll(authUser.id);
       await get().load(); // State frisch aus Dexie ziehen
       set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
+      // Friend-Tasks im Hintergrund nachladen
+      void get().refreshFriendTasks();
     } catch (e) {
       console.warn('Auto-Sync Initial-Push/Pull fehlgeschlagen:', e);
       set({ syncStatus: 'error' });
@@ -632,6 +663,8 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({ tasks: [...state.tasks, task].sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)) }));
     const { authUser } = get();
     if (authUser) syncRow('tasks', task.id, task, authUser.id);
+    // Shared-Task veröffentlichen
+    if (task.shared) void get().publishTask(task);
     return task;
   },
   async updateTask(id, patch) {
@@ -640,6 +673,11 @@ export const useStore = create<State>((set, get) => ({
     const updated = await db.tasks.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('tasks', id, updated, authUser.id);
+    // Sharing-Status synchronisieren
+    if (updated) {
+      if (updated.shared) void get().publishTask(updated);
+      else if (patch.shared === false) void get().unpublishTask(id);
+    }
   },
   async toggleTask(id) {
     const t = get().tasks.find(x => x.id === id);
@@ -648,10 +686,13 @@ export const useStore = create<State>((set, get) => ({
     await get().updateTask(id, { done: next, doneAt: next ? Date.now() : undefined });
   },
   async deleteTask(id) {
+    const t = get().tasks.find(x => x.id === id);
     await db.tasks.delete(id);
     set(state => ({ tasks: state.tasks.filter(t => t.id !== id) }));
     const { authUser } = get();
     if (authUser) deleteRow('tasks', id);
+    // Geteilte Task zurückziehen
+    if (t?.shared) void get().unpublishTask(id);
   },
 
   async addLesson(l) {
@@ -892,6 +933,68 @@ export const useStore = create<State>((set, get) => ({
     if (authUser) {
       updated.forEach(y => syncRow('school_years', y.id, y, authUser.id));
     }
+  },
+
+  // ─── Homework Sharing ────────────────────────────────────────────────────
+
+  async refreshFriendTasks() {
+    const { settings } = get();
+    const subs = settings?.homeworkSubscriptions ?? [];
+    if (subs.length === 0) return;
+    set({ friendTasksLoading: true });
+    try {
+      // Für jedes Abo Tasks holen
+      const results = await Promise.all(
+        subs.map(sub => fetchTasksFromUser(sub.userId, sub.displayName)),
+      );
+      const all: FriendTask[] = results.flat();
+
+      // Lokal in Dexie cachen (alles ersetzen)
+      await db.friendTasks.clear();
+      if (all.length) await db.friendTasks.bulkAdd(all);
+      set({ friendTasks: all, friendTasksLoading: false });
+    } catch (e) {
+      console.warn('refreshFriendTasks failed:', e);
+      set({ friendTasksLoading: false });
+    }
+  },
+
+  async addHomeworkSubscription(sub) {
+    const current = get().settings ?? mergeSettings(undefined);
+    const existing = current.homeworkSubscriptions ?? [];
+    // Verhindere Duplikate
+    if (existing.some(s => s.userId === sub.userId)) return;
+    const updated = [...existing, sub];
+    await get().setSettings({ homeworkSubscriptions: updated });
+    // Sofort Tasks nachladen
+    await get().refreshFriendTasks();
+  },
+
+  async removeHomeworkSubscription(userId) {
+    const current = get().settings ?? mergeSettings(undefined);
+    const updated = (current.homeworkSubscriptions ?? []).filter(s => s.userId !== userId);
+    await get().setSettings({ homeworkSubscriptions: updated });
+    // Gecachte Tasks dieses Nutzers löschen
+    await db.friendTasks.where('ownerUserId').equals(userId).delete();
+    set(state => ({ friendTasks: state.friendTasks.filter(t => t.ownerUserId !== userId) }));
+  },
+
+  async updateHomeworkSubjectFilter(userId, subjectFilter) {
+    const current = get().settings ?? mergeSettings(undefined);
+    const updated = (current.homeworkSubscriptions ?? []).map(s =>
+      s.userId === userId ? { ...s, subjectFilter } : s,
+    );
+    await get().setSettings({ homeworkSubscriptions: updated });
+  },
+
+  async publishTask(task) {
+    const { subjects } = get();
+    const subj = subjects.find(s => s.id === task.subjectId);
+    await publishSharedTask(task, subj?.name);
+  },
+
+  async unpublishTask(taskId) {
+    await unpublishSharedTask(taskId);
   },
 }));
 
