@@ -73,6 +73,7 @@ export function GradesPage() {
   const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
   const [showOverall, setShowOverall] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortByGrade, setSortByGrade] = useState(false);
 
   function toggleSubject(id: string) {
     setDeselectedIds(prev => {
@@ -301,34 +302,24 @@ export function GradesPage() {
         </Card>
 
         <Card delay={0.2} className="col-span-12">
-          <h3 className="h3 mb-3">Fächer-Ranking</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {rankedSubjects.map(({ subject, avg }, idx) => (
-              <Link key={subject.id} to={`/noten/${subject.id}`}
-                className="flex items-center gap-3 rounded-2xl p-2.5 bg-white/70 hover:bg-white transition">
-                <div className="text-xs font-bold w-5 text-center flex-shrink-0" style={{ color: 'rgb(var(--ink-400))' }}>
-                  {avg != null ? idx + 1 : '–'}
-                </div>
-                <div className="size-9 rounded-xl grid place-items-center text-white font-display font-bold text-sm flex-shrink-0"
-                  style={{ background: subject.color }}>
-                  {subject.short}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm truncate" style={{ color: 'rgb(var(--ink-800))' }}>{subject.name}</div>
-                  <div className="text-xs" style={{ color: 'rgb(var(--ink-500))' }}>{CATEGORY_LABEL[subject.category]}</div>
-                </div>
-                {avg != null
-                  ? <GradeBadge value={avg} system={subject.system} size="sm" />
-                  : <span className="text-xs" style={{ color: 'rgb(var(--ink-400))' }}>Keine Noten</span>
-                }
-              </Link>
-            ))}
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="h3">Fächer</h3>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-xs font-medium" style={{ color: 'rgb(var(--ink-500))' }}>Nach Note sortieren</span>
+              <button onClick={() => setSortByGrade(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${sortByGrade ? 'bg-emerald-500' : ''}`}
+                style={!sortByGrade ? { background: 'rgb(var(--ink-300))' } : undefined}>
+                <span className={`absolute top-0.5 left-0.5 size-5 bg-white rounded-full shadow transition-transform duration-200 ${sortByGrade ? 'translate-x-5' : ''}`} />
+              </button>
+            </label>
           </div>
-        </Card>
-
-        <Card delay={0.25} className="col-span-12">
-          <h3 className="h3 mb-3">Alle Fächer</h3>
-          <SubjectsGrouped subjects={subjects} groups={settings?.subjectGroups ?? []} />
+          {sortByGrade ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {rankedSubjects.map(({ subject }) => <SubjectRow key={subject.id} subject={subject} />)}
+            </div>
+          ) : (
+            <SubjectsGrouped subjects={subjects} groups={settings?.subjectGroups ?? []} />
+          )}
         </Card>
       </div>
 
@@ -397,25 +388,36 @@ function SubjectRow({ subject }: { subject: Subject }) {
     return Object.entries(counts).map(([k, v]) => ({ name: k, value: v, color: gradeColor(parseFloat(k), subject.system, config) }));
   }, [subjectGrades, subject, config]);
 
+  const gradeCount = subjectGrades.filter(g => !g.isPending).length;
+
   return (
     <Link to={`/noten/${subject.id}`} className="group relative rounded-3xl overflow-hidden p-4 text-white shadow-soft transition hover:-translate-y-0.5">
       <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${subject.color}, ${subject.color}cc)` }} />
       <div className="absolute -right-6 -top-6 size-32 rounded-full bg-white/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="text-[10px] uppercase tracking-wider opacity-80">{CATEGORY_LABEL[subject.category]}</div>
-          <div className="font-display font-extrabold text-xl mt-0.5">{subject.name}</div>
-          <div className="text-xs opacity-80">{subjectGrades.filter(g => !g.isPending).length} Noten · Schnitt {formatAverage(avg, subject.system, digits)}</div>
+          <div className="font-display font-extrabold text-xl mt-0.5 truncate">{subject.name}</div>
+          <div className="text-xs opacity-80">{gradeCount} Noten</div>
         </div>
-        <div className="size-16 relative">
-          {distribution.length > 0 && (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={distribution} dataKey="value" innerRadius={18} outerRadius={28} paddingAngle={2} stroke="none">
-                  {distribution.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+        <div className="size-20 relative flex-shrink-0">
+          {distribution.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={distribution} dataKey="value" innerRadius={24} outerRadius={36} paddingAngle={2} stroke="none">
+                    {distribution.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="font-display font-extrabold text-base text-white drop-shadow-sm">
+                  {avg != null ? formatAverage(avg, subject.system, digits) : '–'}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="size-full flex items-center justify-center text-sm font-bold opacity-60">–</div>
           )}
         </div>
       </div>
