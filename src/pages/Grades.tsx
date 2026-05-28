@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles, FileText, Loader2 } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles, FileText, Loader2, Check, ChevronDown } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -58,6 +58,30 @@ export function GradesPage() {
 
   const attentionSubjects = useMemo(() => subjects.filter(s => needsAttention(grades, s, config)), [subjects, grades, config]);
 
+  const rankedSubjects = useMemo(() =>
+    [...subjects]
+      .map(s => ({ subject: s, avg: subjectAverage(grades, s, config) }))
+      .sort((a, b) => {
+        if (a.avg == null && b.avg == null) return 0;
+        if (a.avg == null) return 1;
+        if (b.avg == null) return -1;
+        return meta.goodIsLow ? a.avg - b.avg : b.avg - a.avg;
+      }),
+  [subjects, grades, config, meta]);
+
+  // deselected = hidden; new subjects auto-visible
+  const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
+  const [showOverall, setShowOverall] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  function toggleSubject(id: string) {
+    setDeselectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   const distribution = useMemo(() => {
     const validGrades = grades.filter(g => !g.isPending);
     if (system === 'bayern' || system === 'austria') {
@@ -95,22 +119,27 @@ export function GradesPage() {
   }, [grades, system, meta, config, subjects]);
 
   const chartData = useMemo(() => {
-    const data: Array<{ date: string; ts: number; [k: string]: number | string }> = [];
-    for (const s of subjects) {
-      const sg = grades.filter(g => g.subjectId === s.id && !g.isPending).sort((a, b) => a.date - b.date);
-      let sum = 0, w = 0;
-      for (const g of sg) {
-        const ww = effectiveWeight(g, s, config);
-        sum += g.value * ww;
-        w += ww;
-        const d = new Date(g.date);
-        const date = `${d.getDate()}.${d.getMonth() + 1}.`;
-        let entry = data.find(e => e.ts === d.getTime());
-        if (!entry) { entry = { date, ts: d.getTime() }; data.push(entry); }
-        entry[s.short] = +(sum / w).toFixed(2);
+    const entries = new Map<number, Record<string, number | string>>();
+    const running = new Map<string, { sum: number; w: number }>();
+    const allSorted = grades.filter(g => !g.isPending).sort((a, b) => a.date - b.date);
+    for (const g of allSorted) {
+      const s = subjects.find(sub => sub.id === g.subjectId);
+      if (!s) continue;
+      const ww = effectiveWeight(g, s, config);
+      const st = running.get(s.id) ?? { sum: 0, w: 0 };
+      st.sum += g.value * ww; st.w += ww;
+      running.set(s.id, st);
+      const d = new Date(g.date);
+      let entry = entries.get(g.date);
+      if (!entry) { entry = { date: `${d.getDate()}.${d.getMonth() + 1}.`, ts: g.date }; entries.set(g.date, entry); }
+      for (const [sid, r] of running) {
+        const subj = subjects.find(sub => sub.id === sid);
+        if (subj && r.w > 0) entry[subj.short] = +(r.sum / r.w).toFixed(2);
       }
+      const avgs = [...running.values()].filter(r => r.w > 0).map(r => r.sum / r.w);
+      if (avgs.length) entry['_overall'] = +(avgs.reduce((a, b) => a + b, 0) / avgs.length).toFixed(2);
     }
-    return data.sort((a, b) => a.ts - b.ts);
+    return [...entries.values()].sort((a, b) => (a.ts as number) - (b.ts as number));
   }, [grades, subjects, config]);
 
   if (!subjects.length) {
@@ -161,7 +190,7 @@ export function GradesPage() {
 
         <Card delay={0.05} className="col-span-12 md:col-span-8 lg:col-span-9">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="h3">Notenverlauf pro Fach</h3>
+            <h3 className="h3">Notenverlauf</h3>
             <span className="chip">{chartData.length} Punkte</span>
           </div>
           <div className="h-64">
@@ -172,13 +201,59 @@ export function GradesPage() {
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis reversed={meta.goodIsLow} domain={[meta.min, meta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
-                  {subjects.map(s => (
+                  {subjects.filter(s => !deselectedIds.has(s.id)).map(s => (
                     <Line key={s.id} type="monotone" dataKey={s.short} stroke={s.color} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls />
                   ))}
+                  {showOverall && (
+                    <Line type="monotone" dataKey="_overall" stroke="#64748b" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 3 }} connectNulls name="Gesamtschnitt" />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full grid place-items-center text-ink-400">Noch zu wenige Noten</div>
+            )}
+          </div>
+
+          {/* Collapsible filter panel */}
+          <div className="mt-3 border-t pt-2.5" style={{ borderColor: 'rgb(var(--ink-200) / 0.5)' }}>
+            <button
+              onClick={() => setFiltersOpen(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-medium transition-colors"
+              style={{ color: 'rgb(var(--ink-500))' }}
+            >
+              <ChevronDown className={`size-3.5 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} />
+              Fächer ein-/ausblenden
+            </button>
+            {filtersOpen && (
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {/* Gesamtschnitt toggle */}
+                <button
+                  onClick={() => setShowOverall(v => !v)}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border-2 transition-all"
+                  style={showOverall
+                    ? { background: '#64748b', borderColor: '#64748b', color: 'white' }
+                    : { background: 'transparent', borderColor: '#94a3b8', color: '#64748b' }}
+                >
+                  {showOverall && <Check className="size-3 flex-shrink-0" />}
+                  Gesamtschnitt
+                </button>
+                {subjects.map(s => {
+                  const selected = !deselectedIds.has(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => toggleSubject(s.id)}
+                      className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border-2 transition-all"
+                      style={selected
+                        ? { background: s.color, borderColor: s.color, color: 'white' }
+                        : { background: 'transparent', borderColor: s.color, color: s.color }}
+                    >
+                      {selected && <Check className="size-3 flex-shrink-0" />}
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </Card>
@@ -226,6 +301,32 @@ export function GradesPage() {
         </Card>
 
         <Card delay={0.2} className="col-span-12">
+          <h3 className="h3 mb-3">Fächer-Ranking</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {rankedSubjects.map(({ subject, avg }, idx) => (
+              <Link key={subject.id} to={`/noten/${subject.id}`}
+                className="flex items-center gap-3 rounded-2xl p-2.5 bg-white/70 hover:bg-white transition">
+                <div className="text-xs font-bold w-5 text-center flex-shrink-0" style={{ color: 'rgb(var(--ink-400))' }}>
+                  {avg != null ? idx + 1 : '–'}
+                </div>
+                <div className="size-9 rounded-xl grid place-items-center text-white font-display font-bold text-sm flex-shrink-0"
+                  style={{ background: subject.color }}>
+                  {subject.short}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate" style={{ color: 'rgb(var(--ink-800))' }}>{subject.name}</div>
+                  <div className="text-xs" style={{ color: 'rgb(var(--ink-500))' }}>{CATEGORY_LABEL[subject.category]}</div>
+                </div>
+                {avg != null
+                  ? <GradeBadge value={avg} system={subject.system} size="sm" />
+                  : <span className="text-xs" style={{ color: 'rgb(var(--ink-400))' }}>Keine Noten</span>
+                }
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        <Card delay={0.25} className="col-span-12">
           <h3 className="h3 mb-3">Alle Fächer</h3>
           <SubjectsGrouped subjects={subjects} groups={settings?.subjectGroups ?? []} />
         </Card>
