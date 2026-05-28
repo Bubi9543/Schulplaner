@@ -122,7 +122,7 @@ export function GradesPage() {
             action={<button onClick={() => setSubjectDialog(true)} className="btn-primary"><Plus className="size-4" />Fach anlegen</button>}
           />
         </Card>
-        <SubjectDialog open={subjectDialog} onClose={() => setSubjectDialog(false)} defaultSystem={system} />
+        <SubjectDialog open={subjectDialog} onClose={() => setSubjectDialog(false)} />
       </PageShell>
     );
   }
@@ -232,7 +232,7 @@ export function GradesPage() {
       </div>
 
       <GradeDialog open={gradeDialog} onClose={() => setGradeDialog(false)} />
-      <SubjectDialog open={subjectDialog} onClose={() => setSubjectDialog(false)} defaultSystem={system} />
+      <SubjectDialog open={subjectDialog} onClose={() => setSubjectDialog(false)} />
     </PageShell>
   );
 }

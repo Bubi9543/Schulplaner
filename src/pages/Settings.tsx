@@ -14,8 +14,8 @@ import { getOrCreateMyProfile } from '@/lib/homeworkShare';
 import { db } from '@/lib/db';
 import { installDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
-import { CATEGORY_LABEL } from '@/lib/grading';
-import { CATEGORY_DESCRIPTION } from '@/lib/grading';
+import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, BUILTIN_KIND_LABEL } from '@/lib/grading';
+import { BUILTIN_GRADE_KINDS } from '@/types';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
@@ -325,9 +325,7 @@ function GradingSection() {
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><GraduationCap className="size-5 text-theme" />Standard für neue Fächer</h3>
         <Row label="Notensystem">
-          <Segmented<GradingSystem> value={settings.system} options={[
-            { value: 'bayern', label: 'Bayern' }, { value: 'oberstufe', label: 'Oberstufe' }, { value: 'austria', label: 'Österreich' }, { value: 'custom', label: 'Frei' },
-          ]} onChange={v => setSettings({ system: v })} />
+          <span className="chip">Bayern · 1–6</span>
         </Row>
         <Row label="Durchschnitt-Nachkommastellen">
           <Segmented<1 | 2 | 3> value={settings.averageDigits} options={[
@@ -379,33 +377,6 @@ function GradingSection() {
 
       <CustomKindsCard />
 
-      <Card>
-        <h3 className="h3 mb-3 flex items-center gap-2"><span className="inline-block size-3 rounded-full bg-amber-500" />Frei konfigurierbar</h3>
-        <p className="subtle mb-3">Eigenes Notensystem (z.B. Punkteskala). Nutzt einfachen gewichteten Schnitt mit den per-Note Gewichten.</p>
-        <Row label="Bezeichnung">
-          <input className="input max-w-[200px]" value={cfg.custom.label}
-            onChange={e => setGradingConfig({ custom: { ...cfg.custom, label: e.target.value } })} />
-        </Row>
-        <Row label="Min / Max">
-          <input type="number" className="input max-w-[80px]" value={cfg.custom.min} step="0.5"
-            onChange={e => setGradingConfig({ custom: { ...cfg.custom, min: parseFloat(e.target.value) || 0 } })} />
-          <span className="text-ink-500">bis</span>
-          <input type="number" className="input max-w-[80px]" value={cfg.custom.max} step="0.5"
-            onChange={e => setGradingConfig({ custom: { ...cfg.custom, max: parseFloat(e.target.value) || 1 } })} />
-        </Row>
-        <Row label="Schrittweite">
-          <input type="number" className="input max-w-[100px]" value={cfg.custom.step} step="0.1" min="0.1"
-            onChange={e => setGradingConfig({ custom: { ...cfg.custom, step: parseFloat(e.target.value) || 1 } })} />
-        </Row>
-        <Row label="Standardwert">
-          <input type="number" className="input max-w-[80px]" value={cfg.custom.defaultValue} step={cfg.custom.step}
-            onChange={e => setGradingConfig({ custom: { ...cfg.custom, defaultValue: parseFloat(e.target.value) || 0 } })} />
-        </Row>
-        <Row label="Niedrige Note = gut" hint="Wie bei deutschem System (1 = sehr gut). Aus für Punktesysteme.">
-          <Toggle checked={cfg.custom.goodIsLow}
-            onChange={v => setGradingConfig({ custom: { ...cfg.custom, goodIsLow: v } })} />
-        </Row>
-      </Card>
     </div>
   );
 }
@@ -442,17 +413,34 @@ function CustomKindsCard() {
     setGradingConfig({ customKinds: next });
   }
 
+  const BUILTIN_KIND_ORDER: string[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
+  void BUILTIN_GRADE_KINDS;
+
   return (
     <Card>
       <h3 className="h3 mb-2 flex items-center gap-2">
         <span className="inline-block size-3 rounded-full bg-violet-500" />
-        Eigene Leistungsnachweis-Kategorien
+        Leistungsnachweis-Kategorien
       </h3>
       <p className="subtle mb-3">
-        Lege eigene Kategorien an (z. B. „Aufsatz", „Test", „Vokabeltest") und wähle, ob sie wie eine
-        Schulaufgabe (große Leistung) oder wie eine mündliche Note (kleine Leistung) verrechnet werden.
+        Eingebaute Kategorien stehen immer zur Verfügung. Du kannst zusätzlich eigene anlegen (z. B. „Vokabeltest").
       </p>
 
+      <div className="space-y-1 mb-4">
+        <div className="text-[11px] font-semibold text-ink-400 uppercase tracking-wide mb-1.5">Eingebaut</div>
+        {BUILTIN_KIND_ORDER.map(id => (
+          <div key={id} className="rounded-xl bg-white/50 border border-white/60 px-3 py-1.5 flex items-center justify-between">
+            <span className="text-sm font-medium text-ink-700">{BUILTIN_KIND_LABEL[id]}</span>
+            <span className="text-[10px] text-ink-400 font-medium">
+              {id === 'schulaufgabe' || id === 'klausur' ? 'wie Schulaufgabe' : 'wie Mündlich'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {customKinds.length > 0 && (
+        <div className="text-[11px] font-semibold text-ink-400 uppercase tracking-wide mb-1.5">Eigene</div>
+      )}
       {customKinds.length > 0 && (
         <ul className="space-y-2 mb-4">
           {customKinds.map(k => (
@@ -634,7 +622,7 @@ function SubjectsSection() {
           </div>
         )}
 
-        <SubjectDialog open={subjDialog.open} initial={subjDialog.subject} onClose={() => setSubjDialog({ open: false })} defaultSystem={settings.system} />
+        <SubjectDialog open={subjDialog.open} initial={subjDialog.subject} onClose={() => setSubjDialog({ open: false })} />
       </Card>
     </div>
   );
@@ -692,7 +680,7 @@ function SubjectGroupBlock({
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-ink-800 truncate">{s.name}</div>
                 <div className="text-xs text-ink-500">
-                  {CATEGORY_LABEL[s.category]} · {s.system === 'bayern' ? 'Bayern' : s.system === 'oberstufe' ? 'Oberstufe' : s.system === 'austria' ? 'Österreich' : 'Frei'}
+                  {CATEGORY_LABEL[s.category]}
                 </div>
               </div>
               <select
@@ -1784,7 +1772,7 @@ function DataSection() {
 
 function AboutSection() {
   const FEATURES: Array<{ icon: React.ComponentType<{ className?: string }>; label: string; desc: string }> = [
-    { icon: GraduationCap, label: 'Notensysteme', desc: 'Bayern, Oberstufe, Österreich + frei konfigurierbar mit eigenen Kategorien' },
+    { icon: GraduationCap, label: 'Notensystem', desc: 'Bayern (1–6) mit eigenen Leistungsnachweis-Kategorien' },
     { icon: Calendar, label: 'Schuljahre & Stundenplan', desc: 'Mehrere Schuljahre parallel, Fächer/Stunden pro Jahr getrennt' },
     { icon: Cloud, label: 'Cloud-Sync & Realtime', desc: 'Automatischer Live-Sync zwischen all deinen Geräten' },
     { icon: Smartphone, label: 'PWA & Offline', desc: 'Funktioniert offline, installierbar auf iPad/iPhone/Android' },

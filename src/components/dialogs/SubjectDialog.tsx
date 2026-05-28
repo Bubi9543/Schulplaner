@@ -2,17 +2,16 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import { SUBJECT_COLORS } from '@/types';
-import type { Subject, SubjectCategory, GradingSystem } from '@/types';
+import type { Subject, SubjectCategory } from '@/types';
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION } from '@/lib/grading';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   initial?: Partial<Subject>;
-  defaultSystem?: GradingSystem;
 }
 
-export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern' }: Props) {
+export function SubjectDialog({ open, onClose, initial }: Props) {
   const addSubject = useStore(s => s.addSubject);
   const updateSubject = useStore(s => s.updateSubject);
   const deleteSubject = useStore(s => s.deleteSubject);
@@ -22,7 +21,6 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
   const [short, setShort] = useState(initial?.short ?? '');
   const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]);
   const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'nebenfach');
-  const [system, setSystem] = useState<GradingSystem>(initial?.system ?? defaultSystem);
   const [teacher, setTeacher] = useState(initial?.teacher ?? '');
   const [room, setRoom] = useState(initial?.room ?? '');
   const [targetAverage, setTargetAverage] = useState<string>(initial?.targetAverage?.toString() ?? '');
@@ -33,17 +31,11 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
       setShort(initial?.short ?? '');
       setColor(initial?.color ?? SUBJECT_COLORS[0]);
       setCategory(initial?.category ?? 'nebenfach');
-      setSystem(initial?.system ?? defaultSystem);
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
       setTargetAverage(initial?.targetAverage?.toString() ?? '');
     }
-  }, [open, initial, defaultSystem]);
-
-  // Bei Wechsel zu Nicht-Bayern: 1:1-Variante auf normales Hauptfach normalisieren
-  useEffect(() => {
-    if (system !== 'bayern' && category === 'hauptfach-1zu1') setCategory('hauptfach');
-  }, [system, category]);
+  }, [open, initial]);
 
   async function save() {
     if (!name.trim()) return;
@@ -52,7 +44,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
       short: short.trim() || name.trim().slice(0, 2),
       color,
       category,
-      system,
+      system: 'bayern' as const,
       teacher: teacher.trim() || undefined,
       room: room.trim() || undefined,
       targetAverage: targetAverage ? parseFloat(targetAverage.replace(',', '.')) : undefined,
@@ -89,7 +81,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
-            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · {system === 'bayern' ? 'Bayern (1–6)' : system === 'oberstufe' ? 'Oberstufe (0–15)' : system === 'austria' ? 'Österreich (1–5)' : 'Frei'}</div>
+            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · Bayern (1–6)</div>
           </div>
         </div>
 
@@ -117,24 +109,9 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
         </div>
 
         <div>
-          <label className="label">Notensystem</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {(['bayern', 'oberstufe', 'austria', 'custom'] as const).map(s => (
-              <button key={s} type="button" onClick={() => setSystem(s)}
-                className={`btn text-xs px-2 py-2 ${system === s ? 'btn-primary' : 'btn-ghost'}`}>
-                {s === 'bayern' ? 'Bayern' : s === 'oberstufe' ? 'Oberstufe' : s === 'austria' ? 'Österreich' : 'Frei'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
           <label className="label">Kategorie</label>
-          <div className={`grid gap-2 ${system === 'bayern' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
-            {(system === 'bayern'
-              ? (['hauptfach', 'hauptfach-1zu1', 'nebenfach'] as const)
-              : (['hauptfach', 'nebenfach'] as const)
-            ).map(c => (
+          <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
+            {(['hauptfach', 'hauptfach-1zu1', 'nebenfach'] as const).map(c => (
               <button key={c} type="button" onClick={() => setCategory(c)}
                 className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
                 <span className="font-semibold text-sm">{CATEGORY_LABEL[c]}</span>
@@ -157,7 +134,7 @@ export function SubjectDialog({ open, onClose, initial, defaultSystem = 'bayern'
 
         <div>
           <label className="label">Zielnote (optional)</label>
-          <input className="input" placeholder={system === 'bayern' ? 'z.B. 2,5' : system === 'oberstufe' ? 'z.B. 10' : system === 'austria' ? 'z.B. 2' : 'z.B. 2,5'} value={targetAverage} onChange={e => setTargetAverage(e.target.value)} />
+          <input className="input" placeholder="z.B. 2,5" value={targetAverage} onChange={e => setTargetAverage(e.target.value)} />
         </div>
       </div>
     </Modal>
