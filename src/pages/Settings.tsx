@@ -2160,6 +2160,9 @@ function ShortcutTokenView({
       {/* Installations-Anleitung */}
       <ShortcutGuide token={token.token} onCopy={onCopy} copied={copied} />
 
+      {/* Shortcut → Hausaufgaben teilen */}
+      <ShortcutShareRow />
+
       {/* URLs für Power-User / falls jemand den Shortcut selbst nachbauen will */}
       <details className="text-[11px] text-ink-500">
         <summary className="cursor-pointer font-semibold hover:text-ink-700">Roh-Endpoints (für Shortcut-Bau)</summary>
@@ -2194,6 +2197,20 @@ function UrlRow({ label, url, k, copied, onCopy }: { label: string; url: string;
         </button>
       </div>
     </div>
+  );
+}
+
+function ShortcutShareRow() {
+  const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
+  return (
+    <Row label="Hausaufgaben automatisch teilen"
+      hint="Via Shortcut erstellte Hausaufgaben werden beim nächsten Sync mit Mitschülern geteilt (wenn Freunde-Abos aktiv sind).">
+      <Toggle
+        checked={settings.homeworkShareViaShortcut}
+        onChange={v => setSettings({ homeworkShareViaShortcut: v })}
+      />
+    </Row>
   );
 }
 
@@ -2337,6 +2354,14 @@ function FriendsSection() {
             onChange={v => setSettings({ homeworkShareByDefault: v })}
           />
         </Row>
+        {/* Apple Shortcut: teilen */}
+        <Row label="Über Apple Shortcut teilen"
+          hint={authUser ? 'Via Shortcut erstellte Hausaufgaben werden beim nächsten Sync automatisch geteilt.' : 'Nur mit Cloud-Sync verfügbar – bitte zuerst anmelden.'}>
+          <Toggle
+            checked={settings.homeworkShareViaShortcut}
+            onChange={v => setSettings({ homeworkShareViaShortcut: v })}
+          />
+        </Row>
       </Card>
 
       {/* Abonnements */}
@@ -2438,21 +2463,6 @@ function FriendsSection() {
             ))}
           </ul>
         )}
-      </Card>
-
-      {/* Setup-Hinweis */}
-      <Card>
-        <div className="flex items-start gap-3 text-sm text-ink-700">
-          <AlertTriangle className="size-4 text-amber-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <strong className="font-semibold">Supabase-Setup erforderlich</strong>
-            <p className="text-xs text-ink-500 mt-1">
-              Diese Funktion benötigt zwei neue Tabellen in Supabase. Sieh dir{' '}
-              <code className="font-mono text-[11px] bg-ink-100 px-1 rounded">HOMEWORK_SHARING_SETUP.md</code>{' '}
-              für die SQL-Befehle an.
-            </p>
-          </div>
-        </div>
       </Card>
 
       <HomeworkSubscribeDialog open={addOpen} onClose={() => setAddOpen(false)} />

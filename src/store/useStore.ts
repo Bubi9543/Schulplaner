@@ -35,6 +35,9 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   if (typeof merged.homeworkShareByDefault !== 'boolean') {
     merged.homeworkShareByDefault = false;
   }
+  if (typeof merged.homeworkShareViaShortcut !== 'boolean') {
+    merged.homeworkShareViaShortcut = false;
+  }
 
   // Notifications: alte Settings ohne das Feld bekommen Default; bestehende
   // werden mit Defaults „aufgefüllt" für fehlende Unter-Keys.
@@ -139,6 +142,8 @@ interface State {
   /** Gecachte geteilte Hausaufgaben von abonnierten Mitschülern. */
   friendTasks: FriendTask[];
   friendTasksLoading: boolean;
+  /** Session-level ausgeblendete Fremdaufgaben (kein Persist). */
+  dismissedFriendTaskIds: Set<string>;
 
   load: () => Promise<void>;
   setSettings: (patch: Partial<AppSettings>) => Promise<void>;
@@ -212,6 +217,8 @@ interface State {
   publishTask: (task: AppTask) => Promise<void>;
   /** Zieht eine Aufgabe aus shared_tasks zurück. */
   unpublishTask: (taskId: string) => Promise<void>;
+  /** Blendet eine Fremdaufgabe für diese Session aus. */
+  dismissFriendTask: (id: string) => void;
 }
 
 // ─── Modul-Singletons für Auth-Listener / Visibility-Listener ─────────────
@@ -289,6 +296,7 @@ export const useStore = create<State>((set, get) => ({
   liveSync: 'off',
   friendTasks: [],
   friendTasksLoading: false,
+  dismissedFriendTaskIds: new Set<string>(),
 
   async load() {
     const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks] = await Promise.all([
@@ -448,12 +456,26 @@ export const useStore = create<State>((set, get) => ({
 
     set({ syncStatus: 'syncing', liveSync: 'connecting' });
     try {
+      // Existierende Task-IDs vor dem Sync merken (für Auto-Publish via Shortcut)
+      const existingTaskIds = new Set(get().tasks.map(t => t.id));
+
       // Erst lokale Daten hochladen (eigene Edits behalten), dann Cloud-Stand ziehen.
       // → Konflikte: local-row gewinnt für IDs, die beide Seiten haben (gewünscht beim Geräte-Login).
       await uploadAll(authUser.id);
       await downloadAll(authUser.id);
       await get().load(); // State frisch aus Dexie ziehen
       set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
+
+      // Via-Shortcut erstellte Hausaufgaben automatisch teilen, wenn Toggle aktiv
+      if (get().settings?.homeworkShareViaShortcut) {
+        const newHA = get().tasks.filter(
+          t => !existingTaskIds.has(t.id) && t.kind === 'hausaufgabe' && !t.shared,
+        );
+        for (const t of newHA) {
+          await get().updateTask(t.id, { shared: true });
+        }
+      }
+
       // Friend-Tasks im Hintergrund nachladen
       void get().refreshFriendTasks();
     } catch (e) {
@@ -995,6 +1017,10 @@ export const useStore = create<State>((set, get) => ({
 
   async unpublishTask(taskId) {
     await unpublishSharedTask(taskId);
+  },
+
+  dismissFriendTask(id) {
+    set(state => ({ dismissedFriendTaskIds: new Set([...state.dismissedFriendTaskIds, id]) }));
   },
 }));
 

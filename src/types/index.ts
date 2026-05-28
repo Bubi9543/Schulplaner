@@ -250,6 +250,8 @@ export interface AppSettings {
   homeworkSubscriptions: HomeworkSubscription[];
   /** Hausaufgaben standardmäßig teilen? */
   homeworkShareByDefault: boolean;
+  /** Aufgaben die via Apple Shortcut erstellt werden automatisch teilen? */
+  homeworkShareViaShortcut: boolean;
   theme: ThemeMode;
   colorTheme: ColorThemeId;
   density: DensityMode;
@@ -389,6 +391,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   demo: false,
   homeworkSubscriptions: [],
   homeworkShareByDefault: false,
+  homeworkShareViaShortcut: false,
   theme: 'auto',
   colorTheme: 'indigo',
   density: 'comfortable',
