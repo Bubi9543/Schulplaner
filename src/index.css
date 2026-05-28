@@ -301,6 +301,20 @@ html[data-mode="dark"] .hover\:bg-white\/80:hover { background-color: rgb(var(--
   .shadow-theme { box-shadow: 0 8px 30px -10px rgb(var(--theme-primary-rgb) / 0.45); }
 }
 
+/* ── Kalender Kind-Picker ────────────────────────────────────────────────── */
+.cal-picker {
+  background: rgb(var(--surface-rgb) / 0.98);
+  border: 1px solid rgb(var(--ink-200) / 0.6);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+.cal-picker-btn {
+  color: rgb(var(--ink-700));
+}
+.cal-picker-btn:hover {
+  background: rgb(var(--theme-primary-rgb) / 0.08);
+  color: rgb(var(--theme-primary-rgb));
+}
+
 /* ── Ferientage im Kalender ──────────────────────────────────────────────── */
 .cal-hol {
   background: rgb(251 191 36 / 0.11);

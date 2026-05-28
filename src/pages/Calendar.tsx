@@ -10,7 +10,7 @@ import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
 import { fetchUpcomingHolidays, isoLocal } from '@/lib/holidays';
 import type { AppTask, TaskKind, SchoolHoliday } from '@/types';
-import { BUILTIN_TASK_KINDS } from '@/types';
+import { BUILTIN_TASK_KINDS, DEFAULT_QUICK_BUTTONS } from '@/types';
 
 export function CalendarPage() {
   const tasks = useStore(s => s.tasks);
@@ -32,6 +32,11 @@ export function CalendarPage() {
     ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
     ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
   ], [customKinds]);
+
+  const quickKinds = useMemo(() => {
+    const ids = settings?.quickButtons ?? DEFAULT_QUICK_BUTTONS;
+    return ids.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) }));
+  }, [settings?.quickButtons]);
 
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
   const [filterSubject, setFilterSubject] = useState<string | null>(null);
@@ -85,8 +90,9 @@ export function CalendarPage() {
         <CalendarView
           tasks={filtered}
           holidays={holidays}
+          quickKinds={quickKinds}
           onSelect={t => setDetail({ open: true, task: t })}
-          onNew={d => setEditor({ open: true, task: { dueDate: d.getTime() } })}
+          onNew={(d, kind) => setEditor({ open: true, task: { dueDate: d.getTime() }, defaultKind: kind })}
         />
       </motion.div>
 
@@ -109,8 +115,30 @@ export function CalendarPage() {
   );
 }
 
-function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; holidays: SchoolHoliday[]; onSelect: (t: AppTask) => void; onNew: (d: Date) => void }) {
+function CalendarView({ tasks, holidays, quickKinds, onSelect, onNew }: {
+  tasks: AppTask[];
+  holidays: SchoolHoliday[];
+  quickKinds: Array<{ id: TaskKind; label: string; icon: string }>;
+  onSelect: (t: AppTask) => void;
+  onNew: (d: Date, kind?: TaskKind) => void;
+}) {
   const subjects = useStore(s => s.subjects);
+  const [pickerDay, setPickerDay] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pickerDay) return;
+    let listenerAdded = false;
+    const close = () => setPickerDay(null);
+    const timer = setTimeout(() => {
+      document.addEventListener('click', close, { once: true });
+      listenerAdded = true;
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      if (listenerAdded) document.removeEventListener('click', close);
+    };
+  }, [pickerDay]);
+
   const [cursor, setCursor] = useState<Date>(() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
   });
@@ -176,10 +204,12 @@ function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; 
               ? (inMonth ? 'cal-hol' : 'cal-hol-faded')
               : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent';
 
+          const isPickerOpen = pickerDay === key;
+
           return (
             <div
               key={i}
-              onClick={() => onNew(d)}
+              onClick={() => setPickerDay(isPickerOpen ? null : key)}
               title={hol ? hol.holiday.name : undefined}
               className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${baseCls}`}
             >
@@ -206,6 +236,27 @@ function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; 
                 })}
                 {day.length > 3 && <div className="text-[10px] text-ink-500 px-1">+{day.length - 3} mehr</div>}
               </div>
+
+              {/* Kind picker overlay */}
+              {isPickerOpen && (
+                <div
+                  className="absolute inset-0 z-10 rounded-xl cal-picker p-1.5 flex flex-col gap-0.5"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="text-[10px] font-bold text-ink-500 mb-0.5 truncate">
+                    {d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}
+                  </div>
+                  {quickKinds.map(k => (
+                    <button
+                      key={k.id}
+                      onClick={() => { setPickerDay(null); onNew(d, k.id); }}
+                      className="cal-picker-btn text-[10px] font-medium text-left px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-colors"
+                    >
+                      <span>{k.icon}</span><span className="truncate">{k.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
