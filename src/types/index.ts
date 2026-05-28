@@ -354,6 +354,9 @@ export const SUBJECT_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
   '#f97316', '#f59e0b', '#10b981', '#14b8a6',
   '#06b6d4', '#3b82f6', '#a855f7', '#84cc16',
+  '#e11d48', '#0891b2', '#7c3aed', '#059669',
+  '#d946ef', '#ea580c', '#0284c7', '#4f46e5',
+  '#16a34a', '#dc2626', '#9333ea', '#ca8a04',
 ] as const;
 
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
