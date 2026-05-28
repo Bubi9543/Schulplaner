@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -2269,6 +2269,7 @@ function FriendsSection() {
   const updateHomeworkSubjectFilter = useStore(s => s.updateHomeworkSubjectFilter);
   const refreshFriendTasks = useStore(s => s.refreshFriendTasks);
   const friendTasksLoading = useStore(s => s.friendTasksLoading);
+  const navigate = useNavigate();
 
   const subs = settings.homeworkSubscriptions ?? [];
   const [myCode, setMyCode] = useState<string | null>(null);
@@ -2302,14 +2303,42 @@ function FriendsSection() {
   return (
     <div className="space-y-4">
       <Card>
-        <h3 className="h3 mb-3 flex items-center gap-2"><Users className="size-5 text-theme" />Freunde &amp; Hausaufgaben</h3>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Users className="size-5 text-theme" />Freunde</h3>
         <p className="text-sm text-ink-500 mb-4">
-          Tausche deinen Freundecode mit Mitschülern aus. Wer deinen Code abonniert, sieht deine
-          geteilten Hausaufgaben — und umgekehrt.
+          Verbinde dich über deinen Freundecode mit Mitschülern. Mit Freunden kannst du Hausaufgaben
+          teilen und euch in der wöchentlichen Fokus-Rangliste vergleichen.
         </p>
 
+        {/* Was Freunde freischalten */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
+          <div className="rounded-2xl bg-theme-soft/60 border border-theme/20 p-3 flex items-start gap-2.5">
+            <div className="size-8 rounded-xl theme-gradient grid place-items-center flex-shrink-0">
+              <Share2 className="size-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-ink-800">Hausaufgaben teilen</div>
+              <div className="text-[11px] text-ink-500 leading-snug">Geteilte Aufgaben tauchen bei deinen Freunden auf.</div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/fokus')}
+            className="rounded-2xl bg-theme-soft/60 border border-theme/20 p-3 flex items-start gap-2.5 text-left transition hover:shadow-glow group"
+          >
+            <div className="size-8 rounded-xl theme-gradient grid place-items-center flex-shrink-0">
+              <Trophy className="size-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-ink-800 flex items-center gap-1">
+                Fokus-Rangliste
+                <Timer className="size-3 text-theme-deep opacity-0 group-hover:opacity-100 transition" />
+              </div>
+              <div className="text-[11px] text-ink-500 leading-snug">Wer hat diese Woche am meisten gelernt?</div>
+            </div>
+          </button>
+        </div>
+
         {/* Mein Freundecode */}
-        <div className="rounded-2xl bg-ink-50/80 border border-ink-200 p-4 mb-4">
+        <div className="rounded-2xl bg-ink-50/80 border border-ink-200 p-4">
           <div className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-2">Mein Freundecode</div>
           {myCode ? (
             <div className="flex items-center gap-3">
@@ -2330,46 +2359,29 @@ function FriendsSection() {
           )}
           {codeError && <p className="text-xs text-rose-600 mt-2">{codeError}</p>}
           <p className="text-xs text-ink-500 mt-2">
-            Gib diesen Code deinen Mitschülern – er ist dauerhaft gültig (nicht wie der Stundenplan-Code).
+            Gib diesen Code deinen Freunden – er ist dauerhaft gültig (nicht wie der Stundenplan-Code).
           </p>
         </div>
-
-        {/* Standard: teilen */}
-        <Row label="Hausaufgaben standardmäßig teilen"
-          hint="Neues Standard-Verhalten beim Erstellen von Hausaufgaben. Du kannst es pro Aufgabe überschreiben.">
-          <Toggle
-            checked={settings.homeworkShareByDefault}
-            onChange={v => setSettings({ homeworkShareByDefault: v })}
-          />
-        </Row>
-        {/* Apple Shortcut: teilen */}
-        <Row label="Über Apple Shortcut teilen"
-          hint={authUser ? 'Via Shortcut erstellte Hausaufgaben werden beim nächsten Sync automatisch geteilt.' : 'Nur mit Cloud-Sync verfügbar – bitte zuerst anmelden.'}>
-          <Toggle
-            checked={settings.homeworkShareViaShortcut}
-            onChange={v => setSettings({ homeworkShareViaShortcut: v })}
-          />
-        </Row>
       </Card>
 
       {/* Abonnements */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="h3 flex items-center gap-2"><UserPlus className="size-5 text-theme" />Abonnierte Mitschüler</h3>
+          <h3 className="h3 flex items-center gap-2"><UserPlus className="size-5 text-theme" />Meine Freunde</h3>
           <div className="flex items-center gap-2">
             {subs.length > 0 && (
               <button
                 onClick={refreshFriendTasks}
                 disabled={friendTasksLoading}
                 className="btn-ghost py-1.5 text-xs"
-                title="Hausaufgaben jetzt aktualisieren"
+                title="Geteilte Hausaufgaben jetzt aktualisieren"
               >
                 <RefreshCw className={`size-3.5 ${friendTasksLoading ? 'animate-spin' : ''}`} />
                 Aktualisieren
               </button>
             )}
             <button onClick={() => setAddOpen(true)} className="btn-primary py-1.5 text-sm">
-              <Plus className="size-4" />Mitschüler hinzufügen
+              <Plus className="size-4" />Freund hinzufügen
             </button>
           </div>
         </div>
@@ -2377,8 +2389,8 @@ function FriendsSection() {
         {subs.length === 0 ? (
           <div className="text-center py-8 text-ink-500 text-sm">
             <Users className="size-8 mx-auto mb-2 opacity-40" />
-            <div>Noch keine Mitschüler abonniert.</div>
-            <div className="text-xs mt-1">Gib ihren 6-stelligen Freundecode ein.</div>
+            <div>Noch keine Freunde hinzugefügt.</div>
+            <div className="text-xs mt-1">Gib den 6-stelligen Freundecode eines Mitschülers ein.</div>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -2408,7 +2420,7 @@ function FriendsSection() {
                 {/* Fächerfilter */}
                 {subjects.length > 0 && (
                   <div className="mt-2.5 pt-2.5 border-t border-ink-100">
-                    <div className="text-[11px] text-ink-500 mb-1.5 font-semibold">Empfangene Fächer:</div>
+                    <div className="text-[11px] text-ink-500 mb-1.5 font-semibold">Hausaufgaben aus diesen Fächern:</div>
                     <div className="flex flex-wrap gap-1.5">
                       <button
                         type="button"
@@ -2451,6 +2463,30 @@ function FriendsSection() {
             ))}
           </ul>
         )}
+      </Card>
+
+      {/* Hausaufgaben-Sharing – eine der Funktionen, die Freunde freischalten */}
+      <Card>
+        <h3 className="h3 mb-1 flex items-center gap-2"><Share2 className="size-5 text-theme" />Hausaufgaben teilen</h3>
+        <p className="text-sm text-ink-500 mb-3">
+          Lege fest, welche deiner Hausaufgaben automatisch bei deinen Freunden landen.
+        </p>
+        {/* Standard: teilen */}
+        <Row label="Hausaufgaben standardmäßig teilen"
+          hint="Neues Standard-Verhalten beim Erstellen von Hausaufgaben. Du kannst es pro Aufgabe überschreiben.">
+          <Toggle
+            checked={settings.homeworkShareByDefault}
+            onChange={v => setSettings({ homeworkShareByDefault: v })}
+          />
+        </Row>
+        {/* Apple Shortcut: teilen */}
+        <Row label="Über Apple Shortcut teilen"
+          hint={authUser ? 'Via Shortcut erstellte Hausaufgaben werden beim nächsten Sync automatisch geteilt.' : 'Nur mit Cloud-Sync verfügbar – bitte zuerst anmelden.'}>
+          <Toggle
+            checked={settings.homeworkShareViaShortcut}
+            onChange={v => setSettings({ homeworkShareViaShortcut: v })}
+          />
+        </Row>
       </Card>
 
       <HomeworkSubscribeDialog open={addOpen} onClose={() => setAddOpen(false)} />

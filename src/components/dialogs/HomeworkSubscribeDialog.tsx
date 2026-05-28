@@ -60,11 +60,11 @@ export function HomeworkSubscribeDialog({ open, onClose }: Props) {
           return;
         }
         if (profile.userId === authUser.id) {
-          setLookupError('Das ist dein eigener Code – du kannst dir nicht selbst abonnieren.');
+          setLookupError('Das ist dein eigener Code – du kannst dich nicht selbst hinzufügen.');
           return;
         }
         if (subs.some(s => s.userId === profile.userId)) {
-          setLookupError(`Du hast ${profile.displayName} bereits abonniert.`);
+          setLookupError(`${profile.displayName} ist bereits dein Freund.`);
           return;
         }
         setFound(profile);
@@ -122,14 +122,14 @@ export function HomeworkSubscribeDialog({ open, onClose }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Mitschüler abonnieren"
+      title="Freund hinzufügen"
       footer={
         found ? (
           <>
             <button onClick={onClose} className="btn-ghost">Abbrechen</button>
             <button onClick={confirm} className="btn-primary" disabled={saving}>
               {saving ? <Loader2 className="size-4 animate-spin" /> : <UserPlus className="size-4" />}
-              Abonnieren
+              Hinzufügen
             </button>
           </>
         ) : (
@@ -185,7 +185,7 @@ export function HomeworkSubscribeDialog({ open, onClose }: Props) {
             {/* Fächerfilter */}
             {subjects.length > 0 && (
               <div>
-                <label className="label">Welche Fächer möchtest du empfangen?</label>
+                <label className="label">Hausaufgaben aus welchen Fächern empfangen?</label>
                 <p className="text-xs text-ink-500 mb-3">
                   {isOberstufe
                     ? 'Oberstufe: Standardmäßig kein Fach – wähle die Fächer aus, in denen ihr gleich seid.'
