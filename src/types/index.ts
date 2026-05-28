@@ -351,12 +351,12 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 };
 
 export const SUBJECT_COLORS = [
-  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
-  '#f97316', '#f59e0b', '#10b981', '#14b8a6',
-  '#06b6d4', '#3b82f6', '#a855f7', '#84cc16',
-  '#e11d48', '#0891b2', '#7c3aed', '#059669',
-  '#d946ef', '#ea580c', '#0284c7', '#4f46e5',
-  '#16a34a', '#dc2626', '#9333ea', '#ca8a04',
+  '#dc2626', '#ea580c', '#f97316', '#f59e0b',
+  '#ca8a04', '#84cc16', '#16a34a', '#10b981',
+  '#059669', '#14b8a6', '#06b6d4', '#0891b2',
+  '#0284c7', '#3b82f6', '#6366f1', '#4f46e5',
+  '#8b5cf6', '#7c3aed', '#a855f7', '#9333ea',
+  '#d946ef', '#ec4899', '#e11d48', '#f43f5e',
 ] as const;
 
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
