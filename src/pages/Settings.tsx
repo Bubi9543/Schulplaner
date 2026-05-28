@@ -24,6 +24,7 @@ type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects'
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
+  { id: 'friends',       label: 'Freunde',           icon: Users },
   { id: 'appearance',    label: 'Erscheinung',       icon: Palette },
   { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
   { id: 'grading',       label: 'Noten & Aufgaben',  icon: GraduationCap },
@@ -31,7 +32,6 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'schoolyears',   label: 'Schuljahre',        icon: Calendar },
   { id: 'notifications', label: 'Benachrichtigungen', icon: Bell },
   { id: 'shortcut',      label: 'Apple Shortcut',    icon: Zap },
-  { id: 'friends',       label: 'Freunde',           icon: Users },
   { id: 'feedback',      label: 'Feedback',          icon: MessageSquare },
   { id: 'data',          label: 'Daten & Sync',      icon: Database },
   { id: 'about',         label: 'Über',              icon: Info },
