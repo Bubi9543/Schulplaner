@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar, Timer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 
@@ -10,6 +10,7 @@ const NAV = [
   { to: '/kalender', icon: CalendarRange, label: 'Kalender' },
   { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan' },
   { to: '/noten', icon: GraduationCap, label: 'Noten' },
+  { to: '/fokus', icon: Timer, label: 'Fokus' },
   { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
 ];
 

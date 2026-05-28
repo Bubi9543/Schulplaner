@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Pencil, Trash2, Calendar, Tag, Scale, BookOpen, NotebookText, Clock } from 'lucide-react';
+import { X, Pencil, Trash2, Calendar, Tag, Scale, BookOpen, NotebookText, Clock, Timer, ChevronRight } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
 import { getSystemMeta, gradeColor, getKindLabel, isLargeAssessmentKind } from '@/lib/grading';
@@ -19,11 +20,24 @@ function fmtFullDate(ts: number): string {
   return new Date(ts).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+/** Lernzeit menschenlesbar: "2 h 15 min", "45 min" oder "30 s". */
+function fmtStudyDuration(ms: number): string {
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 1) return `${Math.max(1, Math.round(ms / 1000))} s`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} h`;
+  return `${h} h ${m} min`;
+}
+
 export function GradeDetailDialog({ open, grade: gradeProp, onClose, onEdit }: Props) {
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
   const deleteGrade = useStore(s => s.deleteGrade);
   const updateGrade = useStore(s => s.updateGrade);
+  const focusSessions = useStore(s => s.focusSessions);
+  const navigate = useNavigate();
   // Aus dem Store den frischen Grade ziehen, damit Updates (Checkliste,
   // Deadline, etc.) live sichtbar werden.
   const liveGrade = useStore(s => gradeProp ? s.grades.find(g => g.id === gradeProp.id) : undefined);
@@ -46,6 +60,10 @@ export function GradeDetailDialog({ open, grade: gradeProp, onClose, onEdit }: P
   const isPending = !!grade.isPending;
   const weightMul = grade.weightMultiplier ?? 1;
   const kindLabel = getKindLabel(grade.kind, settings.gradingConfig);
+
+  // Fokus-Lernzeit, die explizit für diesen Test erfasst wurde.
+  const testSessions = focusSessions.filter(f => f.gradeId === grade.id);
+  const studyMs = testSessions.reduce((sum, f) => sum + f.focusedMs, 0);
 
   async function handleDelete() {
     if (!grade || !confirm(`Note „${grade.title || meta.formatValue(grade.value)}" wirklich löschen?`)) return;
@@ -155,6 +173,34 @@ export function GradeDetailDialog({ open, grade: gradeProp, onClose, onEdit }: P
                   </MetaTile>
                 )}
               </div>
+
+              {/* Lernzeit für diesen Test (aus dem Fokus-Tab) */}
+              <button
+                onClick={() => navigate('/fokus')}
+                className="w-full text-left rounded-2xl p-4 flex items-center gap-3 transition hover:shadow-glow theme-gradient-soft border border-theme/20 group"
+              >
+                <div className="size-11 rounded-2xl theme-gradient grid place-items-center shadow-glow flex-shrink-0">
+                  <Timer className="size-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] uppercase tracking-wider font-semibold text-theme-deep">
+                    Lernzeit für diesen Test
+                  </div>
+                  {studyMs > 0 ? (
+                    <div className="text-lg font-display font-extrabold text-ink-900 leading-tight">
+                      {fmtStudyDuration(studyMs)}
+                      <span className="text-xs font-medium text-ink-500 ml-2">
+                        in {testSessions.length} {testSessions.length === 1 ? 'Session' : 'Sessions'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-ink-600">
+                      Noch keine Lernzeit – jetzt eine Fokus-Session starten
+                    </div>
+                  )}
+                </div>
+                <ChevronRight className="size-5 text-theme-deep/60 group-hover:translate-x-0.5 transition flex-shrink-0" />
+              </button>
 
               {/* Lerncheckliste – sinnvoll für ausstehende Schulaufgaben/Klausuren */}
               {(isPending || (grade.studyChecklist && grade.studyChecklist.length > 0)) && (

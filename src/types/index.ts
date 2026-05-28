@@ -206,6 +206,36 @@ export interface FriendTask {
   fetchedAt: number;
 }
 
+/**
+ * Art einer Fokus-/Lern-Session.
+ * - pomodoro: Wechsel aus Fokus-/Pausenblöcken; gezählt wird nur die Fokuszeit.
+ * - timer: einfacher Countdown auf eine gewählte Dauer.
+ * - stopwatch: offene Stoppuhr, hochzählend.
+ */
+export type FocusMode = 'pomodoro' | 'timer' | 'stopwatch';
+
+/**
+ * Eine abgeschlossene Lern-/Fokus-Session. Wird lokal in Dexie (`focusSessions`)
+ * gespeichert und – wenn eingeloggt – in die Cloud gesynct.
+ */
+export interface FocusSession {
+  id: string;
+  /** Optional zugeordnetes Fach. */
+  subjectId?: string;
+  /** Optional verknüpfter Test/Prüfung (Grade-ID, oft isPending). */
+  gradeId?: string;
+  /** Art der Session. */
+  mode: FocusMode;
+  /** Effektiv fokussierte Zeit in Millisekunden (Pausen nicht eingerechnet). */
+  focusedMs: number;
+  /** Startzeitpunkt (ms timestamp). */
+  startedAt: number;
+  /** Endzeitpunkt (ms timestamp). */
+  endedAt: number;
+  /** Zugehöriges Schuljahr. */
+  schoolYearId?: string;
+}
+
 export interface Lesson {
   id: string;
   subjectId: string;

@@ -5,7 +5,7 @@ import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime
 import type { SyncTable } from '@/lib/sync';
 import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription, FocusSession } from '@/types';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
@@ -132,6 +132,8 @@ interface State {
   tasks: AppTask[];
   lessons: Lesson[];
   schoolYears: SchoolYear[];
+  /** Lern-/Fokus-Sessions (gefiltert nach aktivem Schuljahr). */
+  focusSessions: FocusSession[];
   /** Aktive Schuljahr-ID. Wenn null, gibt es noch keine. */
   activeSchoolYearId: string | null;
   authUser: SupabaseUser | null;
@@ -204,6 +206,11 @@ interface State {
   updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
   deleteSchoolYear: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
   setActiveSchoolYear: (id: string) => Promise<void>;
+
+  /** Speichert eine abgeschlossene Fokus-Session. */
+  addFocusSession: (s: Omit<FocusSession, 'id' | 'schoolYearId'> & { id?: string; schoolYearId?: string }) => Promise<FocusSession>;
+  /** Löscht eine Fokus-Session. */
+  deleteFocusSession: (id: string) => Promise<void>;
 
   /** Holt alle geteilten Hausaufgaben von abonnierten Mitschülern neu aus der Cloud. */
   refreshFriendTasks: () => Promise<void>;
@@ -294,12 +301,13 @@ export const useStore = create<State>((set, get) => ({
   syncStatus: 'idle',
   lastSyncedAt: null,
   liveSync: 'off',
+  focusSessions: [],
   friendTasks: [],
   friendTasksLoading: false,
   dismissedFriendTaskIds: new Set<string>(),
 
   async load() {
-    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks] = await Promise.all([
+    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
@@ -307,6 +315,7 @@ export const useStore = create<State>((set, get) => ({
       db.lessons.toArray(),
       db.schoolYears.toArray(),
       db.friendTasks.toArray(),
+      db.focusSessions.toArray(),
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
     if (settings) {
@@ -343,6 +352,7 @@ export const useStore = create<State>((set, get) => ({
       grades: allGrades.filter(subjFilter),
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
+      focusSessions: allFocusSessions.filter(subjFilter).sort((a, b) => b.startedAt - a.startedAt),
       friendTasks: allFriendTasks,
     });
 
@@ -957,6 +967,27 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  // ─── Fokus / Lern-Sessions ───────────────────────────────────────────────
+
+  async addFocusSession(s) {
+    const subj = s.subjectId ? get().subjects.find(x => x.id === s.subjectId) : undefined;
+    const yid = s.schoolYearId ?? subj?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const session: FocusSession = { ...s, id: s.id ?? uid(), schoolYearId: yid } as FocusSession;
+    await db.focusSessions.add(session);
+    if (!yid || session.schoolYearId === yid) {
+      set(state => ({ focusSessions: [session, ...state.focusSessions].sort((a, b) => b.startedAt - a.startedAt) }));
+    }
+    const { authUser } = get();
+    if (authUser) syncRow('focus_sessions', session.id, session, authUser.id);
+    return session;
+  },
+  async deleteFocusSession(id) {
+    await db.focusSessions.delete(id);
+    set(state => ({ focusSessions: state.focusSessions.filter(f => f.id !== id) }));
+    const { authUser } = get();
+    if (authUser) deleteRow('focus_sessions', id);
+  },
+
   // ─── Homework Sharing ────────────────────────────────────────────────────
 
   async refreshFriendTasks() {
@@ -1124,6 +1155,19 @@ async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, g
       // Photos stehen nicht im Store-State, das reicht.
       break;
     }
+    case 'focus_sessions': {
+      const session = data as unknown as FocusSession;
+      await db.focusSessions.put(session);
+      const yid = get().activeSchoolYearId;
+      if (!yid || session.schoolYearId === yid) {
+        set(state => ({
+          focusSessions: upsertById(state.focusSessions, session).sort((a, b) => b.startedAt - a.startedAt),
+        }));
+      } else {
+        set(state => ({ focusSessions: state.focusSessions.filter(f => f.id !== session.id) }));
+      }
+      break;
+    }
   }
 }
 
@@ -1159,6 +1203,10 @@ async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get
     }
     case 'photos':
       await db.photos.delete(id);
+      break;
+    case 'focus_sessions':
+      await db.focusSessions.delete(id);
+      set(state => ({ focusSessions: state.focusSessions.filter(f => f.id !== id) }));
       break;
   }
 }

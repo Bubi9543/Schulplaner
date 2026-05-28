@@ -11,6 +11,7 @@ import { CalendarPage } from '@/pages/Calendar';
 import { SchedulePage } from '@/pages/Schedule';
 import { GradesPage } from '@/pages/Grades';
 import { SubjectDetailPage } from '@/pages/SubjectDetail';
+import { FokusPage } from '@/pages/Fokus';
 import { SettingsPage } from '@/pages/Settings';
 import { ImpressumPage, DatenschutzPage } from '@/pages/Legal';
 import { applyTheme } from '@/lib/themes';
@@ -84,6 +85,7 @@ export default function App() {
             <Route path="/stundenplan" element={<SchedulePage />} />
             <Route path="/noten" element={<GradesPage />} />
             <Route path="/noten/:subjectId" element={<SubjectDetailPage />} />
+            <Route path="/fokus" element={<FokusPage />} />
             <Route path="/einstellungen" element={<SettingsPage />} />
             <Route path="/impressum" element={<ImpressumPage />} />
             <Route path="/datenschutz" element={<DatenschutzPage />} />
