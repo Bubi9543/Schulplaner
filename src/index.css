@@ -300,3 +300,38 @@ html[data-mode="dark"] .hover\:bg-white\/80:hover { background-color: rgb(var(--
   .accent-theme { accent-color: var(--theme-primary); }
   .shadow-theme { box-shadow: 0 8px 30px -10px rgb(var(--theme-primary-rgb) / 0.45); }
 }
+
+/* ── Ferientage im Kalender ──────────────────────────────────────────────── */
+.cal-hol {
+  background: rgb(251 191 36 / 0.11);
+  border-color: rgb(217 119 6 / 0.28);
+  box-shadow: inset 3px 0 0 rgb(217 119 6 / 0.45);
+}
+.cal-hol:hover {
+  background: rgb(251 191 36 / 0.18);
+}
+.cal-hol-faded {
+  background: rgb(251 191 36 / 0.04);
+  border-color: rgb(217 119 6 / 0.12);
+  box-shadow: inset 3px 0 0 rgb(217 119 6 / 0.18);
+}
+.cal-hol-num   { color: rgb(146 64 14); }   /* amber-900 light */
+.cal-hol-icon  { color: rgb(180 83 9); }    /* amber-800 light */
+.cal-hol-name  { color: rgb(161 98 7); }    /* amber-700 light */
+
+html[data-mode="dark"] .cal-hol {
+  background: rgb(251 191 36 / 0.07);
+  border-color: rgb(251 191 36 / 0.20);
+  box-shadow: inset 3px 0 0 rgb(251 191 36 / 0.35);
+}
+html[data-mode="dark"] .cal-hol:hover {
+  background: rgb(251 191 36 / 0.12);
+}
+html[data-mode="dark"] .cal-hol-faded {
+  background: rgb(251 191 36 / 0.03);
+  border-color: rgb(251 191 36 / 0.09);
+  box-shadow: inset 3px 0 0 rgb(251 191 36 / 0.12);
+}
+html[data-mode="dark"] .cal-hol-num   { color: rgb(252 211 77); }   /* amber-300 dark */
+html[data-mode="dark"] .cal-hol-icon  { color: rgb(251 191 36); }   /* amber-400 dark */
+html[data-mode="dark"] .cal-hol-name  { color: rgb(253 230 138 / 0.80); } /* amber-200/80 dark */

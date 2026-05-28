@@ -173,9 +173,7 @@ function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; 
           const baseCls = isToday
             ? 'theme-gradient-soft border-theme-soft'
             : hol
-              ? (inMonth
-                  ? 'bg-amber-50 border-amber-200 hover:bg-amber-100/70'
-                  : 'bg-amber-50/40 border-amber-100')
+              ? (inMonth ? 'cal-hol' : 'cal-hol-faded')
               : inMonth ? 'bg-white/60 border-white/70 hover:bg-white' : 'bg-white/20 border-transparent';
 
           return (
@@ -186,12 +184,12 @@ function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; 
               className={`group relative rounded-xl min-h-[88px] p-1.5 cursor-pointer transition border ${baseCls}`}
             >
               <div className="flex items-center justify-between gap-1">
-                <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : hol && inMonth ? 'text-amber-800' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
-                {hol && inMonth && <Palmtree className="size-3 text-amber-600 flex-shrink-0" />}
+                <div className={`text-[11px] font-bold ${isToday ? 'text-theme-deep' : hol && inMonth ? 'cal-hol-num' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{d.getDate()}</div>
+                {hol && inMonth && <Palmtree className={`size-3 flex-shrink-0 cal-hol-icon`} />}
               </div>
               {/* Ferien-Name am ersten Tag */}
               {hol?.isStart && inMonth && (
-                <div className="mt-0.5 text-[9px] font-bold text-amber-700 uppercase tracking-wide truncate">
+                <div className="mt-0.5 text-[9px] font-semibold cal-hol-name uppercase tracking-wide truncate">
                   {hol.holiday.name}
                 </div>
               )}
@@ -214,7 +212,7 @@ function CalendarView({ tasks, holidays, onSelect, onNew }: { tasks: AppTask[]; 
       </div>
       {holidays.length > 0 && (
         <div className="mt-3 text-[11px] text-ink-500 flex items-center gap-1.5">
-          <Palmtree className="size-3.5 text-amber-600" />
+          <Palmtree className="size-3.5 cal-hol-icon" />
           <span>Schulferien werden hervorgehoben.</span>
         </div>
       )}
