@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar, Timer } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar, Timer, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 
 const NAV = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben' },
-  { to: '/kalender', icon: CalendarRange, label: 'Kalender' },
-  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan' },
-  { to: '/noten', icon: GraduationCap, label: 'Noten' },
-  { to: '/fokus', icon: Timer, label: 'Fokus' },
-  { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', short: 'Start' },
+  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben', short: 'Aufgaben' },
+  { to: '/kalender', icon: CalendarRange, label: 'Kalender', short: 'Kalender' },
+  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan', short: 'Plan' },
+  { to: '/noten', icon: GraduationCap, label: 'Noten', short: 'Noten' },
+  { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus' },
+  { to: '/freunde', icon: Users, label: 'Freunde', short: 'Freunde' },
+  { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr' },
 ];
 
 function Logo({ small = false }: { small?: boolean }) {
@@ -164,7 +165,7 @@ export function MobileTabBar() {
   const loc = useLocation();
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
-      <div className="glass-strong rounded-3xl flex items-center justify-between p-1.5 shadow-soft">
+      <div className="glass-strong rounded-3xl flex items-center justify-between p-1 shadow-soft">
         {NAV.map(item => {
           const active = item.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(item.to);
           const Icon = item.icon;
@@ -172,14 +173,14 @@ export function MobileTabBar() {
             <NavLink
               key={item.to}
               to={item.to}
-              className={`relative flex-1 flex flex-col items-center gap-0.5 py-2 rounded-2xl text-[11px] font-semibold transition ${active ? 'text-white' : 'text-ink-600'}`}
+              className={`relative flex-1 min-w-0 flex flex-col items-center gap-0.5 py-2 px-0.5 rounded-2xl text-[10px] font-semibold transition ${active ? 'text-white' : 'text-ink-600'}`}
             >
               {active && (
                 <motion.span layoutId="tabbar-active" className="absolute inset-0 rounded-2xl theme-gradient" />
               )}
-              <span className="relative flex flex-col items-center gap-0.5">
-                <Icon className="size-5" />
-                {item.label}
+              <span className="relative flex flex-col items-center gap-0.5 max-w-full">
+                <Icon className="size-5 flex-shrink-0" />
+                <span className="max-w-full truncate leading-none">{item.short ?? item.label}</span>
               </span>
             </NavLink>
           );

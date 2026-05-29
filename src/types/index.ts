@@ -276,12 +276,20 @@ export interface AppSettings {
   system: GradingSystem;
   onboarded: boolean;
   demo: boolean;
-  /** Aktive Abonnements für geteilte Hausaufgaben. */
+  /** Aktive Abonnements für geteilte Hausaufgaben (Legacy – wird über den Freundes-Graph migriert). */
   homeworkSubscriptions: HomeworkSubscription[];
   /** Hausaufgaben standardmäßig teilen? */
   homeworkShareByDefault: boolean;
   /** Aufgaben die via Apple Shortcut erstellt werden automatisch teilen? */
   homeworkShareViaShortcut: boolean;
+  /** Eigenen Stundenplan automatisch mit Freunden teilen? */
+  shareScheduleWithFriends: boolean;
+  /**
+   * Pro Freund (Supabase user_id): aus welchen Fächern dessen Hausaufgaben empfangen werden.
+   * - fehlend/`null` = alle Fächer
+   * - `string[]` = nur diese Fachnamen (kann leer sein = keine)
+   */
+  friendSubjectFilters: Record<string, string[] | null>;
   theme: ThemeMode;
   colorTheme: ColorThemeId;
   density: DensityMode;
@@ -425,6 +433,8 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   homeworkSubscriptions: [],
   homeworkShareByDefault: false,
   homeworkShareViaShortcut: false,
+  shareScheduleWithFriends: false,
+  friendSubjectFilters: {},
   theme: 'auto',
   colorTheme: 'indigo',
   density: 'comfortable',

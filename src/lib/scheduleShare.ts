@@ -232,6 +232,56 @@ export async function deleteOwnShares(): Promise<void> {
   await supabase.from('schedule_shares').delete().eq('owner_user_id', user.id);
 }
 
+// ─── Friend-basiertes Teilen (ohne Code) ────────────────────────────────────
+//
+// Statt eines kurzlebigen Codes wird der Stundenplan unter der eigenen user_id
+// in `shared_schedules` abgelegt (eine Zeile pro Nutzer, upsert). Freunde holen
+// ihn direkt über die user_id. Siehe FRIENDS_SETUP.md.
+
+/** Baut den Payload des aktiven Schuljahrs (öffentlich, da von Friends-Page genutzt). */
+export async function buildSchedulePayload(opts: {
+  schoolYearId: string;
+  ownerName?: string;
+  schoolYearName?: string;
+}): Promise<SharePayload> {
+  return buildPayload(opts.schoolYearId, opts.ownerName, opts.schoolYearName);
+}
+
+/** Veröffentlicht (upsert) den eigenen Stundenplan für Freunde. */
+export async function publishMySchedule(payload: SharePayload): Promise<void> {
+  if (!supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('shared_schedules').upsert({
+    user_id: user.id,
+    payload,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
+}
+
+/** Zieht den eigenen geteilten Stundenplan zurück. */
+export async function unpublishMySchedule(): Promise<void> {
+  if (!supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('shared_schedules').delete().eq('user_id', user.id);
+}
+
+/** Holt den geteilten Stundenplan eines Freundes (oder null, wenn er keinen teilt). */
+export async function fetchFriendSchedule(userId: string): Promise<SharePayload | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('shared_schedules')
+    .select('payload')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    console.warn('fetchFriendSchedule error:', error.message);
+    return null;
+  }
+  return data ? (data.payload as SharePayload) : null;
+}
+
 /** Liefert den aktiven Share-Code des Users zurück, oder null. */
 export async function getOwnActiveShare(): Promise<ShareInfo | null> {
   if (!supabase) return null;

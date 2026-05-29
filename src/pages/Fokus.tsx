@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Play, Pause, RotateCcw, Check, Timer as TimerIcon, Hourglass, Infinity as InfinityIcon,
-  Brain, Coffee, Trophy, Users, Flame, Clock, Trash2, BarChart3, Target, ChevronRight, RefreshCw, Medal,
+  Brain, Coffee, Flame, Clock, Trash2, BarChart3, Target, ChevronRight,
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,10 +13,9 @@ import { useStore } from '@/store/useStore';
 import { getKindLabel } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
-import { startOfISOWeek, publishWeeklyStudy, fetchWeeklyLeaderboard } from '@/lib/studyShare';
-import type { WeeklyStudyEntry } from '@/lib/studyShare';
-import { getOrCreateMyProfile } from '@/lib/homeworkShare';
+import { startOfISOWeek } from '@/lib/studyShare';
 import { chartTooltipProps } from '@/lib/chartTheme';
+import { StudyLeaderboard } from '@/components/StudyLeaderboard';
 
 // ─── Helfer ────────────────────────────────────────────────────────────────
 
@@ -618,7 +617,7 @@ export function FokusPage() {
 
         {/* ─── Wöchentliche Rangliste ─── */}
         <div className="col-span-12 md:col-span-6">
-          <LeaderboardCard weekTotalMs={stats.week} weekStart={weekStart} />
+          <StudyLeaderboard weekTotalMs={stats.week} weekStart={weekStart} />
         </div>
 
         {/* ─── Letzte Sessions ─── */}
@@ -711,96 +710,5 @@ function SessionRow({ session }: { session: FocusSession }) {
         <Trash2 className="size-4" />
       </button>
     </li>
-  );
-}
-
-// ─── Rangliste ───────────────────────────────────────────────────────────────
-
-function LeaderboardCard({ weekTotalMs, weekStart }: { weekTotalMs: number; weekStart: number }) {
-  const authUser = useStore(s => s.authUser);
-  const settings = useStore(s => s.settings);
-  const subs = settings?.homeworkSubscriptions ?? [];
-  const [entries, setEntries] = useState<WeeklyStudyEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const refresh = useCallback(async () => {
-    if (!authUser) return;
-    setLoading(true);
-    try {
-      // Eigenen Wochenwert veröffentlichen (Profil sicherstellen für Anzeigenamen)
-      let displayName = settings?.name?.trim() || 'Ich';
-      try {
-        const profile = await getOrCreateMyProfile(settings?.name);
-        displayName = profile.displayName;
-      } catch { /* Profil optional */ }
-      await publishWeeklyStudy(weekStart, weekTotalMs, displayName);
-
-      const ids = Array.from(new Set([authUser.id, ...subs.map(s => s.userId)]));
-      const rows = await fetchWeeklyLeaderboard(ids, weekStart);
-      // Sicherstellen, dass ich selbst auftauche, auch wenn der Upsert noch nicht sichtbar ist.
-      if (!rows.some(r => r.userId === authUser.id)) {
-        rows.push({ userId: authUser.id, displayName, weekStart, totalMs: weekTotalMs });
-      } else {
-        const mine = rows.find(r => r.userId === authUser.id);
-        if (mine) mine.totalMs = Math.max(mine.totalMs, weekTotalMs);
-      }
-      rows.sort((a, b) => b.totalMs - a.totalMs);
-      setEntries(rows);
-    } catch (e) {
-      console.warn('Leaderboard refresh failed:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [authUser, settings?.name, subs, weekStart, weekTotalMs]);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  const medalColor = ['#f59e0b', '#94a3b8', '#b45309'];
-
-  return (
-    <Card delay={0.25}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="h3 flex items-center gap-2"><Trophy className="size-5" style={{ color: '#f59e0b' }} />Rangliste der Woche</h3>
-        {authUser && (
-          <button onClick={() => void refresh()} disabled={loading} className="text-ink-400 hover:text-ink-700 transition disabled:opacity-50" title="Aktualisieren">
-            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-        )}
-      </div>
-
-      {!authUser ? (
-        <div className="text-center py-5">
-          <Users className="size-8 mx-auto text-ink-300 mb-2" />
-          <p className="text-sm text-ink-500">Melde dich an und füge Freunde über ihren Code hinzu, um euch zu vergleichen.</p>
-          <Link to="/einstellungen" className="btn-soft mt-3 inline-flex text-sm">Zu den Einstellungen</Link>
-        </div>
-      ) : subs.length === 0 ? (
-        <div className="text-center py-5">
-          <Users className="size-8 mx-auto text-ink-300 mb-2" />
-          <p className="text-sm text-ink-500">Du hast noch keine Freunde hinzugefügt. Mit Freundescodes seht ihr, wer am meisten lernt.</p>
-          <Link to="/einstellungen" className="btn-soft mt-3 inline-flex text-sm">Freunde hinzufügen</Link>
-        </div>
-      ) : entries && entries.length > 0 ? (
-        <ul className="space-y-1.5">
-          {entries.map((e, i) => {
-            const isMe = e.userId === authUser.id;
-            return (
-              <li key={e.userId}
-                className={`flex items-center gap-3 rounded-2xl p-2.5 transition ${isMe ? 'theme-gradient-soft border border-[rgb(var(--theme-primary-rgb)/0.3)]' : 'bg-[rgb(var(--surface-rgb))]'}`}>
-                <div className="w-7 flex-shrink-0 grid place-items-center">
-                  {i < 3 ? <Medal className="size-5" style={{ color: medalColor[i] }} /> : <span className="text-sm font-bold text-ink-400">{i + 1}</span>}
-                </div>
-                <div className="flex-1 min-w-0 font-semibold text-ink-800 truncate text-sm">
-                  {e.displayName}{isMe && <span className="text-ink-500 font-normal"> (du)</span>}
-                </div>
-                <span className="text-sm font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--theme-primary)' }}>{formatDuration(e.totalMs)}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-ink-500 py-5 text-center">{loading ? 'Lädt …' : 'Noch keine Lernzeiten diese Woche – sei die/der Erste!'}</p>
-      )}
-    </Card>
   );
 }

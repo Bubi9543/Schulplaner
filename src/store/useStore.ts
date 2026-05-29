@@ -9,7 +9,16 @@ import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig,
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
-import { fetchTasksFromUser, publishTask as publishSharedTask, unpublishTask as unpublishSharedTask } from '@/lib/homeworkShare';
+import { fetchTasksFromUser, publishTask as publishSharedTask, unpublishTask as unpublishSharedTask, getOrCreateMyProfile } from '@/lib/homeworkShare';
+import type { UserProfile } from '@/lib/homeworkShare';
+import {
+  loadFriendGraph,
+  sendFriendRequestByCode,
+  acceptRequest as acceptFriendshipRow,
+  deleteFriendship,
+} from '@/lib/friends';
+import type { Friend, FriendRequest } from '@/lib/friends';
+import { publishMySchedule, unpublishMySchedule, buildSchedulePayload, fetchFriendSchedule } from '@/lib/scheduleShare';
 
 function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   const base: AppSettings = { ...DEFAULT_SETTINGS, id: 'app' };
@@ -37,6 +46,12 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   }
   if (typeof merged.homeworkShareViaShortcut !== 'boolean') {
     merged.homeworkShareViaShortcut = false;
+  }
+  if (typeof merged.shareScheduleWithFriends !== 'boolean') {
+    merged.shareScheduleWithFriends = false;
+  }
+  if (!merged.friendSubjectFilters || typeof merged.friendSubjectFilters !== 'object' || Array.isArray(merged.friendSubjectFilters)) {
+    merged.friendSubjectFilters = {};
   }
 
   // Notifications: alte Settings ohne das Feld bekommen Default; bestehende
@@ -147,6 +162,16 @@ interface State {
   /** Session-level ausgeblendete Fremdaufgaben (kein Persist). */
   dismissedFriendTaskIds: Set<string>;
 
+  /** Eigenes Cloud-Profil (Anzeigename, Freundecode, Avatar). */
+  myProfile: UserProfile | null;
+  /** Bestätigte, gegenseitige Freunde. */
+  friends: Friend[];
+  /** Eingehende Freundschaftsanfragen (annehmen/ablehnen). */
+  incomingRequests: FriendRequest[];
+  /** Ausgehende Freundschaftsanfragen (pending). */
+  outgoingRequests: FriendRequest[];
+  friendsLoading: boolean;
+
   load: () => Promise<void>;
   setSettings: (patch: Partial<AppSettings>) => Promise<void>;
   setGradingConfig: (patch: Partial<GradingSystemConfig>) => Promise<void>;
@@ -212,14 +237,33 @@ interface State {
   /** Löscht eine Fokus-Session. */
   deleteFocusSession: (id: string) => Promise<void>;
 
-  /** Holt alle geteilten Hausaufgaben von abonnierten Mitschülern neu aus der Cloud. */
+  /** Holt alle geteilten Hausaufgaben der Freunde neu aus der Cloud. */
   refreshFriendTasks: () => Promise<void>;
-  /** Fügt ein Hausaufgaben-Abo hinzu und holt gleich die Tasks. */
+  /** Fügt ein Hausaufgaben-Abo hinzu und holt gleich die Tasks. (Legacy) */
   addHomeworkSubscription: (sub: HomeworkSubscription) => Promise<void>;
-  /** Entfernt ein Abo und löscht die gecachten Tasks des Mitschülers. */
+  /** Entfernt ein Abo und löscht die gecachten Tasks des Mitschülers. (Legacy) */
   removeHomeworkSubscription: (userId: string) => Promise<void>;
-  /** Aktualisiert den Fächerfilter eines Abos. */
-  updateHomeworkSubjectFilter: (userId: string, subjectFilter: string[] | null) => Promise<void>;
+  /** Aktualisiert den Fächerfilter für die Hausaufgaben eines Freundes. */
+  setFriendSubjectFilter: (userId: string, subjectFilter: string[] | null) => Promise<void>;
+
+  /** Lädt eigenes Profil + Freunde + Anfragen aus der Cloud. */
+  loadFriends: () => Promise<void>;
+  /** Sendet eine Freundschaftsanfrage anhand eines Freundecodes. */
+  sendFriendRequest: (code: string) => Promise<void>;
+  /** Nimmt eine eingehende Anfrage an. */
+  acceptFriendRequest: (friendshipId: string) => Promise<void>;
+  /** Lehnt eine eingehende ab bzw. zieht eine ausgehende Anfrage zurück. */
+  declineFriendRequest: (friendshipId: string) => Promise<void>;
+  /** Entfernt eine bestehende Freundschaft. */
+  removeFriend: (friendshipId: string, userId: string) => Promise<void>;
+  /** Aktualisiert das eigene Profil (Anzeigename / Avatar) im State neu. */
+  setMyProfile: (profile: UserProfile) => void;
+  /** Aktiviert/deaktiviert friend-basiertes Stundenplan-Teilen. */
+  setShareScheduleWithFriends: (on: boolean) => Promise<void>;
+  /** Republiziert den eigenen Stundenplan, falls Teilen aktiv ist. */
+  republishScheduleIfShared: () => Promise<void>;
+  /** Holt den geteilten Stundenplan eines Freundes (oder null). */
+  getFriendSchedule: (userId: string) => Promise<SharePayload | null>;
   /** Veröffentlicht eine Aufgabe in shared_tasks (wenn shared=true). */
   publishTask: (task: AppTask) => Promise<void>;
   /** Zieht eine Aufgabe aus shared_tasks zurück. */
@@ -305,6 +349,11 @@ export const useStore = create<State>((set, get) => ({
   friendTasks: [],
   friendTasksLoading: false,
   dismissedFriendTaskIds: new Set<string>(),
+  myProfile: null,
+  friends: [],
+  incomingRequests: [],
+  outgoingRequests: [],
+  friendsLoading: false,
 
   async load() {
     const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions] = await Promise.all([
@@ -455,7 +504,10 @@ export const useStore = create<State>((set, get) => ({
     if (!supabase) return;
     get().stopAutoSync();
     await supabase.auth.signOut();
-    set({ authUser: null, lastSyncedAt: null });
+    set({
+      authUser: null, lastSyncedAt: null,
+      myProfile: null, friends: [], incomingRequests: [], outgoingRequests: [],
+    });
   },
 
   async startAutoSync() {
@@ -486,8 +538,10 @@ export const useStore = create<State>((set, get) => ({
         }
       }
 
-      // Friend-Tasks im Hintergrund nachladen
-      void get().refreshFriendTasks();
+      // Freunde + Anfragen laden (lädt anschließend die geteilten Hausaufgaben nach)
+      void get().loadFriends();
+      // Eigenen Stundenplan (re-)publizieren, falls Teilen aktiv
+      void get().republishScheduleIfShared();
     } catch (e) {
       console.warn('Auto-Sync Initial-Push/Pull fehlgeschlagen:', e);
       set({ syncStatus: 'error' });
@@ -735,6 +789,7 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({ lessons: [...state.lessons, lesson] }));
     const { authUser } = get();
     if (authUser) syncRow('lessons', lesson.id, lesson, authUser.id);
+    void get().republishScheduleIfShared();
     return lesson;
   },
   async updateLesson(id, patch) {
@@ -743,12 +798,14 @@ export const useStore = create<State>((set, get) => ({
     const updated = await db.lessons.get(id);
     const { authUser } = get();
     if (authUser && updated) syncRow('lessons', id, updated, authUser.id);
+    void get().republishScheduleIfShared();
   },
   async deleteLesson(id) {
     await db.lessons.delete(id);
     set(state => ({ lessons: state.lessons.filter(l => l.id !== id) }));
     const { authUser } = get();
     if (authUser) deleteRow('lessons', id);
+    void get().republishScheduleIfShared();
   },
 
   async importSharedSchedule(payload, mode) {
@@ -991,18 +1048,30 @@ export const useStore = create<State>((set, get) => ({
   // ─── Homework Sharing ────────────────────────────────────────────────────
 
   async refreshFriendTasks() {
-    const { settings } = get();
-    const subs = settings?.homeworkSubscriptions ?? [];
-    if (subs.length === 0) return;
+    const { friends, settings } = get();
+    if (friends.length === 0) {
+      // Keine Freunde → eventuell veraltete Caches leeren.
+      if (get().friendTasks.length) {
+        await db.friendTasks.clear();
+        set({ friendTasks: [] });
+      }
+      return;
+    }
+    const filters = settings?.friendSubjectFilters ?? {};
     set({ friendTasksLoading: true });
     try {
-      // Für jedes Abo Tasks holen
       const results = await Promise.all(
-        subs.map(sub => fetchTasksFromUser(sub.userId, sub.displayName)),
+        friends.map(f => fetchTasksFromUser(f.userId, f.displayName)),
       );
-      const all: FriendTask[] = results.flat();
+      // Pro Freund den Fächerfilter anwenden:
+      //   undefined/null = alle; []/['Mathe'] = nur Aufgaben mit passendem Fach.
+      const all: FriendTask[] = results.flat().filter(t => {
+        const filter = filters[t.ownerUserId];
+        if (filter == null) return true;            // alle Fächer
+        if (!t.subjectName) return false;            // kein Fach → bei aktivem Filter raus
+        return filter.includes(t.subjectName);
+      });
 
-      // Lokal in Dexie cachen (alles ersetzen)
       await db.friendTasks.clear();
       if (all.length) await db.friendTasks.bulkAdd(all);
       set({ friendTasks: all, friendTasksLoading: false });
@@ -1012,32 +1081,117 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  // Legacy-Abo-Aktionen (für Altcode/Migration; primärer Pfad ist jetzt der Freundes-Graph).
   async addHomeworkSubscription(sub) {
     const current = get().settings ?? mergeSettings(undefined);
     const existing = current.homeworkSubscriptions ?? [];
-    // Verhindere Duplikate
     if (existing.some(s => s.userId === sub.userId)) return;
-    const updated = [...existing, sub];
-    await get().setSettings({ homeworkSubscriptions: updated });
-    // Sofort Tasks nachladen
-    await get().refreshFriendTasks();
+    await get().setSettings({ homeworkSubscriptions: [...existing, sub] });
   },
 
   async removeHomeworkSubscription(userId) {
     const current = get().settings ?? mergeSettings(undefined);
     const updated = (current.homeworkSubscriptions ?? []).filter(s => s.userId !== userId);
     await get().setSettings({ homeworkSubscriptions: updated });
-    // Gecachte Tasks dieses Nutzers löschen
     await db.friendTasks.where('ownerUserId').equals(userId).delete();
     set(state => ({ friendTasks: state.friendTasks.filter(t => t.ownerUserId !== userId) }));
   },
 
-  async updateHomeworkSubjectFilter(userId, subjectFilter) {
+  async setFriendSubjectFilter(userId, subjectFilter) {
     const current = get().settings ?? mergeSettings(undefined);
-    const updated = (current.homeworkSubscriptions ?? []).map(s =>
-      s.userId === userId ? { ...s, subjectFilter } : s,
-    );
-    await get().setSettings({ homeworkSubscriptions: updated });
+    const updated = { ...(current.friendSubjectFilters ?? {}) };
+    if (subjectFilter == null) delete updated[userId];
+    else updated[userId] = subjectFilter;
+    await get().setSettings({ friendSubjectFilters: updated });
+    await get().refreshFriendTasks();
+  },
+
+  // ─── Freundes-Graph ──────────────────────────────────────────────────────
+
+  async loadFriends() {
+    const { authUser } = get();
+    if (!authUser || !supabase) {
+      set({ myProfile: null, friends: [], incomingRequests: [], outgoingRequests: [] });
+      return;
+    }
+    set({ friendsLoading: true });
+    try {
+      const [profile, graph] = await Promise.all([
+        getOrCreateMyProfile(get().settings?.name).catch(() => null),
+        loadFriendGraph(),
+      ]);
+      set({
+        myProfile: profile,
+        friends: graph.friends,
+        incomingRequests: graph.incoming,
+        outgoingRequests: graph.outgoing,
+        friendsLoading: false,
+      });
+      // Geteilte Hausaufgaben der (jetzt geladenen) Freunde nachziehen.
+      void get().refreshFriendTasks();
+    } catch (e) {
+      console.warn('loadFriends failed:', e);
+      set({ friendsLoading: false });
+    }
+  },
+
+  async sendFriendRequest(code) {
+    await sendFriendRequestByCode(code);
+    await get().loadFriends();
+  },
+
+  async acceptFriendRequest(friendshipId) {
+    await acceptFriendshipRow(friendshipId);
+    await get().loadFriends();
+  },
+
+  async declineFriendRequest(friendshipId) {
+    await deleteFriendship(friendshipId);
+    await get().loadFriends();
+  },
+
+  async removeFriend(friendshipId, userId) {
+    await deleteFriendship(friendshipId);
+    // Gecachte Hausaufgaben + Fächerfilter dieses Freundes aufräumen.
+    await db.friendTasks.where('ownerUserId').equals(userId).delete();
+    const current = get().settings ?? mergeSettings(undefined);
+    if (current.friendSubjectFilters?.[userId] !== undefined) {
+      const updated = { ...current.friendSubjectFilters };
+      delete updated[userId];
+      await get().setSettings({ friendSubjectFilters: updated });
+    }
+    set(state => ({ friendTasks: state.friendTasks.filter(t => t.ownerUserId !== userId) }));
+    await get().loadFriends();
+  },
+
+  setMyProfile(profile) {
+    set({ myProfile: profile });
+  },
+
+  async setShareScheduleWithFriends(on) {
+    await get().setSettings({ shareScheduleWithFriends: on });
+    if (on) await get().republishScheduleIfShared();
+    else await unpublishMySchedule().catch(() => {});
+  },
+
+  async republishScheduleIfShared() {
+    const { settings, authUser, activeSchoolYearId } = get();
+    if (!authUser || !settings?.shareScheduleWithFriends || !activeSchoolYearId) return;
+    try {
+      const year = get().schoolYears.find(y => y.id === activeSchoolYearId);
+      const payload = await buildSchedulePayload({
+        schoolYearId: activeSchoolYearId,
+        ownerName: settings.name,
+        schoolYearName: year?.name,
+      });
+      await publishMySchedule(payload);
+    } catch (e) {
+      console.warn('republishScheduleIfShared failed:', e);
+    }
+  },
+
+  async getFriendSchedule(userId) {
+    return fetchFriendSchedule(userId);
   },
 
   async publishTask(task) {

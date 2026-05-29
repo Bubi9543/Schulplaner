@@ -19,6 +19,8 @@ export interface WeeklyStudyEntry {
   weekStart: number;
   /** Fokussierte Lernzeit dieser Woche in Millisekunden. */
   totalMs: number;
+  /** Profilbild-URL (aus user_profiles), falls vorhanden. */
+  avatarUrl?: string;
 }
 
 interface WeeklyRow {
@@ -82,21 +84,33 @@ export async function fetchWeeklyLeaderboard(userIds: string[], weekStart: numbe
   if (!supabase || userIds.length === 0) return [];
   const weekKey = toDateKey(weekStart);
 
-  const { data, error } = await supabase
-    .from('study_weekly')
-    .select('user_id, display_name, week_start, total_ms')
-    .eq('week_start', weekKey)
-    .in('user_id', userIds);
+  const [weeklyRes, profilesRes] = await Promise.all([
+    supabase
+      .from('study_weekly')
+      .select('user_id, display_name, week_start, total_ms')
+      .eq('week_start', weekKey)
+      .in('user_id', userIds),
+    supabase
+      .from('user_profiles')
+      .select('user_id, avatar_url')
+      .in('user_id', userIds),
+  ]);
 
-  if (error) {
-    console.warn('fetchWeeklyLeaderboard error:', error.message);
+  if (weeklyRes.error) {
+    console.warn('fetchWeeklyLeaderboard error:', weeklyRes.error.message);
     return [];
   }
 
-  return (data as WeeklyRow[]).map(row => ({
+  const avatars = new Map<string, string | undefined>();
+  for (const p of (profilesRes.data as { user_id: string; avatar_url: string | null }[] | null) ?? []) {
+    avatars.set(p.user_id, p.avatar_url ?? undefined);
+  }
+
+  return (weeklyRes.data as WeeklyRow[]).map(row => ({
     userId: row.user_id,
     displayName: row.display_name,
     weekStart: fromDateKey(row.week_start),
     totalMs: row.total_ms,
+    avatarUrl: avatars.get(row.user_id),
   }));
 }

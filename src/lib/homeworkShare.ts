@@ -39,16 +39,23 @@ export interface UserProfile {
   userId: string;
   displayName: string;
   friendCode: string;
+  avatarUrl?: string;
 }
 
 interface ProfileRow {
   user_id: string;
   display_name: string;
   friend_code: string;
+  avatar_url?: string | null;
 }
 
 function toProfile(row: ProfileRow): UserProfile {
-  return { userId: row.user_id, displayName: row.display_name, friendCode: row.friend_code };
+  return {
+    userId: row.user_id,
+    displayName: row.display_name,
+    friendCode: row.friend_code,
+    avatarUrl: row.avatar_url ?? undefined,
+  };
 }
 
 /**
@@ -63,7 +70,7 @@ export async function getOrCreateMyProfile(displayName?: string): Promise<UserPr
   // Vorhandenes Profil holen
   const { data: existing } = await supabase
     .from('user_profiles')
-    .select('user_id, display_name, friend_code')
+    .select('user_id, display_name, friend_code, avatar_url')
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -110,7 +117,7 @@ export async function lookupByFriendCode(rawCode: string): Promise<UserProfile |
   }
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('user_id, display_name, friend_code')
+    .select('user_id, display_name, friend_code, avatar_url')
     .eq('friend_code', code)
     .maybeSingle();
   if (error) throw new Error('Fehler beim Suchen: ' + error.message);
