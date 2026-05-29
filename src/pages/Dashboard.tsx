@@ -28,6 +28,7 @@ import {
   subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel,
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
+import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Grade, TaskKind, AppTask } from '@/types';
 
@@ -159,7 +160,7 @@ function GradeOverviewWidget() {
   }, [grades, subjects, config]);
 
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Sparkles;
-  const trendArrow = trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
+  const DeltaIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : ArrowRight;
 
   return (
     <div className="h-full w-full flex flex-col theme-gradient text-white widget-pad relative overflow-hidden">
@@ -185,7 +186,7 @@ function GradeOverviewWidget() {
             </div>
             {delta != null && (
               <div className="flex items-center gap-1 mt-1.5 text-white/75 text-[clamp(0.625rem,3.5cqi,0.875rem)] font-semibold">
-                <span>{trendArrow}</span>
+                <DeltaIcon className="size-3.5" />
                 <span>{formatAverage(Math.abs(delta), system, 2)}</span>
                 <span className="text-white/50 font-normal">seit Halbjahr</span>
               </div>
@@ -247,7 +248,7 @@ function GradeTrendWidget() {
               <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
               <YAxis reversed={systemMeta.goodIsLow} domain={[systemMeta.min, systemMeta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
+                {...chartTooltipProps}
                 formatter={(v: unknown) => (typeof v === 'number' ? v.toFixed(2).replace('.', ',') : String(v))}
               />
               <Area type="monotone" dataKey="avg" stroke="var(--theme-primary)" strokeWidth={2.5} fill="url(#dashGrad)" />
@@ -296,7 +297,7 @@ function TasksTodayWidget({ onSelectTask }: { onSelectTask: (t: AppTask) => void
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         {todayTasks.length === 0 ? (
-          <div className="h-full grid place-items-center text-sm text-ink-500">Nichts dringend. 🌿</div>
+          <div className="h-full grid place-items-center text-sm text-ink-500"><span className="inline-flex items-center gap-1.5"><Palmtree className="size-4 text-ink-400" />Nichts dringend.</span></div>
         ) : (
           <ul className="divide-y divide-white/50 -mx-1">
             {todayTasks.map(t => {
@@ -466,7 +467,7 @@ function GradeDistributionWidget() {
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
+                {...chartTooltipProps}
                 formatter={(v: unknown, name: unknown) => [`${v}×`, `Note ${name}`]}
               />
               <Legend />
@@ -557,8 +558,11 @@ function UpcomingExamsWidget({
       <div className="flex-1 overflow-auto min-h-0">
         {items.length === 0 ? (
           <div className="h-full grid place-items-center text-sm text-ink-500 text-center px-4">
-            Nichts in Sicht. 🌿<br />
-            <span className="text-xs text-ink-400 mt-1">Trag geplante Klausuren als „ausstehende Note" ein.</span>
+            <div>
+              <Palmtree className="size-5 mx-auto mb-1.5 text-ink-400" />
+              Nichts in Sicht.
+              <span className="block text-xs text-ink-400 mt-1">Trag geplante Klausuren als „ausstehende Note" ein.</span>
+            </div>
           </div>
         ) : (
           <ul className="space-y-2">
@@ -726,7 +730,7 @@ function WeeklyProgressWidget() {
       <div className="flex-1 min-h-0 grid place-items-center">
         {stats.dueThisWeek === 0 ? (
           <div className="text-sm text-ink-500 text-center">
-            Diese Woche keine Aufgaben fällig 🌿
+            <span className="inline-flex items-center gap-1.5"><Palmtree className="size-4 text-ink-400" />Diese Woche keine Aufgaben fällig</span>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
@@ -830,7 +834,7 @@ function GroupAveragesWidget() {
                 stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={12} width={110}
               />
               <Tooltip
-                contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
+                {...chartTooltipProps}
                 formatter={(v: unknown) => typeof v === 'number' ? formatAverage(v, system, digits) : String(v)}
               />
               <Bar dataKey="avg" radius={[6, 6, 6, 6]}>
@@ -1149,7 +1153,7 @@ export function Dashboard() {
 
   return (
     <PageShell
-      title={`${greeting}${settings?.name ? `, ${settings.name}` : ''} 👋`}
+      title={`${greeting}${settings?.name ? `, ${settings.name}` : ''}`}
       subtitle={
         subjects.length
           ? `${subjects.length} Fächer · ${grades.filter(g => !g.isPending).length} Noten · ${tasks.filter(t => !t.done).length} offene Aufgaben`

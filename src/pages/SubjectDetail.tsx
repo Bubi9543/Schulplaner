@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar, Calculator, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar, Calculator, RotateCcw, Sparkles, Trash2, FileText, Lightbulb } from 'lucide-react';
+import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { PageShell } from '@/components/PageShell';
@@ -15,6 +16,7 @@ import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
 import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, gradeColor, getKindLabel, subjectAverage, isLargeAssessmentKind, BUILTIN_KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
+import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Grade, AppTask, GradeKind, Subject } from '@/types';
 import { BUILTIN_GRADE_KINDS } from '@/types';
@@ -131,7 +133,7 @@ export function SubjectDetailPage() {
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis reversed={meta?.goodIsLow} domain={meta ? [meta.min, meta.max] : [1, 6]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
+                  <Tooltip {...chartTooltipProps} />
                   {subject.targetAverage && <ReferenceLine y={subject.targetAverage} stroke="var(--theme-secondary)" strokeDasharray="4 4" label={{ value: 'Ziel', fill: 'var(--theme-secondary)', fontSize: 10 }} />}
                   <Line type="monotone" dataKey="value" stroke={subject.color} strokeWidth={1.5} dot={{ r: 3 }} strokeOpacity={0.6} />
                   <Line type="monotone" dataKey="avg" stroke={subject.color} strokeWidth={3} dot={false} />
@@ -190,7 +192,7 @@ export function SubjectDetailPage() {
                     onClick={() => setTaskDetail({ open: true, task: t })}
                     className="w-full flex items-center gap-3 rounded-2xl p-2 bg-white/60 hover:bg-white text-left transition"
                   >
-                    <div className="size-9 rounded-xl grid place-items-center bg-ink-100 font-bold text-xs">📝</div>
+                    <div className="size-9 rounded-xl grid place-items-center bg-ink-100 text-ink-500"><TaskKindIcon kind={t.kind} className="size-4" /></div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-ink-800 truncate">{t.title}</div>
                       <div className="text-xs text-ink-500">{t.dueDate ? relativeDate(t.dueDate) : 'Ohne Datum'}</div>
@@ -472,9 +474,10 @@ function WhatIfCalculator({
         </ul>
       )}
 
-      <div className="mt-4 text-[11px] text-ink-400 leading-relaxed">
-        💡 Das hier ändert nichts an deinen echten Noten – nur Simulation. Sobald die Note real ist,
-        einfach in der Notenliste auf die ausstehende Note klicken und den Wert eintragen.
+      <div className="mt-4 text-[11px] text-ink-400 leading-relaxed flex gap-1.5">
+        <Lightbulb className="size-3.5 shrink-0 mt-px" />
+        <span>Das hier ändert nichts an deinen echten Noten – nur Simulation. Sobald die Note real ist,
+        einfach in der Notenliste auf die ausstehende Note klicken und den Wert eintragen.</span>
       </div>
     </>
   );
@@ -524,10 +527,11 @@ function HypotheticalRowEditor({
             ))}
           </div>
           {showCategoryHint && (
-            <div className="text-[11px] text-ink-500 mt-2">
-              {isLarge
-                ? `📄 Zählt als ${subject.category === 'hauptfach' ? 'doppelte' : '1:1'} große Leistung.`
-                : '✏️ Zählt als kleine Leistung (Rest-Block).'}
+            <div className="text-[11px] text-ink-500 mt-2 flex items-center gap-1.5">
+              {isLarge ? <FileText className="size-3.5 shrink-0" /> : <Pencil className="size-3.5 shrink-0" />}
+              <span>{isLarge
+                ? `Zählt als ${subject.category === 'hauptfach' ? 'doppelte' : '1:1'} große Leistung.`
+                : 'Zählt als kleine Leistung (Rest-Block).'}</span>
             </div>
           )}
         </div>

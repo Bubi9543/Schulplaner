@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { X, Pencil, Trash2, Check, Circle, Calendar, Flag, Tag, NotebookText, AlertTriangle } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
-import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
+import { getTaskKindLabel } from '@/lib/grading';
+import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { StudyChecklist } from '@/components/StudyChecklist';
 import type { AppTask, Photo, StudyChecklistItem } from '@/types';
 
@@ -114,7 +115,7 @@ export function TaskDetailDialog({ open, task: taskProp, onClose, onEdit }: Prop
               </div>
 
               <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold opacity-90">
-                <span>{getTaskKindIcon(task.kind)}</span>
+                <TaskKindIcon kind={task.kind} className="size-3.5" />
                 <span>{getTaskKindLabel(task.kind, config)}</span>
                 {isOverdue && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/90 text-white text-[10px] font-bold">
@@ -188,7 +189,10 @@ export function TaskDetailDialog({ open, task: taskProp, onClose, onEdit }: Prop
                   </span>
                 </MetaTile>
                 <MetaTile icon={Tag} label="Art">
-                  {getTaskKindIcon(task.kind)} {getTaskKindLabel(task.kind, config)}
+                  <span className="inline-flex items-center gap-1.5">
+                    <TaskKindIcon kind={task.kind} className="size-4" />
+                    {getTaskKindLabel(task.kind, config)}
+                  </span>
                 </MetaTile>
                 {task.createdAt && (
                   <MetaTile icon={NotebookText} label="Angelegt">

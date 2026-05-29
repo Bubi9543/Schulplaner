@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles, FileText, Loader2, Check, ChevronDown } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, AlertTriangle, Sparkles, FileText, Loader2, Check, ChevronDown, ArrowRight, Sprout } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -10,6 +10,7 @@ import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
 import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
+import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject, SubjectGroup } from '@/types';
 
@@ -54,7 +55,7 @@ export function GradesPage() {
   }, [grades, subjects, config]);
 
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Sparkles;
-  const trendArrow = trend === 'up' ? '↗' : trend === 'down' ? '↘' : '→';
+  const DeltaIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : ArrowRight;
 
   const attentionSubjects = useMemo(() => subjects.filter(s => needsAttention(grades, s, config)), [subjects, grades, config]);
 
@@ -178,7 +179,7 @@ export function GradesPage() {
           </div>
           {delta != null && (
             <div className="flex items-center gap-1 mt-1 text-white/70 text-sm font-semibold">
-              <span>{trendArrow}</span>
+              <DeltaIcon className="size-4" />
               <span>{formatAverage(Math.abs(delta), system, 2)}</span>
               <span className="text-white/50 font-normal">seit Halbjahr</span>
             </div>
@@ -201,7 +202,7 @@ export function GradesPage() {
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis reversed={meta.goodIsLow} domain={[meta.min, meta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={30} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
+                  <Tooltip {...chartTooltipProps} />
                   {subjects.filter(s => !deselectedIds.has(s.id)).map(s => (
                     <Line key={s.id} type="monotone" dataKey={s.short} stroke={s.color} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} connectNulls />
                   ))}
@@ -267,7 +268,7 @@ export function GradesPage() {
                 <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                 <XAxis dataKey="name" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={24} />
-                <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }} />
+                <Tooltip {...chartTooltipProps} />
                 <Bar dataKey="count" radius={[12, 12, 4, 4]}>
                   {distribution.map((b, i) => <Cell key={i} fill={b.color} />)}
                 </Bar>
@@ -279,7 +280,7 @@ export function GradesPage() {
         <Card delay={0.15} className="col-span-12 md:col-span-5">
           <h3 className="h3 mb-2 flex items-center gap-2">{attentionSubjects.length > 0 ? <AlertTriangle className="size-5 text-rose-500" /> : <Sparkles className="size-5 text-emerald-500" />} Handlungsbedarf</h3>
           {attentionSubjects.length === 0 ? (
-            <div className="text-center py-5 text-sm text-ink-500">Alles im grünen Bereich 🌱</div>
+            <div className="py-5 text-sm text-ink-500 flex items-center justify-center gap-1.5"><Sprout className="size-4 text-emerald-500" />Alles im grünen Bereich</div>
           ) : (
             <ul className="space-y-2">
               {attentionSubjects.map(s => {

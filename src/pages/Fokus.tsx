@@ -16,6 +16,7 @@ import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
 import { startOfISOWeek, publishWeeklyStudy, fetchWeeklyLeaderboard } from '@/lib/studyShare';
 import type { WeeklyStudyEntry } from '@/lib/studyShare';
 import { getOrCreateMyProfile } from '@/lib/homeworkShare';
+import { chartTooltipProps } from '@/lib/chartTheme';
 
 // ─── Helfer ────────────────────────────────────────────────────────────────
 
@@ -545,7 +546,7 @@ export function FokusPage() {
                   <YAxis stroke="rgb(var(--ink-400))" tickLine={false} axisLine={false} fontSize={10} width={32} unit="m" />
                   <Tooltip
                     cursor={{ fill: 'rgb(var(--theme-primary-rgb) / 0.08)' }}
-                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,.15)' }}
+                    {...chartTooltipProps}
                     formatter={(v: unknown) => [`${typeof v === 'number' ? v : 0} min`, 'Lernzeit']}
                   />
                   <Bar dataKey="min" radius={[8, 8, 2, 2]} fill="var(--theme-primary)" />

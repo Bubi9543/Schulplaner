@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy, NotebookPen, ClipboardCheck, Clock, Lightbulb, type LucideIcon } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -266,7 +266,7 @@ function AppearanceSection() {
         <Row label="Konfetti bei guten Noten" hint="Bei Note 1/2 (Bayern), ab 12 P (Oberstufe).">
           <Toggle checked={settings.confettiOnGood} onChange={v => setSettings({ confettiOnGood: v })} />
         </Row>
-        <div className="text-xs text-ink-500 mt-2">💡 Wenn dein Gerät „Bewegung reduzieren" aktiviert hat, schalten wir automatisch auf Reduziert.</div>
+        <div className="text-xs text-ink-500 mt-2 flex gap-1.5"><Lightbulb className="size-3.5 shrink-0 mt-px" /><span>Wenn dein Gerät „Bewegung reduzieren" aktiviert hat, schalten wir automatisch auf Reduziert.</span></div>
       </Card>
     </div>
   );
@@ -1498,7 +1498,7 @@ function NotificationsSection() {
         <p className="subtle mb-3">Pro Event-Typ einzeln steuerbar. Funktioniert nur wenn oben aktiviert.</p>
 
         <EventBlock
-          icon="📝"
+          icon={NotebookPen}
           title="Hausaufgaben"
           subtitle="Erinnerung vor dem Fälligkeitsdatum"
           enabled={n.homework.enabled}
@@ -1511,7 +1511,7 @@ function NotificationsSection() {
         </EventBlock>
 
         <EventBlock
-          icon="🎯"
+          icon={ClipboardCheck}
           title="Klausuren & Tests"
           subtitle="Vorlauf für große Leistungen"
           enabled={n.exam.enabled}
@@ -1528,7 +1528,7 @@ function NotificationsSection() {
         </EventBlock>
 
         <EventBlock
-          icon="⏰"
+          icon={Clock}
           title="Stundenbeginn"
           subtitle="Kurz vor einer Schulstunde"
           enabled={n.lessonStart.enabled}
@@ -1545,7 +1545,7 @@ function NotificationsSection() {
         </EventBlock>
 
         <EventBlock
-          icon="📚"
+          icon={BookOpen}
           title="Lern-Deadlines"
           subtitle="Wenn du in der Lerncheckliste ein Ziel-Datum gesetzt hast"
           enabled={n.studyDeadline.enabled}
@@ -1585,23 +1585,24 @@ function NotificationsSection() {
         )}
       </Card>
 
-      <div className="text-[11px] text-ink-400 leading-relaxed px-1">
-        💡 Push muss auf jedem Gerät einzeln aktiviert werden. Die Einstellungen
-        (welche Events / Vorlauf / Stille Zeit) gelten global für deinen Account.
+      <div className="text-[11px] text-ink-400 leading-relaxed px-1 flex gap-1.5">
+        <Lightbulb className="size-3.5 shrink-0 mt-px" />
+        <span>Push muss auf jedem Gerät einzeln aktiviert werden. Die Einstellungen
+        (welche Events / Vorlauf / Stille Zeit) gelten global für deinen Account.</span>
       </div>
     </div>
   );
 }
 
-function EventBlock({ icon, title, subtitle, enabled, onToggle, children }: {
-  icon: string; title: string; subtitle: string;
+function EventBlock({ icon: Icon, title, subtitle, enabled, onToggle, children }: {
+  icon: LucideIcon; title: string; subtitle: string;
   enabled: boolean; onToggle: (v: boolean) => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl bg-white/60 border border-white/60 p-3 mb-3 last:mb-0">
       <div className="flex items-center gap-3">
-        <div className="size-9 rounded-xl bg-white grid place-items-center text-lg flex-shrink-0">{icon}</div>
+        <div className="size-9 rounded-xl bg-white grid place-items-center text-ink-600 flex-shrink-0"><Icon className="size-5" /></div>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-sm text-ink-800">{title}</div>
           <div className="text-xs text-ink-500">{subtitle}</div>
@@ -1686,9 +1687,9 @@ function DataSection() {
       // Wenn eingeloggt: Cloud-Stand komplett mit Import-Stand überschreiben,
       // damit das auf allen Geräten ankommt.
       if (authUser) {
-        setImportStatus({ kind: 'ok', msg: msg + '\n\n⏳ Synchronisiere in die Cloud …' });
+        setImportStatus({ kind: 'ok', msg: msg + '\n\nSynchronisiere in die Cloud …' });
         await replaceCloud();
-        msg += '\n\n☁️ In die Cloud gepusht – andere Geräte ziehen automatisch nach.';
+        msg += '\n\nIn die Cloud gepusht – andere Geräte ziehen automatisch nach.';
       }
       setImportStatus({ kind: 'ok', msg });
     } catch (err) {
@@ -2455,7 +2456,7 @@ function FriendsSection() {
                       })}
                     </div>
                     {sub.subjectFilter !== null && sub.subjectFilter.length === 0 && (
-                      <p className="text-[11px] text-amber-600 mt-1">⚠ Kein Fach – du empfängst keine Aufgaben von {sub.displayName}.</p>
+                      <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1"><AlertTriangle className="size-3 shrink-0" />Kein Fach – du empfängst keine Aufgaben von {sub.displayName}.</p>
                     )}
                   </div>
                 )}

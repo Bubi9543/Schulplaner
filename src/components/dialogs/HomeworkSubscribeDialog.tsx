@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import { lookupByFriendCode, normalizeFriendCode } from '@/lib/homeworkShare';
-import { UserPlus, Search, Check, Loader2 } from 'lucide-react';
+import { UserPlus, Search, Check, Loader2, AlertTriangle } from 'lucide-react';
 import type { UserProfile } from '@/lib/homeworkShare';
 
 interface Props {
@@ -216,7 +216,7 @@ export function HomeworkSubscribeDialog({ open, onClose }: Props) {
                   })}
                 </div>
                 {!allSelected && subjectFilter !== null && subjectFilter.length === 0 && (
-                  <p className="mt-2 text-xs text-amber-600">⚠ Kein Fach ausgewählt – du empfängst keine Hausaufgaben.</p>
+                  <p className="mt-2 text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="size-3 shrink-0" />Kein Fach ausgewählt – du empfängst keine Hausaufgaben.</p>
                 )}
               </div>
             )}

@@ -138,7 +138,7 @@ export async function unsubscribePush(): Promise<void> {
 export async function showLocalTestNotification(): Promise<void> {
   if (!isPushSupported() || Notification.permission !== 'granted') return;
   const reg = await navigator.serviceWorker.ready;
-  await reg.showNotification('🎉 Test geklappt!', {
+  await reg.showNotification('Test geklappt!', {
     body: 'Wenn du das siehst, funktionieren Push-Benachrichtigungen auf diesem Gerät.',
     icon: '/icon.svg',
     badge: '/favicon.svg',

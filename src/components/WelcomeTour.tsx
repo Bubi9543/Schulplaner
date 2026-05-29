@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, ListChecks, CalendarDays, Cloud, Share2, ChevronRight, X, Sparkles, TrendingUp, Check, MapPin,
+  NotebookPen, ClipboardCheck, Target,
 } from 'lucide-react';
 
 /**
@@ -238,9 +239,9 @@ function GradesVisual() {
 function TasksVisual() {
   // Stack von Task-Karten die nacheinander reinfaden
   const tasks = [
-    { icon: '📝', title: 'Mathe HA · S. 42', done: true },
-    { icon: '✏️', title: 'Englisch-Vokabeltest', done: false },
-    { icon: '🎯', title: 'Geo-Referat', done: false },
+    { Icon: NotebookPen, title: 'Mathe HA · S. 42', done: true },
+    { Icon: ClipboardCheck, title: 'Englisch-Vokabeltest', done: false },
+    { Icon: Target, title: 'Geo-Referat', done: false },
   ];
   return (
     <div className="w-full h-full grid place-items-center">
@@ -259,7 +260,7 @@ function TasksVisual() {
               transition={{ delay: 0.4 + i * 0.18, type: 'spring', stiffness: 380, damping: 18 }}
               className={`size-7 rounded-full grid place-items-center flex-shrink-0 ${t.done ? 'bg-emerald-400 text-white' : 'bg-white/30 text-white/70'}`}
             >
-              {t.done ? <Check className="size-4" strokeWidth={3} /> : <span className="text-base">{t.icon}</span>}
+              {t.done ? <Check className="size-4" strokeWidth={3} /> : <t.Icon className="size-4" />}
             </motion.div>
             <div className={`flex-1 min-w-0 text-white text-sm font-medium ${t.done ? 'line-through opacity-70' : ''}`}>
               {t.title}

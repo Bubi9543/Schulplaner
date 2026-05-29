@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, ArrowLeft, BookOpen, Trophy, Flag, Settings as SettingsIcon,
-  Plus, Trash2, Check, Sparkles, User, X,
+  Plus, Trash2, Check, Sparkles, User, X, GraduationCap,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SUBJECT_COLORS } from '@/types';
@@ -329,7 +329,7 @@ function ProfilStep({ school, setSchool, classLevel, setClassLevel, next, gradie
 }) {
   return (
     <GlassCard className="p-8">
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Neues Schuljahr 🎓</h2>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><GraduationCap className="size-6 text-theme-deep" />Neues Schuljahr</h2>
       <p className="text-ink-500 text-sm mt-1 leading-relaxed">
         Wenn sich Klasse oder Schule geändert haben, hier kurz aktualisieren – alles optional.
       </p>
@@ -417,7 +417,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, fini
                 : { background: 'rgba(255,255,255,0.45)', color: '#475569', borderColor: 'rgba(255,255,255,0.5)' }
               }
             >
-              {active && '✓ '}{s.name}
+              <span className="inline-flex items-center gap-1">{active && <Check className="size-3.5" />}{s.name}</span>
             </motion.button>
           );
         })}

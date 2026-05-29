@@ -7,7 +7,8 @@ import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
-import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
+import { getTaskKindLabel } from '@/lib/grading';
+import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { fetchUpcomingHolidays, isoLocal } from '@/lib/holidays';
 import type { AppTask, TaskKind, SchoolHoliday } from '@/types';
 import { BUILTIN_TASK_KINDS, DEFAULT_QUICK_BUTTONS } from '@/types';
@@ -28,14 +29,14 @@ export function CalendarPage() {
     fetchUpcomingHolidays(region).then(h => { if (!cancelled) setHolidays(h); });
     return () => { cancelled = true; };
   }, [region?.country, region?.subdivision]);
-  const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
-    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
-    ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
+  const allKinds = useMemo<Array<{ id: TaskKind; label: string }>>(() => [
+    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id) })),
+    ...customKinds.map(c => ({ id: c.id, label: c.label })),
   ], [customKinds]);
 
   const quickKinds = useMemo(() => {
     const ids = settings?.quickButtons ?? DEFAULT_QUICK_BUTTONS;
-    return ids.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) }));
+    return ids.map(id => ({ id, label: getTaskKindLabel(id) }));
   }, [settings?.quickButtons]);
 
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
@@ -70,7 +71,7 @@ export function CalendarPage() {
           {allKinds.map(k => (
             <button key={k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}
               className={`chip ${filterKind === k.id ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
-              <span>{k.icon}</span>{k.label}
+              <TaskKindIcon kind={k.id} className="size-3.5" />{k.label}
             </button>
           ))}
           <div className="w-px h-5 bg-ink-200 mx-1" />
@@ -118,7 +119,7 @@ export function CalendarPage() {
 function CalendarView({ tasks, holidays, quickKinds, onSelect, onNew }: {
   tasks: AppTask[];
   holidays: SchoolHoliday[];
-  quickKinds: Array<{ id: TaskKind; label: string; icon: string }>;
+  quickKinds: Array<{ id: TaskKind; label: string }>;
   onSelect: (t: AppTask) => void;
   onNew: (d: Date, kind?: TaskKind) => void;
 }) {
@@ -252,7 +253,7 @@ function CalendarView({ tasks, holidays, quickKinds, onSelect, onNew }: {
                       onClick={() => { setPickerDay(null); onNew(d, k.id); }}
                       className="cal-picker-btn text-[10px] font-medium text-left px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-colors"
                     >
-                      <span>{k.icon}</span><span className="truncate">{k.label}</span>
+                      <TaskKindIcon kind={k.id} className="size-3" /><span className="truncate">{k.label}</span>
                     </button>
                   ))}
                 </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, BookOpen, CheckCircle2, Calendar, X } from 'lucide-react';
+import { Plus, Trash2, BookOpen, CheckCircle2, Calendar, X, Lightbulb } from 'lucide-react';
 import type { StudyChecklistItem, StudyStatus } from '@/types';
 
 /**
@@ -313,8 +313,9 @@ export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, ti
       </div>
 
       {total === 0 && (
-        <div className="text-[11px] text-ink-400 mt-2 leading-relaxed">
-          💡 Trag ein, was du bis zur Klausur können musst. Tippe einen Punkt an, dann auf eine Ampel – grün heißt bereit, gelb verstanden, rot offen.
+        <div className="text-[11px] text-ink-400 mt-2 leading-relaxed flex gap-1.5">
+          <Lightbulb className="size-3.5 shrink-0 mt-px" />
+          <span>Trag ein, was du bis zur Klausur können musst. Tippe einen Punkt an, dann auf eine Ampel – grün heißt bereit, gelb verstanden, rot offen.</span>
         </div>
       )}
     </div>

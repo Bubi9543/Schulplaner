@@ -6,7 +6,8 @@ import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
 import type { AppTask, TaskKind } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
-import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
+import { getTaskKindLabel } from '@/lib/grading';
+import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { Share2, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -109,7 +110,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <div className="flex flex-wrap gap-2">
             {BUILTIN_TASK_KINDS.map(k => (
               <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
-                <span>{getTaskKindIcon(k)}</span>{getTaskKindLabel(k)}
+                <TaskKindIcon kind={k} className="size-3.5" />{getTaskKindLabel(k)}
               </button>
             ))}
             {settings?.gradingConfig.customKinds?.map(c => (
@@ -117,7 +118,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
                 className={`chip ${kind === c.id ? 'chip-active' : ''}`}
                 title={`Eigene Kategorie · zählt als Note ${c.weighting === 'large' ? 'wie Schulaufgabe' : 'wie Mündlich'}`}
               >
-                <span>{getTaskKindIcon(c.id)}</span>{c.label}
+                <TaskKindIcon kind={c.id} className="size-3.5" />{c.label}
               </button>
             ))}
           </div>

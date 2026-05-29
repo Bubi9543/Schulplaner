@@ -1,4 +1,5 @@
 import type { Grade, GradingSystem, GradingSystemConfig, Subject, GradeKind, SubjectCategory } from '@/types';
+import { NotebookPen, ClipboardCheck, FileText, Target, CheckCircle2, Tag, type LucideIcon } from 'lucide-react';
 
 export const BUILTIN_KIND_LABEL: Record<string, string> = {
   schulaufgabe: 'Schulaufgabe',
@@ -39,12 +40,12 @@ export const BUILTIN_TASK_KIND_LABEL: Record<string, string> = {
   todo:         'Todo',
 };
 
-export const BUILTIN_TASK_KIND_ICON: Record<string, string> = {
-  hausaufgabe:  '📝',
-  test:         '✏️',
-  schulaufgabe: '📄',
-  projekt:      '🎯',
-  todo:         '✅',
+export const BUILTIN_TASK_KIND_ICON: Record<string, LucideIcon> = {
+  hausaufgabe:  NotebookPen,
+  test:         ClipboardCheck,
+  schulaufgabe: FileText,
+  projekt:      Target,
+  todo:         CheckCircle2,
 };
 
 /** Liefert das Anzeige-Label einer TaskKind-ID. Kennt Built-ins und Custom-Kinds. */
@@ -54,9 +55,9 @@ export function getTaskKindLabel(kind: string, config?: GradingSystemConfig): st
   return custom?.label ?? kind;
 }
 
-/** Emoji-Icon einer TaskKind-ID. Custom-Kinds bekommen ein neutrales Tag-Emoji. */
-export function getTaskKindIcon(kind: string): string {
-  return BUILTIN_TASK_KIND_ICON[kind] ?? '🏷️';
+/** lucide-Icon einer TaskKind-ID. Custom-Kinds bekommen ein neutrales Tag-Icon. */
+export function getTaskKindIcon(kind: string): LucideIcon {
+  return BUILTIN_TASK_KIND_ICON[kind] ?? Tag;
 }
 
 export const CATEGORY_LABEL: Record<SubjectCategory, string> = {

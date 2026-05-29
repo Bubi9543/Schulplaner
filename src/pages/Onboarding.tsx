@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
-  Download, Upload, Loader2, AlertCircle, KeyRound,
+  Download, Upload, Loader2, AlertCircle, KeyRound, Hand,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
@@ -660,7 +660,7 @@ function ProfileStep({ name, setName, school, setSchool, classLevel, setClassLev
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Erzähl uns etwas über dich 👋</h2>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Hand className="size-6 text-theme-deep" />Erzähl uns etwas über dich</h2>
       <p className="text-ink-500 text-sm mt-1">Alles optional – kannst du auch später in den Einstellungen ändern.</p>
 
       <div className="mt-6 space-y-3">
@@ -762,7 +762,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
                 : { background: 'rgba(255,255,255,0.45)', color: '#475569', borderColor: 'rgba(255,255,255,0.5)' }
               }
             >
-              {active && '✓ '}{s.name}
+              <span className="inline-flex items-center gap-1">{active && <Check className="size-3.5" />}{s.name}</span>
             </motion.button>
           );
         })}

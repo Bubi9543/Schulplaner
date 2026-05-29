@@ -7,7 +7,8 @@ import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { relativeDate } from '@/lib/utils';
-import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
+import { getTaskKindLabel } from '@/lib/grading';
+import { TaskKindIcon } from '@/components/TaskKindIcon';
 import type { AppTask, FriendTask, TaskKind } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
 
@@ -43,9 +44,9 @@ export function TasksPage() {
   const subs = settings?.homeworkSubscriptions ?? [];
   const customKinds = settings?.gradingConfig.customKinds ?? [];
 
-  const allKinds = useMemo<Array<{ id: TaskKind; label: string; icon: string }>>(() => [
-    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id), icon: getTaskKindIcon(id) })),
-    ...customKinds.map(c => ({ id: c.id, label: c.label, icon: getTaskKindIcon(c.id) })),
+  const allKinds = useMemo<Array<{ id: TaskKind; label: string }>>(() => [
+    ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id) })),
+    ...customKinds.map(c => ({ id: c.id, label: c.label })),
   ], [customKinds]);
 
   const [filterKind, setFilterKind] = useState<TaskKind | null>(null);
@@ -164,7 +165,7 @@ export function TasksPage() {
           {allKinds.map(k => (
             <button key={k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}
               className={`chip ${filterKind === k.id ? 'bg-orange-500 text-white border-orange-500' : ''}`}>
-              <span>{k.icon}</span>{k.label}
+              <TaskKindIcon kind={k.id} className="size-3.5" />{k.label}
             </button>
           ))}
           <div className="w-px h-5 bg-ink-200 mx-1" />
@@ -323,7 +324,7 @@ function BucketCard({ bucket, onSelect, onToggle, onDelete, onDismiss }: {
                   <button onClick={() => onSelect(t)} className="flex-1 min-w-0 text-left">
                     <div className={`font-medium text-ink-800 truncate ${t.done ? 'line-through text-ink-400' : ''}`}>{t.title}</div>
                     <div className="text-xs text-ink-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span>{getTaskKindIcon(t.kind)} {getTaskKindLabel(t.kind, config)}</span>
+                      <span className="inline-flex items-center gap-1"><TaskKindIcon kind={t.kind} className="size-3.5" /> {getTaskKindLabel(t.kind, config)}</span>
                       {subj && (<><span>·</span><span className="inline-flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: subj.color }} />{subj.name}</span></>)}
                       {t.dueDate && <><span>·</span><span>{relativeDate(t.dueDate)}</span></>}
                       {t.shared && <span className="text-theme-deep">· geteilt</span>}
