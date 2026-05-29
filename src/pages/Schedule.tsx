@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, MapPin, Clock, Share2, KeyRound, Download, Pencil, Check } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -8,12 +9,17 @@ import { LessonDialog } from '@/components/dialogs/LessonDialog';
 import { ScheduleShareDialog } from '@/components/dialogs/ScheduleShareDialog';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
-import { WEEKDAYS_DE } from '@/lib/utils';
+import { WEEKDAYS_DE, WEEKDAYS_SHORT } from '@/lib/utils';
 import type { Lesson, Weekday } from '@/types';
 
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 7);
 
 function toMinutes(t: string) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+
+function getTodayWeekday(): number {
+  const d = new Date().getDay();
+  return (d === 0 || d === 6) ? 1 : d;
+}
 
 export function SchedulePage() {
   const lessons = useStore(s => s.lessons);
@@ -22,6 +28,10 @@ export function SchedulePage() {
   const [dialog, setDialog] = useState<{ open: boolean; lesson?: Lesson; defaults?: { weekday?: Weekday; start?: string; end?: string } }>({ open: false });
   const [shareDialog, setShareDialog] = useState<{ open: boolean; tab: 'share' | 'import' }>({ open: false, tab: 'share' });
   const [editMode, setEditMode] = useState(false);
+  const [activeDay, setActiveDay] = useState<number>(getTodayWeekday());
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const colWRef = useRef(0);
+  const today = getTodayWeekday();
 
   const byDay = useMemo(() => {
     const m = new Map<number, Lesson[]>();
@@ -40,6 +50,56 @@ export function SchedulePage() {
   const endHour = 17;
   const totalMinutes = (endHour - startHour) * 60;
   const minHeight = 38;
+
+  const scrollToDay = useCallback((day: number, animate = true) => {
+    setActiveDay(day);
+    const el = scrollRef.current;
+    if (!el || el.clientWidth === 0) return;
+    if (!colWRef.current) colWRef.current = el.clientWidth - 32;
+    const target = Math.max(0, (day - 1) * colWRef.current - 16);
+    el.scrollTo({ left: target, behavior: animate ? 'smooth' : ('instant' as ScrollBehavior) });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || el.clientWidth === 0) return;
+    colWRef.current = el.clientWidth - 32;
+    const target = Math.max(0, (today - 1) * colWRef.current - 16);
+    el.scrollTo({ left: target, behavior: 'instant' as ScrollBehavior });
+  }, [today]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const colW = colWRef.current || (el.clientWidth - 32);
+    if (!colW) return;
+    const day = Math.min(5, Math.max(1, Math.round((el.scrollLeft + 16) / colW) + 1));
+    setActiveDay(day);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
+
+  function makeClickHandler(d: number) {
+    return (e: React.MouseEvent<HTMLDivElement>) => {
+      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const minute = startHour * 60 + (y / rect.height) * totalMinutes;
+      const snapped = Math.round(minute / 45) * 45;
+      const h = Math.floor(snapped / 60);
+      const m = snapped % 60;
+      const start = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      const endM = snapped + 45;
+      const eh = Math.floor(endM / 60);
+      const em = endM % 60;
+      const end = `${eh.toString().padStart(2, '0')}:${em.toString().padStart(2, '0')}`;
+      setDialog({ open: true, defaults: { weekday: d as Weekday, start, end } });
+    };
+  }
 
   if (!subjects.length) {
     return (
@@ -72,109 +132,207 @@ export function SchedulePage() {
     );
   }
 
+  const actions = (
+    <>
+      {!editMode && (
+        <>
+          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })} title="Stundenplan per Code übernehmen">
+            <Download className="size-4" /><span className="hidden sm:inline">Empfangen</span>
+          </button>
+          <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'share' })} title="Stundenplan per Code teilen">
+            <Share2 className="size-4" /><span className="hidden sm:inline">Teilen</span>
+          </button>
+        </>
+      )}
+      <button
+        className={editMode ? 'btn-primary' : 'btn-ghost'}
+        onClick={() => setEditMode(e => !e)}
+        title={editMode ? 'Bearbeiten beenden' : 'Stunden bearbeiten / löschen'}
+      >
+        {editMode ? <Check className="size-4" /> : <Pencil className="size-4" />}
+        <span className="hidden sm:inline">{editMode ? 'Fertig' : 'Bearbeiten'}</span>
+      </button>
+      <button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>
+    </>
+  );
+
   return (
     <PageShell title="Stundenplan"
       subtitle={editMode
         ? 'Bearbeiten-Modus: klicke eine Stunde zum Ändern oder Löschen, oder auf eine freie Stelle für eine neue.'
-        : 'Klicke auf ein Fach für die Detailansicht oder auf eine freie Stelle, um eine Stunde hinzuzufügen.'}
-      actions={
-        <>
-          {!editMode && (
-            <>
-              <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'import' })} title="Stundenplan per Code übernehmen">
-                <Download className="size-4" /><span className="hidden sm:inline">Empfangen</span>
-              </button>
-              <button className="btn-ghost" onClick={() => setShareDialog({ open: true, tab: 'share' })} title="Stundenplan per Code teilen">
-                <Share2 className="size-4" /><span className="hidden sm:inline">Teilen</span>
-              </button>
-            </>
-          )}
-          <button
-            className={editMode ? 'btn-primary' : 'btn-ghost'}
-            onClick={() => setEditMode(e => !e)}
-            title={editMode ? 'Bearbeiten beenden' : 'Stunden bearbeiten / löschen'}
-          >
-            {editMode ? <Check className="size-4" /> : <Pencil className="size-4" />}
-            <span className="hidden sm:inline">{editMode ? 'Fertig' : 'Bearbeiten'}</span>
-          </button>
-          <button className="btn-primary" onClick={() => setDialog({ open: true })}><Plus className="size-4" />Neue Stunde</button>
-        </>
-      }
+        : undefined}
+      actions={actions}
     >
-      <Card>
-        <div className="grid gap-2 min-w-[640px]" style={{ gridTemplateColumns: '52px repeat(5, 1fr)' }}>
-          <div />
-          {[1, 2, 3, 4, 5].map(d => (
-            <div key={d} className="text-center pb-2">
-              <div className="font-display font-bold text-ink-900">{WEEKDAYS_DE[d]}</div>
-              <div className="text-xs text-ink-500">{byDay.get(d)?.length ?? 0} Stunden</div>
+      {/* ── Desktop layout ─────────────────────────────── */}
+      <div className="hidden md:block">
+        <Card>
+          <div className="grid gap-2 min-w-[640px]" style={{ gridTemplateColumns: '52px repeat(5, 1fr)' }}>
+            <div />
+            {[1, 2, 3, 4, 5].map(d => (
+              <div key={d} className="text-center pb-2">
+                <div className="font-display font-bold text-ink-900">{WEEKDAYS_DE[d]}</div>
+                <div className="text-xs text-ink-500">{byDay.get(d)?.length ?? 0} Stunden</div>
+              </div>
+            ))}
+            <div className="relative" style={{ height: minHeight * (endHour - startHour) }}>
+              {HOURS.filter(h => h <= endHour).map((h, idx) => (
+                <div key={h} className="absolute -translate-y-1/2 text-[10px] font-semibold text-ink-400" style={{ top: idx * minHeight }}>
+                  {h.toString().padStart(2, '0')}:00
+                </div>
+              ))}
             </div>
-          ))}
-          <div className="relative" style={{ height: minHeight * (endHour - startHour) }}>
-            {HOURS.filter(h => h <= endHour).map((h, idx) => (
-              <div key={h} className="absolute -translate-y-1/2 text-[10px] font-semibold text-ink-400" style={{ top: idx * minHeight }}>
-                {h.toString().padStart(2, '0')}:00
+            {[1, 2, 3, 4, 5].map(d => (
+              <div key={d} className="relative rounded-2xl bg-white/40 overflow-hidden cursor-pointer" style={{ height: minHeight * (endHour - startHour) }}
+                onClick={makeClickHandler(d)}
+              >
+                {HOURS.filter(h => h <= endHour).map((_h, idx) => (
+                  <div key={idx} className="absolute inset-x-0 h-px bg-ink-100" style={{ top: idx * minHeight }} />
+                ))}
+                {(byDay.get(d) ?? []).map(l => {
+                  const subj = subjects.find(s => s.id === l.subjectId);
+                  if (!subj) return null;
+                  const s = toMinutes(l.start) - startHour * 60;
+                  const e = toMinutes(l.end) - startHour * 60;
+                  const top = (s / totalMinutes) * 100;
+                  const height = ((e - s) / totalMinutes) * 100;
+                  return (
+                    <button
+                      key={l.id}
+                      onClick={(ev) => { ev.stopPropagation(); if (editMode) setDialog({ open: true, lesson: l }); else nav(`/noten/${subj.id}`); }}
+                      onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
+                      className={`absolute left-1 right-1 rounded-xl p-2 text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10 ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
+                      style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}cc)` }}
+                    >
+                      {editMode && <div className="absolute top-1 right-1 size-5 rounded-full bg-white/90 grid place-items-center shadow"><Pencil className="size-2.5 text-ink-800" /></div>}
+                      <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
+                      <div className="font-display font-bold text-sm truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
+                      {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
-          {[1, 2, 3, 4, 5].map(d => (
-            <div key={d} className="relative rounded-2xl bg-white/40 overflow-hidden cursor-pointer" style={{ height: minHeight * (endHour - startHour) }}
-              onClick={(e) => {
-                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const y = e.clientY - rect.top;
-                const minute = startHour * 60 + (y / rect.height) * totalMinutes;
-                const snapped = Math.round(minute / 45) * 45;
-                const h = Math.floor(snapped / 60);
-                const m = snapped % 60;
-                const start = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                const endM = snapped + 45;
-                const eh = Math.floor(endM / 60);
-                const em = endM % 60;
-                const end = `${eh.toString().padStart(2, '0')}:${em.toString().padStart(2, '0')}`;
-                setDialog({ open: true, defaults: { weekday: d as Weekday, start, end } });
-              }}
+        </Card>
+      </div>
+
+      {/* ── Mobile layout ──────────────────────────────── */}
+      <div className="md:hidden">
+        <div className="card !p-0 overflow-hidden">
+          {/* Scroll area: time col + swipeable days */}
+          <div className="flex">
+            {/* Sticky time labels */}
+            <div className="w-11 shrink-0 flex flex-col pb-3 bg-transparent z-10">
+              {/* Spacer matching day header: pt-1 (4px) + h-8 (32px) = 36px */}
+              <div className="h-9 shrink-0" />
+              <div className="relative flex-1" style={{ height: minHeight * (endHour - startHour) }}>
+                {HOURS.filter(h => h <= endHour).map((h, idx) => (
+                  <div
+                    key={h}
+                    className="absolute -translate-y-1/2 text-[10px] font-semibold text-ink-400 right-1.5"
+                    style={{ top: idx * minHeight }}
+                  >
+                    {h.toString().padStart(2, '0')}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Horizontal snap-scroll days */}
+            <div
+              ref={scrollRef}
+              className="flex-1 overflow-x-auto no-scrollbar"
+              style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
             >
-              {HOURS.filter(h => h <= endHour).map((_h, idx) => (
-                <div key={idx} className="absolute inset-x-0 h-px bg-ink-100" style={{ top: idx * minHeight }} />
-              ))}
-              {(byDay.get(d) ?? []).map(l => {
-                const subj = subjects.find(s => s.id === l.subjectId);
-                if (!subj) return null;
-                const s = toMinutes(l.start) - startHour * 60;
-                const e = toMinutes(l.end) - startHour * 60;
-                const top = (s / totalMinutes) * 100;
-                const height = ((e - s) / totalMinutes) * 100;
+              <div className="flex">
+                {[1, 2, 3, 4, 5].map(d => (
+                  <div
+                    key={d}
+                    className="flex-none pt-1 pb-3 pr-2"
+                    style={{
+                      width: 'calc(100% - 32px)',
+                      scrollSnapAlign: 'center',
+                    }}
+                  >
+                    {/* Day header */}
+                    <div className="text-center mb-1.5 h-8 flex flex-col items-center justify-center">
+                      <div className={`text-sm font-bold leading-tight ${d === today ? 'text-[var(--theme-primary)]' : 'text-ink-700'}`}>
+                        {WEEKDAYS_DE[d]}
+                      </div>
+                      <div className="text-[10px] text-ink-400">{byDay.get(d)?.length ?? 0} Std.</div>
+                    </div>
+
+                    {/* Time grid */}
+                    <div
+                      className="relative rounded-2xl bg-white/30 overflow-hidden cursor-pointer"
+                      style={{ height: minHeight * (endHour - startHour) }}
+                      onClick={makeClickHandler(d)}
+                    >
+                      {HOURS.filter(h => h <= endHour).map((_h, idx) => (
+                        <div key={idx} className="absolute inset-x-0 h-px bg-ink-100/60" style={{ top: idx * minHeight }} />
+                      ))}
+                      {(byDay.get(d) ?? []).map(l => {
+                        const subj = subjects.find(s => s.id === l.subjectId);
+                        if (!subj) return null;
+                        const s = toMinutes(l.start) - startHour * 60;
+                        const e = toMinutes(l.end) - startHour * 60;
+                        const top = (s / totalMinutes) * 100;
+                        const height = ((e - s) / totalMinutes) * 100;
+                        return (
+                          <button
+                            key={l.id}
+                            onClick={(ev) => { ev.stopPropagation(); if (editMode) setDialog({ open: true, lesson: l }); else nav(`/noten/${subj.id}`); }}
+                            onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
+                            className={`absolute left-1 right-1 rounded-xl p-1.5 text-white text-left overflow-hidden shadow-soft transition-transform hover:scale-[1.02] active:scale-[0.98] ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
+                            style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}bb)` }}
+                          >
+                            {editMode && <div className="absolute top-0.5 right-0.5 size-4 rounded-full bg-white/90 grid place-items-center"><Pencil className="size-2.5 text-ink-800" /></div>}
+                            <div className="text-[9px] opacity-80 leading-tight">{l.start}–{l.end}</div>
+                            <div className="font-bold text-[11px] leading-tight truncate">{subj.name}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Day picker */}
+          <div className="px-3 pt-3 pb-4 border-t border-white/20">
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map(d => {
+                const isActive = activeDay === d;
+                const isToday = d === today;
                 return (
                   <button
-                    key={l.id}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      if (editMode) {
-                        setDialog({ open: true, lesson: l });
-                      } else {
-                        nav(`/noten/${subj.id}`);
-                      }
-                    }}
-                    onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
-                    className={`absolute left-1 right-1 rounded-xl p-2 text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10 ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
-                    style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}cc)` }}
+                    key={d}
+                    onClick={() => scrollToDay(d)}
+                    className={`relative flex-1 py-2.5 rounded-2xl text-xs font-bold transition-colors ${isActive ? 'text-white' : isToday ? 'text-ink-800' : 'text-ink-500 hover:text-ink-800'}`}
                   >
-                    {editMode && (
-                      <div className="absolute top-1 right-1 size-5 rounded-full bg-white/90 grid place-items-center shadow">
-                        <Pencil className="size-2.5 text-ink-800" />
-                      </div>
+                    {isActive && (
+                      <motion.span
+                        layoutId="day-picker-active"
+                        className="absolute inset-0 rounded-2xl theme-gradient shadow-glow"
+                        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                      />
                     )}
-                    <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
-                    <div className="font-display font-bold text-sm truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
-                    {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}
+                    <span className="relative flex flex-col items-center gap-1">
+                      <span>{WEEKDAYS_SHORT[d]}</span>
+                      {isToday && (
+                        <span className={`size-1 rounded-full transition-colors ${isActive ? 'bg-white/70' : 'bg-primary-500'}`} />
+                      )}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          ))}
+          </div>
         </div>
-      </Card>
+      </div>
 
+      {/* Schnellzugriff */}
       <Card className="mt-4">
         <h3 className="h3 mb-3">Schnellzugriff Fächer</h3>
         <div className="flex flex-wrap gap-2">
