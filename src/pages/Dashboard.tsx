@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
 import { GradeBadge } from '@/components/GradeBadge';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { TodayTimeline } from '@/components/TodayTimeline';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
@@ -402,7 +403,7 @@ function PendingGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => v
                     onClick={() => onSelectGrade(g)}
                     className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
                   >
-                    <div className="size-9 rounded-xl grid place-items-center text-white font-bold text-xs flex-shrink-0" style={{ background: subj.color }}>{subj.short}</div>
+                    <div className="size-9 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: subj.color }}><SubjectIcon subject={subj} className="size-4" /></div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-ink-800 truncate">{g.title ?? subj.name}</div>
                       <div className="text-xs text-ink-500">{subj.name}</div>
@@ -588,8 +589,8 @@ function UpcomingExamsWidget({
                         <AlertTriangle className="size-5" />
                       </motion.div>
                     ) : (
-                      <div className="size-10 rounded-xl grid place-items-center text-white font-bold text-xs flex-shrink-0" style={{ background: subj?.color ?? '#64748b' }}>
-                        {subj?.short ?? '?'}
+                      <div className="size-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: subj?.color ?? '#64748b' }}>
+                        <SubjectIcon subject={subj ?? {}} className="size-5" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
@@ -645,8 +646,8 @@ function SubjectLeaderboardWidget() {
         }`}>
           {idx + 1}
         </div>
-        <div className="size-7 rounded-lg grid place-items-center text-white font-bold text-[10px] flex-shrink-0" style={{ background: item.subject.color }}>
-          {item.subject.short}
+        <div className="size-7 rounded-lg grid place-items-center text-white flex-shrink-0" style={{ background: item.subject.color }}>
+          <SubjectIcon subject={item.subject} className="size-3.5" />
         </div>
         <div className="flex-1 min-w-0 text-sm font-medium text-ink-800 truncate">{item.subject.name}</div>
         <GradeBadge value={item.avg} system={item.subject.system} size="sm" />

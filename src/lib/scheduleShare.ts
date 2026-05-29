@@ -47,6 +47,7 @@ export interface SharedSubject {
   name: string;
   short: string;
   color: string;
+  icon?: string;
   category: Subject['category'];
   system: Subject['system'];
   teacher?: string;
@@ -117,6 +118,7 @@ async function buildPayload(schoolYearId: string, ownerName?: string, schoolYear
       name: s.name,
       short: s.short,
       color: s.color,
+      icon: s.icon,
       category: s.category,
       system: s.system,
       teacher: s.teacher,

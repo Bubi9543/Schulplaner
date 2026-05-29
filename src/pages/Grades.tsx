@@ -6,6 +6,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { GradeBadge } from '@/components/GradeBadge';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
@@ -288,7 +289,7 @@ export function GradesPage() {
                 return (
                   <li key={s.id}>
                     <Link to={`/noten/${s.id}`} className="flex items-center gap-3 rounded-2xl p-2 bg-white/70 hover:bg-white transition">
-                      <div className="size-10 rounded-xl grid place-items-center text-white font-display font-bold" style={{ background: s.color }}>{s.short}</div>
+                      <div className="size-10 rounded-xl grid place-items-center text-white" style={{ background: s.color }}><SubjectIcon subject={s} className="size-5" /></div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-ink-800 truncate">{s.name}</div>
                         <div className="text-xs text-rose-600">Ziel: {s.targetAverage ? formatAverage(s.targetAverage, s.system, digits) : (s.system === 'bayern' ? '3,5' : '5')} · aktuell {formatAverage(avg, s.system, digits)}</div>
@@ -397,7 +398,7 @@ function SubjectRow({ subject }: { subject: Subject }) {
       <div className="absolute -right-6 -top-6 size-32 rounded-full bg-white/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider opacity-80">{CATEGORY_LABEL[subject.category]}</div>
+          <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center gap-1"><SubjectIcon subject={subject} className="size-3" />{CATEGORY_LABEL[subject.category]}</div>
           <div className="font-display font-extrabold text-xl mt-0.5 truncate">{subject.name}</div>
           <div className="text-xs opacity-80">{gradeCount} Noten</div>
         </div>

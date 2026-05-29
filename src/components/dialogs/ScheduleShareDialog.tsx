@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Copy, Check, RefreshCw, Share2, Trash2, Loader2, AlertCircle, KeyRound, CalendarDays, BookOpen } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { supabase } from '@/lib/supabase';
 import {
   createOrRefreshShare,
@@ -375,7 +376,7 @@ function ImportTab({ onDone }: { onDone: () => void }) {
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-white"
                 style={{ background: s.color }}
               >
-                {s.short}
+                <SubjectIcon subject={s} className="size-3" />{s.short}
               </span>
             ))}
             {preview.payload.subjects.length > 12 && (

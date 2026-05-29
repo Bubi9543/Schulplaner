@@ -16,6 +16,7 @@ import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
 import { startOfISOWeek } from '@/lib/studyShare';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
+import { SubjectIcon } from '@/components/SubjectIcon';
 
 // ─── Helfer ────────────────────────────────────────────────────────────────
 
@@ -487,12 +488,12 @@ export function FokusPage() {
                         key={s.id}
                         onClick={() => update(t => ({ ...t, subjectId: s.id, gradeId: undefined }))}
                         disabled={active}
-                        className="px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition disabled:opacity-50"
+                        className="px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition disabled:opacity-50 inline-flex items-center gap-1.5"
                         style={sel
                           ? { background: s.color, borderColor: s.color, color: 'white' }
                           : { borderColor: s.color, color: s.color }}
                       >
-                        {sel && <Check className="size-3 inline mr-1 -mt-0.5" />}{s.name}
+                        {sel ? <Check className="size-3" /> : <SubjectIcon subject={s} className="size-3.5" />}{s.name}
                       </button>
                     );
                   })}
@@ -597,8 +598,8 @@ export function FokusPage() {
                 return (
                   <li key={g.id}>
                     <Link to={s ? `/noten/${s.id}` : '/fokus'} className="flex items-center gap-3 rounded-2xl p-2.5 bg-[rgb(var(--surface-rgb))] hover:bg-[rgb(var(--ink-100))] transition">
-                      <div className="size-10 rounded-xl grid place-items-center text-white font-display font-bold flex-shrink-0" style={{ background: s?.color ?? 'var(--theme-primary)' }}>
-                        {s?.short ?? '?'}
+                      <div className="size-10 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: s?.color ?? 'var(--theme-primary)' }}>
+                        <SubjectIcon subject={s ?? {}} className="size-5" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-ink-800 truncate text-sm">{g.title || getKindLabel(g.kind, config)}</div>

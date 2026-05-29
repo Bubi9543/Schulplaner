@@ -7,6 +7,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { AccountAuth } from '@/components/AccountAuth';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
 import { useStore } from '@/store/useStore';
 import { normalizeFriendCode } from '@/lib/homeworkShare';
@@ -487,7 +488,7 @@ function FriendHomeworkFilter({ friend }: { friend: Friend }) {
               className={`chip text-xs ${active ? 'chip-active' : ''}`}
               style={active ? { background: s.color + '22', borderColor: s.color + '88', color: s.color } : {}}
             >
-              <span className="size-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+              <SubjectIcon subject={s} className="size-3.5 flex-shrink-0" />
               {s.name}
             </button>
           );

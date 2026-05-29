@@ -6,6 +6,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { SchoolYearOnboardingDialog } from '@/components/dialogs/SchoolYearOnboardingDialog';
 import { AccountAuth } from '@/components/AccountAuth';
 import { useStore } from '@/store/useStore';
@@ -677,7 +678,7 @@ function SubjectGroupBlock({
               animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl p-3 bg-white/70 flex items-center gap-3"
             >
-              <div className="size-11 rounded-xl grid place-items-center text-white font-display font-extrabold flex-shrink-0" style={{ background: s.color }}>{s.short}</div>
+              <div className="size-11 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: s.color }}><SubjectIcon subject={s} className="size-5" /></div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-ink-800 truncate">{s.name}</div>
                 <div className="text-xs text-ink-500">

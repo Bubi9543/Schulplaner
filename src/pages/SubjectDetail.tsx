@@ -8,6 +8,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { GradeBadge } from '@/components/GradeBadge';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
@@ -98,7 +99,7 @@ export function SubjectDetailPage() {
           <div className="absolute -top-12 -right-12 size-48 rounded-full bg-white/10 blur-2xl animate-blob" />
           <div className="relative">
             <div className="flex items-center gap-3">
-              <div className="size-16 rounded-3xl bg-white/20 grid place-items-center font-display font-extrabold text-2xl">{subject.short}</div>
+              <div className="size-16 rounded-3xl bg-white/20 grid place-items-center"><SubjectIcon subject={subject} className="size-8" /></div>
               <div>
                 <div className="text-xs opacity-80 uppercase tracking-wider">{meta?.label}</div>
                 <div className="font-display font-bold text-xl">{subject.name}</div>

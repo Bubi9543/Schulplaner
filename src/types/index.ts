@@ -76,6 +76,8 @@ export interface Subject {
   name: string;
   short: string;
   color: string;
+  /** Name eines lucide-Icons (siehe src/lib/subjectIcons.ts). Wenn leer, wird automatisch aus dem Fachnamen erkannt. */
+  icon?: string;
   category: SubjectCategory;
   system: GradingSystem;
   teacher?: string;

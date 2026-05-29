@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/Modal';
+import { IconPicker } from '@/components/IconPicker';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
 import { SUBJECT_COLORS } from '@/types';
 import type { Subject, SubjectCategory } from '@/types';
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION } from '@/lib/grading';
+import { detectSubjectIcon } from '@/lib/subjectIcons';
 
 interface Props {
   open: boolean;
@@ -20,6 +23,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
   const [name, setName] = useState(initial?.name ?? '');
   const [short, setShort] = useState(initial?.short ?? '');
   const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]);
+  const [icon, setIcon] = useState<string | undefined>(initial?.icon);
   const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'nebenfach');
   const [teacher, setTeacher] = useState(initial?.teacher ?? '');
   const [room, setRoom] = useState(initial?.room ?? '');
@@ -30,6 +34,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       setName(initial?.name ?? '');
       setShort(initial?.short ?? '');
       setColor(initial?.color ?? SUBJECT_COLORS[0]);
+      setIcon(initial?.icon);
       setCategory(initial?.category ?? 'nebenfach');
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
@@ -43,6 +48,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       name: name.trim(),
       short: short.trim() || name.trim().slice(0, 2),
       color,
+      icon,
       category,
       system: 'bayern' as const,
       teacher: teacher.trim() || undefined,
@@ -76,8 +82,8 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
     >
       <div className="space-y-4">
         <div className="rounded-3xl p-5 flex items-center gap-4" style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
-          <div className="size-16 rounded-2xl bg-white/25 grid place-items-center text-white font-display font-extrabold text-2xl">
-            {(short || name).slice(0, 2)}
+          <div className="size-16 rounded-2xl bg-white/25 grid place-items-center text-white">
+            <SubjectIcon subject={{ icon, name }} className="size-8" strokeWidth={2.25} />
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
@@ -106,6 +112,11 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
               />
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="label">Icon</label>
+          <IconPicker value={icon} autoIcon={detectSubjectIcon(name)} onChange={setIcon} color={color} />
         </div>
 
         <div>

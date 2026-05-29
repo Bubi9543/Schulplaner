@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { LessonDialog } from '@/components/dialogs/LessonDialog';
 import { ScheduleShareDialog } from '@/components/dialogs/ScheduleShareDialog';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
 import { WEEKDAYS_DE } from '@/lib/utils';
 import type { Lesson, Weekday } from '@/types';
@@ -164,7 +165,7 @@ export function SchedulePage() {
                       </div>
                     )}
                     <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
-                    <div className="font-display font-bold text-sm truncate">{subj.name}</div>
+                    <div className="font-display font-bold text-sm truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
                     {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}
                   </button>
                 );
@@ -179,7 +180,7 @@ export function SchedulePage() {
         <div className="flex flex-wrap gap-2">
           {subjects.map(s => (
             <button key={s.id} onClick={() => nav(`/noten/${s.id}`)} className="chip hover:bg-white text-white border-transparent" style={{ background: s.color }}>
-              <span className="font-bold">{s.short}</span>
+              <SubjectIcon subject={s} className="size-3.5" />
               <span className="font-medium">{s.name}</span>
             </button>
           ))}

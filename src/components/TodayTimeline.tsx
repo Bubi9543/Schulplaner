@@ -6,6 +6,7 @@ import { useStore } from '@/store/useStore';
 import { buildTodayTimeline, getCurrentLesson, nowToMinutes, timeToMinutes, useTimeNow } from '@/lib/currentLesson';
 import { useAnimationLevel, microMotionEnabled } from '@/lib/animation';
 import { Empty } from '@/components/Empty';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { CalendarOff } from 'lucide-react';
 
 function fmtMinutes(m: number): string {
@@ -115,7 +116,7 @@ export function TodayTimeline({ height }: { height?: number }) {
                     {isPast && !isCurrent && <Check className="size-3" />}
                     {isCurrent && <span className="px-1.5 py-0.5 rounded-full bg-white/30 text-[9px] font-bold">LIVE</span>}
                   </div>
-                  <div className="font-display font-bold text-sm leading-tight mt-0.5 truncate">{subj.name}</div>
+                  <div className="font-display font-bold text-sm leading-tight mt-0.5 truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
                   {(slot.lesson.room ?? subj.room) && (
                     <div className="text-[10px] opacity-90 flex items-center gap-1 mt-0.5">
                       <MapPin className="size-2.5" />{slot.lesson.room ?? subj.room}
