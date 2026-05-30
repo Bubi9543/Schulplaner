@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, ArrowLeft, BookOpen, Trophy, Flag, Settings as SettingsIcon,
@@ -44,6 +44,8 @@ interface Props {
   open: boolean;
   /** Name des frisch angelegten Schuljahrs (für Header-Anzeige). */
   yearName: string;
+  /** Vorausgewähltes Notensystem für die neuen Fächer (z. B. 'oberstufe'). */
+  defaultSystem?: GradingSystem;
   /** Wird aufgerufen wenn der User fertig ist oder abbricht. */
   onClose: () => void;
 }
@@ -53,7 +55,7 @@ interface Props {
  * erscheint. Spielt das Haupt-Onboarding nach: Profil-Refresh (Schule/Klasse),
  * Notensystem für neue Fächer und Fächer-Auswahl.
  */
-export function SchoolYearOnboardingDialog({ open, yearName, onClose }: Props) {
+export function SchoolYearOnboardingDialog({ open, yearName, defaultSystem, onClose }: Props) {
   const settings = useStore(s => s.settings);
   const setSettings = useStore(s => s.setSettings);
   const addSubject = useStore(s => s.addSubject);
@@ -62,9 +64,14 @@ export function SchoolYearOnboardingDialog({ open, yearName, onClose }: Props) {
   const [prevStep, setPrevStep] = useState(0);
   const [school, setSchool] = useState(settings?.school ?? '');
   const [classLevel, setClassLevel] = useState('');
-  const [system, setSystem] = useState<GradingSystem>(settings?.system ?? 'bayern');
+  const [system, setSystem] = useState<GradingSystem>(defaultSystem ?? settings?.system ?? 'bayern');
   const [subjects, setSubjects] = useState<Draft[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Beim Öffnen das gewünschte Notensystem vorwählen (z. B. Oberstufe).
+  useEffect(() => {
+    if (open && defaultSystem) setSystem(defaultSystem);
+  }, [open, defaultSystem]);
 
   function toggleStarter(s: typeof STARTER_SUBJECTS[number]) {
     setSubjects(prev => {
@@ -365,7 +372,7 @@ function SystemStep({ system, setSystem, next, back, gradient }: {
 }) {
   const opts: { v: GradingSystem; title: string; sub: string; icon: React.ReactNode }[] = [
     { v: 'bayern',    title: 'Bayern',              sub: 'Noten 1–6, Haupt- & Nebenfächer',        icon: <BookOpen className="size-4.5" /> },
-    { v: 'oberstufe', title: 'Oberstufe / Abitur',  sub: 'Punkte 0–15, Per-Note-Gewichtung',        icon: <Trophy className="size-4.5" /> },
+    { v: 'oberstufe', title: 'Oberstufe / Abitur',  sub: 'Punkte 0–15 · Halbjahre & Abi-Rechner',    icon: <Trophy className="size-4.5" /> },
     { v: 'austria',   title: 'Österreich',          sub: 'Noten 1–5, Sehr gut bis Nicht genügend',  icon: <Flag className="size-4.5" /> },
     { v: 'custom',    title: 'Frei konfigurierbar', sub: 'Min, Max, Schrittweite frei wählbar',      icon: <SettingsIcon className="size-4.5" /> },
   ];

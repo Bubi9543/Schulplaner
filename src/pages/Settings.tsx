@@ -13,7 +13,7 @@ import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateMyProfile } from '@/lib/homeworkShare';
 import { db } from '@/lib/db';
-import { installDemo, resetAll } from '@/lib/demo';
+import { installDemo, installOberstufeDemo, resetAll } from '@/lib/demo';
 import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/portability';
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, BUILTIN_KIND_LABEL } from '@/lib/grading';
 import { BUILTIN_GRADE_KINDS } from '@/types';
@@ -144,18 +144,25 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
+const AVATAR_EMOJIS = ['🦊', '🐼', '🐧', '🐨', '🦁', '🐯', '🐸', '🐙', '🦉', '🐳', '🦄', '🐝', '🌟', '🚀', '🎓', '📚', '🎨', '⚽', '🎸', '🧠', '🍀', '🔥', '🌈', '💡'];
+
 function ProfileSection() {
   const settings = useStore(s => s.settings)!;
   const setSettings = useStore(s => s.setSettings);
   const [name, setName] = useState(settings.name ?? '');
   const [school, setSchool] = useState(settings.school ?? '');
   const [classLevel, setClassLevel] = useState(settings.classLevel ?? '');
+  const avatar = settings.avatar ?? '';
 
   const region = settings.region ?? { country: 'DE' };
   const subOptions = subdivisionsForCountry(region.country);
 
   function save() {
     setSettings({ name: name.trim() || undefined, school: school.trim() || undefined, classLevel: classLevel.trim() || undefined });
+  }
+
+  function setAvatar(e: string) {
+    setSettings({ avatar: avatar === e ? undefined : e });
   }
 
   function setCountry(country: string) {
@@ -171,6 +178,19 @@ function ProfileSection() {
     <AccountAuth compact />
     <Card>
       <h3 className="h3 mb-3 flex items-center gap-2"><User className="size-5 text-theme" />Profil</h3>
+      <Row label="Avatar" hint="Wähle ein Emoji für dein Profil (erscheint in der Seitenleiste).">
+        <div className="flex flex-wrap gap-1.5 max-w-[320px] justify-end">
+          {AVATAR_EMOJIS.map(e => (
+            <button
+              key={e}
+              onClick={() => setAvatar(e)}
+              className={`size-8 rounded-lg grid place-items-center text-lg transition ${avatar === e ? 'theme-gradient ring-2 ring-white scale-110 shadow-soft' : 'bg-white/60 hover:bg-white/80'}`}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </Row>
       <Row label="Name" hint="Wird für die Begrüßung im Dashboard verwendet.">
         <input className="input max-w-[260px]" value={name} onChange={e => setName(e.target.value)} onBlur={save} placeholder="Dein Name" />
       </Row>
@@ -1189,27 +1209,37 @@ function SchoolYearsSection() {
   });
   const [copySubjects, setCopySubjects] = useState(true);
   const [copyLessons, setCopyLessons] = useState(true);
-  const [yearOnboarding, setYearOnboarding] = useState<{ open: boolean; yearName: string }>({ open: false, yearName: '' });
+  const [isOberstufe, setIsOberstufe] = useState(false);
+  const [oberG8, setOberG8] = useState(false);
+  const [yearOnboarding, setYearOnboarding] = useState<{ open: boolean; yearName: string; oberstufe: boolean }>({ open: false, yearName: '', oberstufe: false });
 
   function suggestName() {
+    if (isOberstufe) return 'Oberstufe';
     const [y] = newStart.split('-').map(Number);
     return `${y}/${String(y + 1).slice(2)}`;
   }
 
   async function create() {
     const name = newName.trim() || suggestName();
-    const skipCopy = !copySubjects || !activeId;
+    // In der Oberstufe nie Fächer aus einem regulären Jahr kopieren (anderes Notensystem).
+    const doCopy = copySubjects && !!activeId && !isOberstufe;
+    const skipCopy = !doCopy;
     await addSchoolYear({
       name,
       startDate: new Date(newStart).getTime(),
-      copySubjectsFromYearId: copySubjects && activeId ? activeId : undefined,
-      copyLessonsFromYearId: copyLessons && copySubjects && activeId ? activeId : undefined,
+      copySubjectsFromYearId: doCopy ? activeId : undefined,
+      copyLessonsFromYearId: doCopy && copyLessons ? activeId : undefined,
+      oberstufe: isOberstufe,
+      oberstufeJahrgaenge: isOberstufe ? (oberG8 ? [11, 12] : [12, 13]) : undefined,
     });
     setShowForm(false);
     setNewName('');
+    const wasOberstufe = isOberstufe;
+    setIsOberstufe(false);
+    setOberG8(false);
     // Wenn nicht kopiert wurde, ist das Jahr leer → kleines Onboarding öffnen.
     if (skipCopy) {
-      setYearOnboarding({ open: true, yearName: name });
+      setYearOnboarding({ open: true, yearName: name, oberstufe: wasOberstufe });
     }
   }
 
@@ -1230,6 +1260,46 @@ function SchoolYearsSection() {
 
         {showForm && (
           <div className="mb-4 p-4 rounded-2xl bg-theme-soft/40 border border-theme-soft space-y-3">
+            <div>
+              <label className="label">Art</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsOberstufe(false)}
+                  className={`text-left rounded-xl p-3 border transition ${!isOberstufe ? 'border-theme bg-theme-soft/50' : 'border-white/50 bg-white/60 hover:bg-white/80'}`}
+                >
+                  <div className="flex items-center gap-2 font-semibold text-ink-900 text-sm">
+                    <Calendar className="size-4" /> Reguläres Schuljahr
+                  </div>
+                  <div className="text-xs text-ink-500 mt-0.5">Ein Jahr mit eigenen Fächern & Noten.</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOberstufe(true)}
+                  className={`text-left rounded-xl p-3 border transition ${isOberstufe ? 'border-theme bg-theme-soft/50' : 'border-white/50 bg-white/60 hover:bg-white/80'}`}
+                >
+                  <div className="flex items-center gap-2 font-semibold text-ink-900 text-sm">
+                    <GraduationCap className="size-4" /> Oberstufe (Bayern)
+                  </div>
+                  <div className="text-xs text-ink-500 mt-0.5">Q-Phase mit 4 Halbjahren, Punkte 0–15.</div>
+                </button>
+              </div>
+            </div>
+            {isOberstufe && (
+              <div>
+                <label className="label">Jahrgangsstufen</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setOberG8(false)}
+                    className={`rounded-xl p-2.5 border text-sm font-semibold transition ${!oberG8 ? 'border-theme bg-theme-soft/50 text-ink-900' : 'border-white/50 bg-white/60 text-ink-600 hover:bg-white/80'}`}>
+                    G9 · 12/13
+                  </button>
+                  <button type="button" onClick={() => setOberG8(true)}
+                    className={`rounded-xl p-2.5 border text-sm font-semibold transition ${oberG8 ? 'border-theme bg-theme-soft/50 text-ink-900' : 'border-white/50 bg-white/60 text-ink-600 hover:bg-white/80'}`}>
+                    G8 · 11/12
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Beginn</label>
@@ -1240,7 +1310,7 @@ function SchoolYearsSection() {
                 <input className="input" placeholder={suggestName()} value={newName} onChange={e => setNewName(e.target.value)} />
               </div>
             </div>
-            {activeId && (
+            {activeId && !isOberstufe && (
               <div className="space-y-2">
                 <label className="flex items-center gap-2.5 cursor-pointer text-sm">
                   <input type="checkbox" checked={copySubjects} onChange={e => setCopySubjects(e.target.checked)} className="size-4 accent-theme" />
@@ -1282,6 +1352,7 @@ function SchoolYearsSection() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-ink-900 flex items-center gap-2 flex-wrap">
                       {y.name}
+                      {y.oberstufe && <span className="text-[10px] uppercase tracking-wider font-bold text-amber-700 px-1.5 py-0.5 rounded-md bg-amber-100 inline-flex items-center gap-1"><GraduationCap className="size-3" />Oberstufe</span>}
                       {isActive && <span className="text-[10px] uppercase tracking-wider font-bold text-theme-deep px-1.5 py-0.5 rounded-md bg-theme-soft">Aktiv</span>}
                     </div>
                     <div className="text-xs text-ink-500">
@@ -1322,7 +1393,8 @@ function SchoolYearsSection() {
       <SchoolYearOnboardingDialog
         open={yearOnboarding.open}
         yearName={yearOnboarding.yearName}
-        onClose={() => setYearOnboarding({ open: false, yearName: '' })}
+        defaultSystem={yearOnboarding.oberstufe ? 'oberstufe' : undefined}
+        onClose={() => setYearOnboarding({ open: false, yearName: '', oberstufe: false })}
       />
     </div>
   );
@@ -1651,6 +1723,7 @@ function DataSection() {
   const load = useStore(s => s.load);
   const authUser = useStore(s => s.authUser);
   const replaceCloud = useStore(s => s.replaceCloud);
+  const setSettings = useStore(s => s.setSettings);
   const [storageInfo, setStorageInfo] = useState<string>('');
   const [importStatus, setImportStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
 
@@ -1709,10 +1782,22 @@ function DataSection() {
     if (authUser) await replaceCloud();
   }
 
+  async function loadOberstufeDemo() {
+    if (!confirm('Oberstufe-Demodaten laden? Bestehende Daten werden ersetzt.')) return;
+    await installOberstufeDemo();
+    await load();
+    if (authUser) await replaceCloud();
+  }
+
   async function reset() {
     if (!confirm('Wirklich ALLE Daten zurücksetzen? Das kann nicht rückgängig gemacht werden.')) return;
     await resetAll();
     location.reload();
+  }
+
+  async function restartOnboarding() {
+    if (!confirm('Onboarding erneut starten? Deine Daten (Fächer, Noten, Stundenplan) bleiben erhalten.')) return;
+    await setSettings({ onboarded: false });
   }
 
   async function checkStorage() {
@@ -1759,11 +1844,17 @@ function DataSection() {
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Verwaltung</h3>
         <Row label="Demodaten" hint="Lädt fertige Beispieldaten (überschreibt alles).">
-          <button onClick={loadDemo} className="btn-ghost"><Wand2 className="size-4" />Laden</button>
+          <div className="flex gap-2">
+            <button onClick={loadDemo} className="btn-ghost"><Wand2 className="size-4" />Schule</button>
+            <button onClick={loadOberstufeDemo} className="btn-ghost"><GraduationCap className="size-4" />Oberstufe</button>
+          </div>
         </Row>
         <Row label="Speicherplatz">
           <button onClick={checkStorage} className="btn-ghost text-xs"><Database className="size-4" />Prüfen</button>
           {storageInfo && <span className="text-xs text-ink-600">{storageInfo}</span>}
+        </Row>
+        <Row label="Onboarding erneut starten" hint="Zeigt den Einrichtungs-Assistenten noch einmal. Deine Daten bleiben erhalten.">
+          <button onClick={restartOnboarding} className="btn-ghost"><RefreshCw className="size-4" />Neu starten</button>
         </Row>
         <Row label="Alles zurücksetzen" hint="Löscht ALLE lokalen Daten unwiderruflich.">
           <button onClick={reset} className="btn-soft text-rose-600"><Trash2 className="size-4" />Zurücksetzen</button>

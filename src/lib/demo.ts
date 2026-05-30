@@ -166,6 +166,121 @@ export async function installDemo() {
   });
 }
 
+// ─── Oberstufe-Demo (Bayern G9, Q-Phase) ──────────────────────────────────
+
+/** Typische Kurse der bayerischen Q-Phase + ein Zielschnitt in Punkten (0–15). */
+const OBERSTUFE_SUBJECTS: Array<Omit<Subject, 'id' | 'createdAt'> & { targetPoints: number }> = [
+  { name: 'Deutsch',            short: 'D',   color: '#ec4899', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Vogel',  room: 'A112', targetPoints: 10 },
+  { name: 'Mathematik',         short: 'M',   color: '#6366f1', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Bauer',  room: 'B204', targetPoints: 9 },
+  { name: 'Englisch',           short: 'E',   color: '#06b6d4', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Hofer',  room: 'A203', targetPoints: 12 },
+  { name: 'Biologie',           short: 'Bi',  color: '#10b981', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Berg',   room: 'C202', targetPoints: 11 },
+  { name: 'Geschichte + Sozialkunde', short: 'G+Sk', color: '#f59e0b', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Mayer', room: 'A305', targetPoints: 10 },
+  { name: 'Wirtschaft und Recht', short: 'WR', color: '#84cc16', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Albers', room: 'A301', targetPoints: 9 },
+  { name: 'Geographie',         short: 'Geo', color: '#0ea5e9', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Frank',  room: 'A302', targetPoints: 11 },
+  { name: 'Religion',           short: 'Rel', color: '#a855f7', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Scommer', room: 'A108', targetPoints: 13 },
+  { name: 'Sport',              short: 'Sp',  color: '#f97316', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Lang',   room: 'Halle', targetPoints: 13 },
+  { name: 'W-Seminar Astrophysik', short: 'W',  color: '#3b82f6', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Roth', room: 'C101', targetPoints: 11 },
+  { name: 'P-Seminar Berufsorientierung', short: 'P', color: '#14b8a6', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Klein', room: 'C103', targetPoints: 12 },
+];
+
+/** Ungefähre Tage-vor-heute-Basis je Ausbildungsabschnitt (12/1 … 13/2). */
+const TERM_BASE_DAYS_AGO = [560, 400, 220, 60];
+
+function genOberstufeGradesFor(subject: Subject, targetPoints: number): Grade[] {
+  const grades: Grade[] = [];
+  // Pro Halbjahr (1–4): 1 Klausur (großer LN) + 2 kleine LN (mündlich/sonstige).
+  for (let term = 1; term <= 4; term++) {
+    const base = TERM_BASE_DAYS_AGO[term - 1];
+    const plan: Array<{ kind: GradeKind; title: string }> = [
+      { kind: 'klausur',   title: 'Klausur' },
+      { kind: 'muendlich', title: 'Mündliche Note' },
+      { kind: 'sonstige',  title: 'Mitarbeit' },
+    ];
+    plan.forEach((p, i) => {
+      const noisy = targetPoints + (Math.random() - 0.45) * 4;
+      const v = Math.max(0, Math.min(15, Math.round(noisy)));
+      grades.push({
+        id: uid(),
+        subjectId: subject.id,
+        value: v,
+        kind: p.kind,
+        title: p.title,
+        date: daysAgo(base - i * 20 + Math.floor(Math.random() * 6)),
+        weight: 1,
+        term,
+      });
+    });
+  }
+  return grades;
+}
+
+export async function installOberstufeDemo() {
+  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
+    await db.subjects.clear();
+    await db.grades.clear();
+    await db.tasks.clear();
+    await db.lessons.clear();
+    await db.schoolYears.clear();
+
+    // Oberstufen-Schuljahr (Q-Phase 12/13). Beginn ~2 Jahre zurück.
+    const yearId = uid();
+    const startYear = new Date().getFullYear() - 2;
+    const subjects: Subject[] = OBERSTUFE_SUBJECTS.map(({ targetPoints, ...s }) => {
+      void targetPoints;
+      return { ...s, id: uid(), createdAt: Date.now(), schoolYearId: yearId };
+    });
+
+    // Abitur-Demo: 5 Abiturfächer mit Punkten nahe dem Zielschnitt vorbelegen.
+    const examNames = ['Deutsch', 'Mathematik', 'Englisch', 'Biologie', 'Geschichte + Sozialkunde'];
+    const examSubjectIds: string[] = [];
+    const examPoints: Record<string, number> = {};
+    for (const name of examNames) {
+      const subj = subjects.find(s => s.name === name);
+      const tgt = OBERSTUFE_SUBJECTS.find(o => o.name === name)?.targetPoints ?? 10;
+      if (subj) { examSubjectIds.push(subj.id); examPoints[subj.id] = tgt; }
+    }
+
+    await db.schoolYears.add({
+      id: yearId,
+      name: 'Oberstufe (Demo)',
+      startDate: new Date(startYear, 8, 1).getTime(),
+      active: true,
+      createdAt: Date.now(),
+      oberstufe: true,
+      oberstufeJahrgaenge: [12, 13],
+      abitur: { examSubjectIds, examPoints, fullSubjectIds: [], struckKeys: [] },
+    });
+
+    await db.subjects.bulkAdd(subjects);
+
+    const allGrades: Grade[] = [];
+    subjects.forEach((s, idx) => {
+      const target = OBERSTUFE_SUBJECTS[idx].targetPoints;
+      allGrades.push(...genOberstufeGradesFor(s, target).map(g => ({ ...g, schoolYearId: yearId })));
+    });
+    await db.grades.bulkAdd(allGrades);
+
+    const lessons = genSchedule(subjects).map(l => ({ ...l, schoolYearId: yearId }));
+    await db.lessons.bulkAdd(lessons);
+
+    const tasks = genTasks(subjects).map(t => ({ ...t, schoolYearId: yearId }));
+    await db.tasks.bulkAdd(tasks);
+
+    const settings: AppSettings = {
+      ...DEFAULT_SETTINGS,
+      id: 'app',
+      name: 'Demo-Oberstufe',
+      classLevel: '12',
+      system: 'oberstufe',
+      onboarded: true,
+      demo: true,
+    };
+    await db.settings.put(settings);
+  });
+  // Aktives Halbjahr auf 12/1 setzen (sauberer Startzustand).
+  try { localStorage.setItem('notenapp.activeTerm', JSON.stringify({})); } catch { /* ignore */ }
+}
+
 export async function resetAll() {
   await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
     await db.subjects.clear();

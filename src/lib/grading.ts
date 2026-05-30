@@ -153,33 +153,65 @@ function weightedMean(grades: Grade[]): number | null {
   return sum / w;
 }
 
+/**
+ * Großer LN (Schulaufgabe/Klausur) ⊕ Schnitt der kleinen LN, 1:1 gewichtet.
+ * Diese Logik gilt für 1:1-Hauptfächer (z. B. Physik) UND für die
+ * Oberstufen-Halbjahresleistung in Bayern. Liefert den (ungerundeten) Wert.
+ */
+function largeRestOneToOne(valid: Grade[], config?: GradingSystemConfig): number | null {
+  const sa   = valid.filter(g => isLargeAssessmentKind(g.kind, config));
+  const rest = valid.filter(g => !isLargeAssessmentKind(g.kind, config));
+  const saMean   = weightedMean(sa);
+  const restMean = weightedMean(rest);
+  // Edge Cases: nur eine der beiden Gruppen vorhanden
+  if (saMean === null && restMean === null) return null;
+  if (saMean === null) return restMean;
+  if (restMean === null) return saMean;
+  return (saMean + restMean) / 2;
+}
+
 /** Berechnet den Schnitt eines Fachs nach Bayern-Logik (Kategorie + per-Note-Multiplikator). */
 export function subjectAverage(grades: Grade[], subject: Subject, config?: GradingSystemConfig): number | null {
   const valid = grades.filter(g => g.subjectId === subject.id && !g.isPending && typeof g.value === 'number');
   if (!valid.length) return null;
 
-  // Nebenfach + Oberstufe ohne Kategorie-Logik: einfacher gewichteter Mittelwert
+  // Oberstufe: Halbjahresleistung = großer LN ⊕ Schnitt kleine LN, 1:1 (Kategorie egal).
+  // Da Noten bereits nach aktivem Halbjahr (Grade.term) gefiltert sind, ist das die HJL
+  // des laufenden Ausbildungsabschnitts.
+  if (subject.system === 'oberstufe') {
+    return largeRestOneToOne(valid, config);
+  }
+
+  // Nebenfach: einfacher gewichteter Mittelwert
   if (subject.category === 'nebenfach') {
     return weightedMean(valid);
   }
 
-  // Hauptfach (mit oder ohne 1:1): Split in Schulaufgaben / Rest
+  // Hauptfach (1:1): großer LN ⊕ Rest, 1:1
+  if (subject.category === 'hauptfach-1zu1') {
+    return largeRestOneToOne(valid, config);
+  }
+
+  // Hauptfach: Schulaufgaben doppelt → (SA × 2 + Rest) / 3
   const sa   = valid.filter(g => isLargeAssessmentKind(g.kind, config));
   const rest = valid.filter(g => !isLargeAssessmentKind(g.kind, config));
-
   const saMean   = weightedMean(sa);
   const restMean = weightedMean(rest);
-
-  // Edge Cases: nur eine der beiden Gruppen vorhanden
   if (saMean === null && restMean === null) return null;
   if (saMean === null) return restMean;
   if (restMean === null) return saMean;
-
-  if (subject.category === 'hauptfach-1zu1') {
-    return (saMean + restMean) / 2;
-  }
-  // hauptfach: Schulaufgaben doppelt → (SA × 2 + Rest) / 3
   return (saMean * 2 + restMean) / 3;
+}
+
+/**
+ * Halbjahresleistung (HJL) eines Oberstufen-Fachs als Zeugnis-Punktzahl:
+ * der Schnitt aus subjectAverage(), gerundet auf ganze Punkte und auf 0–15 begrenzt.
+ * `grades` sollten die Noten eines einzelnen Halbjahres sein (Grade.term).
+ */
+export function halfYearPoints(grades: Grade[], subject: Subject, config?: GradingSystemConfig): number | null {
+  const raw = subjectAverage(grades, subject, config);
+  if (raw === null) return null;
+  return Math.max(0, Math.min(15, Math.round(raw)));
 }
 
 /** Generischer Mittelwert über mehrere Fächer (für Gesamtschnitt-Anzeigen). */

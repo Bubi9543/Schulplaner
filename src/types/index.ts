@@ -121,6 +121,12 @@ export interface Grade {
   isPending?: boolean;
   /** Zugehöriges Schuljahr. Wird vom Subject geerbt beim Anlegen. */
   schoolYearId?: string;
+  /**
+   * Ausbildungsabschnitt / Halbjahr in der Oberstufe (1–4 → 12/1, 12/2, 13/1, 13/2).
+   * Nur relevant, wenn das zugehörige Schuljahr eine Oberstufe ist (SchoolYear.oberstufe).
+   * Fehlt der Wert, wird das Halbjahr 1 angenommen (Migration).
+   */
+  term?: number;
   /** Lerncheckliste – Themen die du können musst, mit Ampel-Status. */
   studyChecklist?: StudyChecklistItem[];
   /** Ziel-Datum bis wann du die Checkliste durchhaben willst (ms timestamp). */
@@ -273,6 +279,8 @@ export interface Photo {
 export interface AppSettings {
   id: 'app';
   name?: string;
+  /** Optionales Profil-Emoji (lokal, kein Cloud-Upload nötig). Z. B. "🦊". */
+  avatar?: string;
   school?: string;
   classLevel?: string;
   system: GradingSystem;
@@ -416,6 +424,76 @@ export interface SchoolYear {
   endDate?: number;    // ms timestamp, open if undefined
   active: boolean;
   createdAt: number;
+  /**
+   * Wenn true, ist dieses „Schuljahr" eine bayerische gymnasiale Oberstufe
+   * (Qualifikationsphase). Es umfasst dann 4 Ausbildungsabschnitte
+   * (12/1, 12/2, 13/1, 13/2 → siehe OBERSTUFE_TERMS); Noten werden je Halbjahr
+   * (Grade.term) geführt, und der Schuljahres-Auswähler wird zum Halbjahres-Auswähler.
+   */
+  oberstufe?: boolean;
+  /**
+   * Die beiden Jahrgangsstufen der Q-Phase, z. B. [12, 13] (G9) oder [11, 12] (G8).
+   * Bestimmt die Halbjahres-Labels (12/1 …). Default: [12, 13].
+   */
+  oberstufeJahrgaenge?: [number, number];
+  /** Abitur-Konfiguration (nur bei Oberstufen-Jahren relevant). */
+  abitur?: AbiturConfig;
+}
+
+/** Konfiguration für den Abitur-Rechner eines Oberstufen-Jahres (Bayern G9). */
+export interface AbiturConfig {
+  /** Bis zu 5 Abiturprüfungsfächer (Subject.id). */
+  examSubjectIds: string[];
+  /** Erreichte Punkte (0–15) je Abiturfach (Subject.id → Punkte). */
+  examPoints: Record<string, number>;
+  /**
+   * Fächer, deren ALLE Halbjahresleistungen verpflichtend eingebracht werden
+   * (zusätzlich zu den Abiturfächern, die immer komplett zählen). Z. B. Deutsch,
+   * Mathematik, fortgeführte Fremdsprache, Naturwissenschaft.
+   */
+  fullSubjectIds?: string[];
+  /** Manuell gestrichene einzelne Halbjahresleistungen (Schlüssel "subjectId:term"). */
+  struckKeys?: string[];
+}
+
+/** Ein Ausbildungsabschnitt der bayerischen Oberstufe (Q-Phase). */
+export interface OberstufeTerm {
+  /** 1–4, in chronologischer Reihenfolge. */
+  term: number;
+  /** Anzeige-Label, z. B. "12/1". */
+  label: string;
+  /** Jahrgangsstufe (G9: 12 oder 13). */
+  jahrgang: number;
+  /** Halbjahr innerhalb der Jahrgangsstufe. */
+  half: 1 | 2;
+}
+
+/** Default-Jahrgangsstufen der Q-Phase (G9). */
+export const DEFAULT_OBERSTUFE_JAHRGAENGE: [number, number] = [12, 13];
+
+/** Baut die 4 Ausbildungsabschnitte für gegebene Jahrgangsstufen (z. B. [12,13] G9, [11,12] G8). */
+export function oberstufeTermsFor(jg?: [number, number]): OberstufeTerm[] {
+  const [a, b] = jg ?? DEFAULT_OBERSTUFE_JAHRGAENGE;
+  return [
+    { term: 1, label: `${a}/1`, jahrgang: a, half: 1 },
+    { term: 2, label: `${a}/2`, jahrgang: a, half: 2 },
+    { term: 3, label: `${b}/1`, jahrgang: b, half: 1 },
+    { term: 4, label: `${b}/2`, jahrgang: b, half: 2 },
+  ];
+}
+
+/** Die vier Ausbildungsabschnitte der bayerischen Q-Phase – Default (G9, 12/13). */
+export const OBERSTUFE_TERMS: OberstufeTerm[] = oberstufeTermsFor();
+
+/** Label eines Halbjahres für gegebene Jahrgangsstufen (Fallback: erstes Halbjahr). */
+export function oberstufeTermLabelFor(term: number | undefined, jg?: [number, number]): string {
+  const terms = oberstufeTermsFor(jg);
+  return terms.find(t => t.term === term)?.label ?? terms[0].label;
+}
+
+/** Label eines Halbjahres mit Default-Jahrgängen (Back-Compat). */
+export function oberstufeTermLabel(term: number | undefined): string {
+  return oberstufeTermLabelFor(term);
 }
 
 export const DEFAULT_GRADING_CONFIG: GradingSystemConfig = {

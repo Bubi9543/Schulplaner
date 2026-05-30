@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
-  Download, Upload, Loader2, AlertCircle, KeyRound, Hand,
+  Download, Upload, Loader2, AlertCircle, KeyRound, Hand, GraduationCap,
+  Layers, CalendarClock, Users, MapPin, Star,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
@@ -11,15 +12,19 @@ import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
 import { importData } from '@/lib/portability';
 import { SUBJECT_COLORS } from '@/types';
-import type { GradingSystem, Subject } from '@/types';
+import type { GradingSystem, Subject, Weekday, RegionCode } from '@/types';
 import { CATEGORY_LABEL } from '@/lib/grading';
+import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
+/** Eine im Onboarding entworfene Stunde (referenziert das Fach noch über den Namen). */
+interface DraftLesson { subjectName: string; weekday: Weekday; start: string; end: string; }
+
 const ONBOARDING_PENDING_KEY = 'onboarding_pending';
-/** Der Shortcut-Step (Cloud-Login / JSON-Import) wird nicht in den Stufen-Dots gezeigt. */
-const SHORTCUT_STEP = 99;
-const MAX_STEP = 5;
+
+/** Auswählbare Profil-Emojis. */
+const AVATAR_EMOJIS = ['🦊', '🐼', '🐧', '🐨', '🦁', '🐯', '🐸', '🐙', '🦉', '🐳', '🦄', '🐝', '🌟', '🚀', '🎓', '📚', '🎨', '⚽', '🎸', '🧠', '🍀', '🔥', '🌈', '💡'];
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Mathematik', short: 'M',   category: 'hauptfach' },
@@ -45,7 +50,17 @@ const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Sozialkunde', short: 'Sk',  category: 'nebenfach' },
 ];
 
-// Per-step visual theme: gradient colors + blob colors
+const WEEKDAYS: { value: Weekday; label: string }[] = [
+  { value: 1, label: 'Mo' },
+  { value: 2, label: 'Di' },
+  { value: 3, label: 'Mi' },
+  { value: 4, label: 'Do' },
+  { value: 5, label: 'Fr' },
+];
+
+const MAX_ABI_FAECHER = 5;
+
+// Per-step visual theme: gradient colors + blob colors (zyklisch nach Index)
 const STEP_CFG = [
   { g1: '#6366f1', g2: '#7c3aed', b1: '#818cf8', b2: '#a78bfa', b3: '#f0abfc' }, // indigo/violet
   { g1: '#0ea5e9', g2: '#2563eb', b1: '#7dd3fc', b2: '#93c5fd', b3: '#a5b4fc' }, // sky/blue
@@ -55,10 +70,22 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-const STEP_ICONS = [Sparkles, User, Trophy, BookOpen, Cloud, KeyRound];
+type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'plan' | 'account' | 'friends' | 'code';
 
-function iconGrad(step: number) {
-  const c = STEP_CFG[step];
+const STEP_ICON: Record<StepKey, typeof Sparkles> = {
+  welcome: Sparkles,
+  profile: User,
+  stufe: Layers,
+  subjects: BookOpen,
+  abi: Trophy,
+  plan: CalendarClock,
+  account: Cloud,
+  friends: Users,
+  code: KeyRound,
+};
+
+function gradientFor(idx: number) {
+  const c = STEP_CFG[idx % STEP_CFG.length];
   return `linear-gradient(135deg, ${c.g1}, ${c.g2})`;
 }
 
@@ -72,23 +99,58 @@ function slide(forward: boolean) {
   };
 }
 
+/** Was wir vor dem Google-OAuth-Redirect zwischenspeichern. */
+interface PendingState {
+  name: string; avatar: string; school: string; classLevel: string;
+  system: GradingSystem; oberG8: boolean; region: RegionCode;
+  subjects: Draft[]; examNames: string[]; fullNames: string[]; lessons: DraftLesson[];
+}
+
 /* ─── Main component ─────────────────────────────────────────────────── */
 
 export function Onboarding() {
   const setSettings = useStore(s => s.setSettings);
   const addSubject  = useStore(s => s.addSubject);
+  const addSchoolYear = useStore(s => s.addSchoolYear);
+  const updateSchoolYear = useStore(s => s.updateSchoolYear);
+  const addLesson = useStore(s => s.addLesson);
   const load        = useStore(s => s.load);
   const authUser    = useStore(s => s.authUser);
 
-  const [step, setStep]               = useState(0);
-  const [prevStep, setPrevStep]       = useState(0);
+  // Navigation
+  const [stepKey, setStepKey] = useState<StepKey>('welcome');
+  const [forward, setForward] = useState(true);
+  const [shortcut, setShortcut] = useState(false);
+
+  // Profil
   const [name, setName]               = useState('');
+  const [avatar, setAvatar]           = useState('');
   const [school, setSchool]           = useState('');
   const [classLevel, setClassLevel]   = useState('');
-  const [system, setSystem]           = useState<GradingSystem>('bayern');
-  const [subjects, setSubjects]       = useState<Draft[]>([]);
+  const [region, setRegion]           = useState<RegionCode>({ country: 'DE' });
 
-  const pendingRef = useRef<{ name: string; school: string; classLevel: string; system: GradingSystem; subjects: Draft[] } | null>(null);
+  // Stufe / System
+  const [system, setSystem]           = useState<GradingSystem>('bayern');
+  const [regularSystem, setRegularSystem] = useState<GradingSystem>('bayern');
+  const [oberG8, setOberG8]           = useState(false);
+
+  // Inhalte
+  const [subjects, setSubjects]       = useState<Draft[]>([]);
+  const [examNames, setExamNames]     = useState<string[]>([]);
+  const [fullNames, setFullNames]     = useState<string[]>([]);
+  const [lessons, setLessons]         = useState<DraftLesson[]>([]);
+
+  // Dynamische Schritt-Liste (Abi nur in der Oberstufe, Freunde nur eingeloggt).
+  const steps = useMemo<StepKey[]>(() => {
+    const list: StepKey[] = ['welcome', 'profile', 'stufe', 'subjects'];
+    if (system === 'oberstufe') list.push('abi');
+    list.push('plan', 'account');
+    if (authUser) list.push('friends');
+    list.push('code');
+    return list;
+  }, [system, authUser]);
+
+  const pendingRef = useRef<PendingState | null>(null);
 
   // Restore state saved before Google OAuth redirect
   useEffect(() => {
@@ -98,37 +160,44 @@ export function Onboarding() {
     }
   }, []);
 
-  // Nach OAuth-Redirect: Daten waren schon vor dem Login da, jetzt nur
-  // die in-memory State wiederherstellen und in den Friend-Code-Step springen.
-  // (finishWithData wird erst im Friend-Code-Step ausgelöst.)
+  // Nach OAuth-Redirect: in-memory State wiederherstellen und in den Freunde-Step springen.
   useEffect(() => {
     if (!authUser || !pendingRef.current) return;
-    const saved = pendingRef.current;
+    const s = pendingRef.current;
     pendingRef.current = null;
     localStorage.removeItem(ONBOARDING_PENDING_KEY);
-    setName(saved.name);
-    setSchool(saved.school);
-    setClassLevel(saved.classLevel);
-    setSystem(saved.system);
-    setSubjects(saved.subjects);
-    setPrevStep(4);
-    setStep(5);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setName(s.name); setAvatar(s.avatar); setSchool(s.school); setClassLevel(s.classLevel);
+    setSystem(s.system); setOberG8(s.oberG8); setRegion(s.region);
+    setSubjects(s.subjects); setExamNames(s.examNames); setFullNames(s.fullNames); setLessons(s.lessons);
+    setForward(true);
+    setStepKey('friends');
   }, [authUser]);
 
   function saveStateForRedirect() {
-    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify({ name, school, classLevel, system, subjects }));
+    const s: PendingState = { name, avatar, school, classLevel, system, oberG8, region, subjects, examNames, fullNames, lessons };
+    localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify(s));
   }
 
+  /* ── Fächer-Helfer ── */
   function toggleStarter(s: typeof STARTER_SUBJECTS[number]) {
     setSubjects(prev => {
       const exists = prev.find(p => p.name === s.name);
-      if (exists) return prev.filter(p => p.name !== s.name);
+      if (exists) {
+        setExamNames(e => e.filter(n => n !== s.name));
+        setFullNames(f => f.filter(n => n !== s.name));
+        setLessons(l => l.filter(x => x.subjectName !== s.name));
+        return prev.filter(p => p.name !== s.name);
+      }
       const color = SUBJECT_COLORS[prev.length % SUBJECT_COLORS.length];
       return [...prev, { ...s, color, system }];
     });
   }
-  function removeSubject(n: string) { setSubjects(prev => prev.filter(p => p.name !== n)); }
+  function removeSubject(n: string) {
+    setSubjects(prev => prev.filter(p => p.name !== n));
+    setExamNames(e => e.filter(x => x !== n));
+    setFullNames(f => f.filter(x => x !== n));
+    setLessons(l => l.filter(x => x.subjectName !== n));
+  }
   function addCustom() {
     const n = prompt('Wie heißt das Fach?');
     if (!n?.trim()) return;
@@ -136,26 +205,60 @@ export function Onboarding() {
     setSubjects(prev => [...prev, { name: n.trim(), short: n.trim().slice(0, 2), color, category: 'nebenfach', system }]);
   }
 
-  async function finishWithData(n: string, sch: string, cls: string, sys: GradingSystem, subjs: Draft[]) {
-    for (const s of subjs) await addSubject({ ...s, system: sys });
+  /* ── Abschluss ── */
+  async function finish() {
+    let yearId: string | undefined;
+    if (system === 'oberstufe') {
+      const d = new Date();
+      const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
+      const year = await addSchoolYear({
+        name: 'Oberstufe',
+        startDate: new Date(y, 8, 1).getTime(),
+        oberstufe: true,
+        oberstufeJahrgaenge: oberG8 ? [11, 12] : [12, 13],
+      });
+      yearId = year.id;
+    }
+
+    // Fächer schreiben + Name→ID-Map für Abi-Config & Stundenplan.
+    const nameToId = new Map<string, string>();
+    for (const s of subjects) {
+      const created = await addSubject({ ...s, system });
+      nameToId.set(s.name, created.id);
+    }
+
+    // Oberstufe: Abiturprüfungs- & Pflichtfächer in die Jahres-Config schreiben.
+    if (system === 'oberstufe' && yearId) {
+      const examSubjectIds = examNames.map(n => nameToId.get(n)).filter((x): x is string => !!x);
+      const fullSubjectIds = fullNames.map(n => nameToId.get(n)).filter((x): x is string => !!x);
+      if (examSubjectIds.length || fullSubjectIds.length) {
+        await updateSchoolYear(yearId, { abitur: { examSubjectIds, examPoints: {}, fullSubjectIds, struckKeys: [] } });
+      }
+    }
+
+    // Stundenplan-Entwürfe eintragen (Fach über die Name→ID-Map auflösen).
+    for (const l of lessons) {
+      const sid = nameToId.get(l.subjectName);
+      if (!sid) continue;
+      await addLesson({ subjectId: sid, weekday: l.weekday, start: l.start, end: l.end });
+    }
+
     await setSettings({
-      name: n.trim() || undefined,
-      school: sch.trim() || undefined,
-      classLevel: cls.trim() || undefined,
-      system: sys,
+      name: name.trim() || undefined,
+      avatar: avatar || undefined,
+      school: school.trim() || undefined,
+      classLevel: classLevel.trim() || undefined,
+      system,
+      region: region.country ? { country: region.country, subdivision: region.subdivision || undefined } : undefined,
       onboarded: true,
       demo: false,
     });
     await load();
   }
-  async function finish() { await finishWithData(name, school, classLevel, system, subjects); }
+
   async function tryDemo() { await installDemo(); await load(); }
 
-  /**
-   * Shortcut-Abschluss nach Cloud-Login oder JSON-Import: System+Fächer-Steps
-   * werden übersprungen, weil die Daten ja schon da sind. Wir setzen nur
-   * onboarded:true (und optional den Namen).
-   */
+  /** Shortcut-Abschluss nach Cloud-Login oder JSON-Import (Daten sind schon da). */
   async function finishShortcut(opts?: { name?: string }) {
     await setSettings({
       name: (opts?.name ?? name).trim() || undefined,
@@ -165,93 +268,72 @@ export function Onboarding() {
     await load();
   }
 
-  function goNext() { setPrevStep(step); setStep(s => Math.min(MAX_STEP, s + 1)); }
-  function goPrev() { setPrevStep(step); setStep(s => Math.max(0, s - 1)); }
-  function goShortcut() { setPrevStep(step); setStep(SHORTCUT_STEP); }
-  function leaveShortcut() { setPrevStep(SHORTCUT_STEP); setStep(0); }
+  /* ── Navigation ── */
+  function goNext() {
+    const idx = steps.indexOf(stepKey);
+    if (idx >= steps.length - 1) { void finish(); return; }
+    setForward(true);
+    setStepKey(steps[idx + 1]);
+  }
+  function goPrev() {
+    const idx = steps.indexOf(stepKey);
+    if (idx <= 0) return;
+    setForward(false);
+    setStepKey(steps[idx - 1]);
+  }
+  function goShortcut() { setForward(true); setShortcut(true); }
+  function leaveShortcut() { setForward(false); setShortcut(false); setStepKey('welcome'); }
 
-  const isShortcut = step === SHORTCUT_STEP;
-  // Für visuelles Theme bleiben wir auf einem definierten Index, falls Shortcut.
-  const visualStep = isShortcut ? 4 : step;
-  const cfg     = STEP_CFG[visualStep];
-  const gradient = iconGrad(visualStep);
-  const forward  = step >= prevStep;
-  const StepIcon = isShortcut ? Cloud : STEP_ICONS[visualStep];
-  // blob intensity grows from 0.20 → 0.62 across steps
-  const blobOp  = 0.20 + (visualStep / MAX_STEP) * 0.42;
-  // blob size grows from 320 → 530
-  const blobSz  = 320 + visualStep * 42;
+  /* ── Stufe wählen ── */
+  function pickRegular() { setSystem(regularSystem === 'oberstufe' ? 'bayern' : regularSystem); }
+  function pickRegularSystem(v: GradingSystem) { setRegularSystem(v); setSystem(v); }
+  function pickOberstufe() { setSystem('oberstufe'); }
+
+  const idx = steps.indexOf(stepKey);
+  const visualIdx = shortcut ? 4 : Math.max(0, idx);
+  const cfg = STEP_CFG[visualIdx % STEP_CFG.length];
+  const gradient = gradientFor(visualIdx);
+  const StepIcon = shortcut ? Cloud : STEP_ICON[stepKey];
+  const dotCount = steps.length;
+  const blobOp = 0.20 + (visualIdx / Math.max(1, dotCount - 1)) * 0.42;
+  const blobSz = 320 + visualIdx * 28;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#f0f4ff]">
 
-      {/* Animated background blobs – color + opacity + size animate via CSS transition */}
+      {/* Animated background blobs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {/* blob 1 – top-left */}
         <div
           className="absolute -top-32 -left-28 rounded-full blur-[90px] animate-blob"
-          style={{
-            backgroundColor: cfg.b1,
-            opacity: blobOp,
-            width: blobSz,
-            height: blobSz,
-            transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease',
-          }}
+          style={{ backgroundColor: cfg.b1, opacity: blobOp, width: blobSz, height: blobSz, transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease' }}
         />
-        {/* blob 2 – bottom-right */}
         <div
           className="absolute -bottom-20 -right-20 rounded-full blur-[90px] animate-blob"
-          style={{
-            backgroundColor: cfg.b2,
-            opacity: blobOp * 0.85,
-            width: blobSz * 0.9,
-            height: blobSz * 0.9,
-            animationDelay: '4s',
-            transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease',
-          }}
+          style={{ backgroundColor: cfg.b2, opacity: blobOp * 0.85, width: blobSz * 0.9, height: blobSz * 0.9, animationDelay: '4s', transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease' }}
         />
-        {/* blob 3 – center – appears from step 2 */}
         <div
           className="absolute top-1/3 left-1/4 rounded-full blur-[90px] animate-blob"
-          style={{
-            backgroundColor: cfg.b3,
-            opacity: blobOp * 0.7 * (step >= 2 ? 1 : 0),
-            width: blobSz * 0.75,
-            height: blobSz * 0.75,
-            animationDelay: '8s',
-            transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease',
-          }}
+          style={{ backgroundColor: cfg.b3, opacity: blobOp * 0.7 * (visualIdx >= 2 ? 1 : 0), width: blobSz * 0.75, height: blobSz * 0.75, animationDelay: '8s', transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease' }}
         />
-        {/* blob 4 – lower-left – appears from step 4 */}
         <div
           className="absolute bottom-1/4 -left-10 rounded-full blur-[80px] animate-blob"
-          style={{
-            backgroundColor: cfg.b1,
-            opacity: blobOp * 0.55 * (step >= 4 ? 1 : 0),
-            width: blobSz * 0.65,
-            height: blobSz * 0.65,
-            animationDelay: '13s',
-            transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease',
-          }}
+          style={{ backgroundColor: cfg.b1, opacity: blobOp * 0.55 * (visualIdx >= 4 ? 1 : 0), width: blobSz * 0.65, height: blobSz * 0.65, animationDelay: '13s', transition: 'background-color 1.1s ease, opacity 1.1s ease, width 1.1s ease, height 1.1s ease' }}
         />
       </div>
 
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-5 py-14 gap-6">
 
-        {/* Hero icon – springs in on every step change */}
+        {/* Hero icon */}
         <AnimatePresence mode="wait">
           <motion.div
-            key={`icon-${step}`}
+            key={`icon-${shortcut ? 'sc' : stepKey}`}
             initial={{ scale: 0.2, rotate: -25, opacity: 0 }}
-            animate={{ scale: 1,   rotate: 0,   opacity: 1 }}
-            exit={{   scale: 0.5,  rotate: 18,  opacity: 0 }}
+            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+            exit={{ scale: 0.5, rotate: 18, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 340, damping: 18 }}
             className="size-24 rounded-[1.75rem] grid place-items-center flex-shrink-0"
-            style={{
-              background: gradient,
-              boxShadow: `0 24px 64px ${cfg.g1}55, 0 6px 20px ${cfg.g1}33`,
-            }}
+            style={{ background: gradient, boxShadow: `0 24px 64px ${cfg.g1}55, 0 6px 20px ${cfg.g1}33` }}
           >
             <StepIcon className="size-12 text-white" strokeWidth={1.5} />
           </motion.div>
@@ -260,73 +342,84 @@ export function Onboarding() {
         {/* Step card */}
         <div className="w-full max-w-lg">
           <AnimatePresence mode="wait">
-            {step === 0 && (
-              <motion.div key="w" {...slide(forward)}>
+            {shortcut ? (
+              <motion.div key="sc" {...slide(forward)}>
+                <ShortcutStep back={leaveShortcut} onFinish={finishShortcut} gradient={gradient} />
+              </motion.div>
+            ) : stepKey === 'welcome' ? (
+              <motion.div key="welcome" {...slide(forward)}>
                 <WelcomeStep onStart={goNext} onDemo={tryDemo} onShortcut={goShortcut} gradient={gradient} />
               </motion.div>
-            )}
-            {step === SHORTCUT_STEP && (
-              <motion.div key="sc" {...slide(forward)}>
-                <ShortcutStep
-                  back={leaveShortcut}
-                  onFinish={finishShortcut}
-                  gradient={gradient}
-                />
-              </motion.div>
-            )}
-            {step === 1 && (
-              <motion.div key="n" {...slide(forward)}>
+            ) : stepKey === 'profile' ? (
+              <motion.div key="profile" {...slide(forward)}>
                 <ProfileStep
                   name={name} setName={setName}
+                  avatar={avatar} setAvatar={setAvatar}
                   school={school} setSchool={setSchool}
                   classLevel={classLevel} setClassLevel={setClassLevel}
+                  region={region} setRegion={setRegion}
                   next={goNext} back={goPrev} gradient={gradient}
                 />
               </motion.div>
-            )}
-            {step === 2 && (
-              <motion.div key="s" {...slide(forward)}>
-                <SystemStep system={system} setSystem={setSystem} next={goNext} back={goPrev} gradient={gradient} />
+            ) : stepKey === 'stufe' ? (
+              <motion.div key="stufe" {...slide(forward)}>
+                <StufeStep
+                  system={system} regularSystem={regularSystem}
+                  oberG8={oberG8} setOberG8={setOberG8}
+                  pickRegular={pickRegular} pickRegularSystem={pickRegularSystem} pickOberstufe={pickOberstufe}
+                  next={goNext} back={goPrev} gradient={gradient}
+                />
               </motion.div>
-            )}
-            {step === 3 && (
-              <motion.div key="f" {...slide(forward)}>
+            ) : stepKey === 'subjects' ? (
+              <motion.div key="subjects" {...slide(forward)}>
                 <SubjectsStep
                   subjects={subjects} system={system}
                   toggle={toggleStarter} removeSubject={removeSubject} addCustom={addCustom}
                   next={goNext} back={goPrev} gradient={gradient}
                 />
               </motion.div>
-            )}
-            {step === 4 && (
-              <motion.div key="a" {...slide(forward)}>
-                <AccountStep
-                  onAuthed={goNext}
-                  onSkip={finish}
-                  back={goPrev}
-                  onSaveState={saveStateForRedirect}
-                  gradient={gradient}
+            ) : stepKey === 'abi' ? (
+              <motion.div key="abi" {...slide(forward)}>
+                <AbiStep
+                  subjects={subjects}
+                  examNames={examNames} setExamNames={setExamNames}
+                  fullNames={fullNames} setFullNames={setFullNames}
+                  next={goNext} back={goPrev} gradient={gradient}
                 />
               </motion.div>
-            )}
-            {step === 5 && (
-              <motion.div key="c" {...slide(forward)}>
+            ) : stepKey === 'plan' ? (
+              <motion.div key="plan" {...slide(forward)}>
+                <PlanStep
+                  subjects={subjects} lessons={lessons} setLessons={setLessons}
+                  next={goNext} back={goPrev} gradient={gradient}
+                />
+              </motion.div>
+            ) : stepKey === 'account' ? (
+              <motion.div key="account" {...slide(forward)}>
+                <AccountStep onAuthed={goNext} onSkip={goNext} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
+              </motion.div>
+            ) : stepKey === 'friends' ? (
+              <motion.div key="friends" {...slide(forward)}>
+                <FriendsStep next={goNext} back={goPrev} gradient={gradient} />
+              </motion.div>
+            ) : (
+              <motion.div key="code" {...slide(forward)}>
                 <FriendCodeStep finish={finish} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Step dots – nur im Standard-Flow zeigen */}
-        {!isShortcut && (
+        {/* Step dots */}
+        {!shortcut && (
           <div className="flex items-center gap-2">
-            {Array.from({ length: MAX_STEP + 1 }).map((_, i) => (
+            {steps.map((k, i) => (
               <motion.div
-                key={i}
-                animate={{ width: i === step ? 28 : 8, opacity: i === step ? 1 : 0.35 }}
+                key={k}
+                animate={{ width: i === idx ? 28 : 8, opacity: i === idx ? 1 : 0.35 }}
                 transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                 className="h-2 rounded-full"
-                style={{ background: i === step ? gradient : '#6366f1' }}
+                style={{ background: i === idx ? gradient : '#6366f1' }}
               />
             ))}
           </div>
@@ -356,10 +449,7 @@ function PrimaryBtn({ onClick, children, disabled, gradient }: {
       whileHover={disabled ? {} : { scale: 1.025, y: -1 }}
       whileTap={disabled ? {} : { scale: 0.965 }}
       className="w-full py-3.5 rounded-2xl text-white font-semibold text-base flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{
-        background: gradient,
-        boxShadow: disabled ? 'none' : '0 10px 30px rgba(0,0,0,0.18)',
-      }}
+      style={{ background: gradient, boxShadow: disabled ? 'none' : '0 10px 30px rgba(0,0,0,0.18)' }}
     >
       {children}
     </motion.button>
@@ -382,6 +472,18 @@ function GlassInput({
       onKeyDown={onKeyDown}
       className="w-full px-4 py-3.5 rounded-2xl bg-white/30 border border-white/50 text-ink-900 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-white/70 focus:bg-white/50 transition text-base"
     />
+  );
+}
+
+function GlassSelect({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full px-4 py-3.5 rounded-2xl bg-white/30 border border-white/50 text-ink-900 focus:outline-none focus:ring-2 focus:ring-white/70 focus:bg-white/50 transition text-base cursor-pointer"
+    >
+      {children}
+    </select>
   );
 }
 
@@ -427,23 +529,19 @@ function SelectCard({ active, onClick, title, sub, icon, gradient }: {
   );
 }
 
-/* ─── Step 0: Welcome ────────────────────────────────────────────────── */
+/* ─── Step: Welcome ──────────────────────────────────────────────────── */
 
 function WelcomeStep({ onStart, onDemo, onShortcut, gradient }: { onStart: () => void; onDemo: () => void; onShortcut: () => void; gradient: string }) {
   return (
     <GlassCard className="p-8 md:p-10 text-center">
       <motion.h1
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
         className="font-display text-3xl md:text-4xl font-extrabold text-ink-900"
       >
         Willkommen!
       </motion.h1>
       <motion.p
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.18 }}
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
         className="text-ink-600 mt-2 leading-relaxed"
       >
         Alle Noten, Aufgaben und der Stundenplan an einem Ort.
@@ -452,9 +550,7 @@ function WelcomeStep({ onStart, onDemo, onShortcut, gradient }: { onStart: () =>
       </motion.p>
 
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.26 }}
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}
         className="mt-8 space-y-3"
       >
         <PrimaryBtn onClick={onStart} gradient={gradient}>
@@ -475,12 +571,10 @@ function WelcomeStep({ onStart, onDemo, onShortcut, gradient }: { onStart: () =>
       </motion.div>
 
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
         className="mt-6 flex items-center justify-center gap-2 flex-wrap"
       >
-        {['Bayern & Oberstufe', 'Live-Stundenplan', 'Notenverlauf', 'Cloud Sync'].map(t => (
+        {['Bayern & Oberstufe', 'Live-Stundenplan', 'Abi-Rechner', 'Cloud Sync'].map(t => (
           <span key={t} className="text-xs px-2.5 py-1 rounded-full border border-ink-200 bg-white/60 text-ink-500">{t}</span>
         ))}
       </motion.div>
@@ -504,12 +598,9 @@ function ShortcutStep({ back, onFinish, gradient }: {
   const [loading, setLoading] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
-  // Wenn man sich erfolgreich einloggt, übernimmt Realtime + downloadAll
-  // den Datenstand. Sobald der Auth-Listener `authUser` setzt, finishen wir.
   useEffect(() => {
     if (mode !== 'login' && mode !== 'signup') return;
     if (!authUser) return;
-    // kleine Verzögerung, damit startAutoSync seine Initial-Pull machen kann
     const t = setTimeout(() => { void onFinish(); }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -520,7 +611,6 @@ function ShortcutStep({ back, onFinish, gradient }: {
     const err = mode === 'login' ? await signIn(email, password) : await signUp(email, password);
     setLoading(false);
     if (err) setError(err);
-    // bei Erfolg übernimmt der useEffect-Hook oben das finish
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -564,9 +654,7 @@ function ShortcutStep({ back, onFinish, gradient }: {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-ink-900">Mit Account anmelden</div>
-                    <div className="text-xs text-ink-500 mt-0.5">
-                      Alle Geräte synchronisieren sich automatisch. Empfohlen.
-                    </div>
+                    <div className="text-xs text-ink-500 mt-0.5">Alle Geräte synchronisieren sich automatisch. Empfohlen.</div>
                   </div>
                   <ChevronRight className="size-5 text-ink-400" />
                 </div>
@@ -600,9 +688,7 @@ function ShortcutStep({ back, onFinish, gradient }: {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-ink-900">JSON-Datei importieren</div>
-                <div className="text-xs text-ink-500 mt-0.5">
-                  Vorher per „Exportieren" in den Einstellungen gesichert.
-                </div>
+                <div className="text-xs text-ink-500 mt-0.5">Vorher per „Exportieren" in den Einstellungen gesichert.</div>
               </div>
               <ChevronRight className="size-5 text-ink-400" />
             </div>
@@ -613,20 +699,14 @@ function ShortcutStep({ back, onFinish, gradient }: {
 
       {(mode === 'login' || mode === 'signup') && !authUser && (
         <div className="mt-6 space-y-3">
-          <div className="text-sm font-semibold text-ink-700">
-            {mode === 'login' ? 'Anmelden' : 'Registrieren'}
-          </div>
+          <div className="text-sm font-semibold text-ink-700">{mode === 'login' ? 'Anmelden' : 'Registrieren'}</div>
           <GlassInput value={email} onChange={setEmail} placeholder="E-Mail" type="email" autoFocus />
-          <GlassInput value={password} onChange={setPassword} placeholder="Passwort" type="password"
-            onKeyDown={e => e.key === 'Enter' && submit()} />
+          <GlassInput value={password} onChange={setPassword} placeholder="Passwort" type="password" onKeyDown={e => e.key === 'Enter' && submit()} />
           {error && <div className="text-xs text-rose-600 px-1">{error}</div>}
           <PrimaryBtn onClick={submit} disabled={loading || !email || !password} gradient={gradient}>
             {loading ? 'Bitte warten…' : mode === 'login' ? 'Anmelden & Daten laden' : 'Registrieren'}
           </PrimaryBtn>
-          <button
-            onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-            className="w-full py-2 text-xs text-ink-500 hover:text-ink-800 transition"
-          >
+          <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} className="w-full py-2 text-xs text-ink-500 hover:text-ink-800 transition">
             {mode === 'login' ? 'Noch kein Account? Registrieren →' : '← Schon einen Account? Anmelden'}
           </button>
           <button onClick={() => setMode('choice')} className="w-full py-2 text-xs text-ink-400 hover:text-ink-600 transition">
@@ -641,53 +721,88 @@ function ShortcutStep({ back, onFinish, gradient }: {
           <div className="font-display font-bold text-ink-900">
             {mode === 'importing' ? 'Importiere deine Daten …' : 'Synchronisiere mit der Cloud …'}
           </div>
-          {importStatus && (
-            <div className="text-xs text-emerald-700 mt-2">{importStatus}</div>
-          )}
+          {importStatus && <div className="text-xs text-emerald-700 mt-2">{importStatus}</div>}
         </div>
       )}
     </GlassCard>
   );
 }
 
-/* ─── Step 1: Name ───────────────────────────────────────────────────── */
+/* ─── Step: Profil ───────────────────────────────────────────────────── */
 
-function ProfileStep({ name, setName, school, setSchool, classLevel, setClassLevel, next, back, gradient }: {
+function ProfileStep({ name, setName, avatar, setAvatar, school, setSchool, classLevel, setClassLevel, region, setRegion, next, back, gradient }: {
   name: string; setName: (n: string) => void;
+  avatar: string; setAvatar: (a: string) => void;
   school: string; setSchool: (s: string) => void;
   classLevel: string; setClassLevel: (c: string) => void;
+  region: RegionCode; setRegion: (r: RegionCode) => void;
   next: () => void; back: () => void; gradient: string;
 }) {
+  const subOptions = subdivisionsForCountry(region.country);
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Hand className="size-6 text-theme-deep" />Erzähl uns etwas über dich</h2>
       <p className="text-ink-500 text-sm mt-1">Alles optional – kannst du auch später in den Einstellungen ändern.</p>
 
-      <div className="mt-6 space-y-3">
-        <div>
-          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Name</label>
-          <GlassInput
-            value={name} onChange={setName}
-            placeholder="Dein Name" autoFocus
-            onKeyDown={e => e.key === 'Enter' && next()}
-          />
+      <div className="mt-6 space-y-4">
+        {/* Avatar + Name */}
+        <div className="flex items-center gap-3">
+          <div className="size-14 rounded-2xl grid place-items-center text-3xl flex-shrink-0 border border-white/60" style={{ background: gradient }}>
+            {avatar || '🙂'}
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Name</label>
+            <GlassInput value={name} onChange={setName} placeholder="Dein Name" autoFocus onKeyDown={e => e.key === 'Enter' && next()} />
+          </div>
         </div>
+
+        {/* Emoji-Auswahl */}
+        <div>
+          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Avatar</label>
+          <div className="flex flex-wrap gap-1.5">
+            {AVATAR_EMOJIS.map(e => (
+              <button
+                key={e}
+                onClick={() => setAvatar(avatar === e ? '' : e)}
+                className={`size-9 rounded-xl grid place-items-center text-xl transition ${avatar === e ? 'ring-2 ring-white scale-110 shadow-soft' : 'bg-white/40 hover:bg-white/70'}`}
+                style={avatar === e ? { background: gradient } : undefined}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Schule + Klasse */}
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
           <div>
             <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Schule</label>
-            <GlassInput
-              value={school} onChange={setSchool}
-              placeholder="z. B. Albertus-Magnus-Gymnasium"
-            />
+            <GlassInput value={school} onChange={setSchool} placeholder="z. B. Albertus-Magnus-Gymnasium" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Klasse</label>
-            <GlassInput
-              value={classLevel} onChange={setClassLevel}
-              placeholder="11"
-            />
+            <GlassInput value={classLevel} onChange={setClassLevel} placeholder="11" />
           </div>
+        </div>
+
+        {/* Land + Bundesland (für Ferien & Abi-Berechnung) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1 flex items-center gap-1"><MapPin className="size-3" />Land</label>
+            <GlassSelect value={region.country} onChange={c => setRegion({ country: c, subdivision: undefined })}>
+              {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+            </GlassSelect>
+          </div>
+          {subOptions.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Bundesland</label>
+              <GlassSelect value={region.subdivision ?? ''} onChange={s => setRegion({ ...region, subdivision: s || undefined })}>
+                <option value="">– wählen –</option>
+                {subOptions.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+              </GlassSelect>
+            </div>
+          )}
         </div>
       </div>
 
@@ -700,31 +815,65 @@ function ProfileStep({ name, setName, school, setSchool, classLevel, setClassLev
   );
 }
 
-/* ─── Step 2: Grading system ─────────────────────────────────────────── */
+/* ─── Step: Stufe & Notensystem ──────────────────────────────────────── */
 
-function SystemStep({ system, setSystem, next, back, gradient }: {
-  system: GradingSystem; setSystem: (s: GradingSystem) => void;
+function StufeStep({ system, regularSystem, oberG8, setOberG8, pickRegular, pickRegularSystem, pickOberstufe, next, back, gradient }: {
+  system: GradingSystem; regularSystem: GradingSystem;
+  oberG8: boolean; setOberG8: (v: boolean) => void;
+  pickRegular: () => void; pickRegularSystem: (v: GradingSystem) => void; pickOberstufe: () => void;
   next: () => void; back: () => void; gradient: string;
 }) {
-  const opts: { v: GradingSystem; title: string; sub: string; icon: React.ReactNode }[] = [
-    { v: 'bayern',    title: 'Bayern',              sub: 'Noten 1–6, Haupt- & Nebenfächer',        icon: <BookOpen className="size-4.5" /> },
-    { v: 'oberstufe', title: 'Oberstufe / Abitur',  sub: 'Punkte 0–15, Per-Note-Gewichtung',        icon: <Trophy className="size-4.5" /> },
-    { v: 'austria',   title: 'Österreich',          sub: 'Noten 1–5, Sehr gut bis Nicht genügend',  icon: <Flag className="size-4.5" /> },
-    { v: 'custom',    title: 'Frei konfigurierbar', sub: 'Min, Max, Schrittweite frei wählbar',      icon: <SettingsIcon className="size-4.5" /> },
+  const isOber = system === 'oberstufe';
+  const regularOpts: { v: GradingSystem; title: string; sub: string; icon: React.ReactNode }[] = [
+    { v: 'bayern',  title: 'Bayern',              sub: 'Noten 1–6, Haupt- & Nebenfächer',      icon: <BookOpen className="size-4.5" /> },
+    { v: 'austria', title: 'Österreich',          sub: 'Noten 1–5, Sehr gut – Nicht genügend', icon: <Flag className="size-4.5" /> },
+    { v: 'custom',  title: 'Frei konfigurierbar', sub: 'Min, Max, Schrittweite frei wählbar',  icon: <SettingsIcon className="size-4.5" /> },
   ];
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Welches Notensystem?</h2>
-      <p className="text-ink-500 text-sm mt-1">Später pro Fach individuell anpassbar.</p>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">In welcher Stufe bist du?</h2>
+      <p className="text-ink-500 text-sm mt-1">Bestimmt, wie deine Noten berechnet werden.</p>
+
       <div className="mt-5 grid sm:grid-cols-2 gap-2.5">
-        {opts.map(o => (
-          <SelectCard
-            key={o.v} active={system === o.v} onClick={() => setSystem(o.v)}
-            title={o.title} sub={o.sub} icon={o.icon} gradient={gradient}
-          />
-        ))}
+        <SelectCard
+          active={!isOber} onClick={pickRegular}
+          title="Unter- & Mittelstufe" sub="Reguläres Schuljahr mit Schulnoten"
+          icon={<BookOpen className="size-4.5" />} gradient={gradient}
+        />
+        <SelectCard
+          active={isOber} onClick={pickOberstufe}
+          title="Oberstufe / Q-Phase" sub="Punkte 0–15, Halbjahre & Abi-Rechner"
+          icon={<GraduationCap className="size-4.5" />} gradient={gradient}
+        />
       </div>
+
+      <AnimatePresence mode="wait">
+        {isOber ? (
+          <motion.div key="ober" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="mt-4">
+              <div className="text-xs font-semibold text-ink-600 mb-1.5 pl-1">Jahrgangsstufen</div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <SelectCard active={!oberG8} onClick={() => setOberG8(false)} title="G9 · 12/13" sub="Abitur nach 9 Jahren Gymnasium" gradient={gradient} />
+                <SelectCard active={oberG8} onClick={() => setOberG8(true)} title="G8 · 11/12" sub="Abitur nach 8 Jahren Gymnasium" gradient={gradient} />
+              </div>
+              <div className="text-[11px] text-ink-400 mt-2 pl-1">Der Abi-Rechner ist auf Bayern (G9, Abitur ab 2026) ausgelegt.</div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key="reg" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="mt-4">
+              <div className="text-xs font-semibold text-ink-600 mb-1.5 pl-1">Notensystem</div>
+              <div className="grid sm:grid-cols-2 gap-2.5">
+                {regularOpts.map(o => (
+                  <SelectCard key={o.v} active={regularSystem === o.v} onClick={() => pickRegularSystem(o.v)} title={o.title} sub={o.sub} icon={o.icon} gradient={gradient} />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="mt-5">
         <PrimaryBtn onClick={next} gradient={gradient}>
           Weiter <ChevronRight className="size-4" />
@@ -734,7 +883,7 @@ function SystemStep({ system, setSystem, next, back, gradient }: {
   );
 }
 
-/* ─── Step 3: Subjects ───────────────────────────────────────────────── */
+/* ─── Step: Fächer ───────────────────────────────────────────────────── */
 
 function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next, back, gradient }: {
   subjects: Draft[]; system: GradingSystem;
@@ -760,8 +909,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
               className="px-3 py-1.5 rounded-full text-sm font-medium border transition"
               style={active
                 ? { background: gradient, color: '#fff', borderColor: 'transparent' }
-                : { background: 'rgba(255,255,255,0.45)', color: '#475569', borderColor: 'rgba(255,255,255,0.5)' }
-              }
+                : { background: 'rgba(255,255,255,0.45)', color: '#475569', borderColor: 'rgba(255,255,255,0.5)' }}
             >
               <span className="inline-flex items-center gap-1">{active && <Check className="size-3.5" />}{s.name}</span>
             </motion.button>
@@ -779,9 +927,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
       <AnimatePresence>
         {subjects.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
             className="mt-4 rounded-2xl bg-white/40 border border-white/55 overflow-hidden"
           >
             <div className="px-4 py-2 text-xs font-semibold text-ink-500 border-b border-white/40">
@@ -815,8 +961,155 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
   );
 }
 
+/* ─── Step: Abiturfächer (nur Oberstufe) ─────────────────────────────── */
 
-/* ─── Step 5: Account ────────────────────────────────────────────────── */
+function AbiStep({ subjects, examNames, setExamNames, fullNames, setFullNames, next, back, gradient }: {
+  subjects: Draft[];
+  examNames: string[]; setExamNames: (f: (prev: string[]) => string[]) => void;
+  fullNames: string[]; setFullNames: (f: (prev: string[]) => string[]) => void;
+  next: () => void; back: () => void; gradient: string;
+}) {
+  function toggleExam(n: string) {
+    setExamNames(prev => prev.includes(n)
+      ? prev.filter(x => x !== n)
+      : prev.length < MAX_ABI_FAECHER ? [...prev, n] : prev);
+  }
+  function toggleFull(n: string) {
+    setFullNames(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]);
+  }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">Abitur & Leistungsfächer</h2>
+      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
+        Markiere bis zu {MAX_ABI_FAECHER} Abiturprüfungsfächer (★) und – optional – Fächer, deren
+        Halbjahre komplett eingebracht werden (◆). Punkte trägst du später im Abi-Rechner ein. Alles änderbar.
+      </p>
+
+      {subjects.length === 0 ? (
+        <div className="mt-5 rounded-2xl bg-white/40 border border-white/55 p-4 text-sm text-ink-500 text-center">
+          Du hast noch keine Fächer gewählt – einfach überspringen, das geht später im Abi-Rechner.
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 text-xs font-semibold text-ink-500">{examNames.length}/{MAX_ABI_FAECHER} Prüfungsfächer</div>
+          <div className="mt-2 rounded-2xl bg-white/40 border border-white/55 divide-y divide-white/40 max-h-64 overflow-y-auto">
+            {subjects.map(s => {
+              const isExam = examNames.includes(s.name);
+              const isFull = isExam || fullNames.includes(s.name);
+              const examDisabled = !isExam && examNames.length >= MAX_ABI_FAECHER;
+              return (
+                <div key={s.name} className="flex items-center gap-2.5 px-3 py-2.5">
+                  <div className="size-8 rounded-xl grid place-items-center text-white flex-shrink-0" style={{ background: s.color }}><SubjectIcon subject={s} className="size-4" /></div>
+                  <div className="flex-1 min-w-0 text-sm font-medium text-ink-800 truncate">{s.name}</div>
+                  <button
+                    onClick={() => toggleExam(s.name)}
+                    disabled={examDisabled}
+                    title="Abiturprüfungsfach"
+                    className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg border transition ${isExam ? 'text-white border-transparent' : 'text-ink-500 border-white/60 bg-white/40 hover:bg-white/70'} ${examDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    style={isExam ? { background: gradient } : undefined}
+                  >
+                    <Star className="size-3.5" />Abi
+                  </button>
+                  <button
+                    onClick={() => { if (!isExam) toggleFull(s.name); }}
+                    disabled={isExam}
+                    title={isExam ? 'Abiturfach wird immer komplett eingebracht' : 'Alle Halbjahre verpflichtend einbringen'}
+                    className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg border transition ${isFull ? 'bg-indigo-500 text-white border-indigo-500' : 'text-ink-500 border-white/60 bg-white/40 hover:bg-white/70'} ${isExam ? 'opacity-70 cursor-default' : ''}`}
+                  >
+                    ◆ Komplett
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div className="mt-5">
+        <PrimaryBtn onClick={next} gradient={gradient}>
+          Weiter <ChevronRight className="size-4" />
+        </PrimaryBtn>
+      </div>
+    </GlassCard>
+  );
+}
+
+/* ─── Step: Stundenplan (optional) ───────────────────────────────────── */
+
+function PlanStep({ subjects, lessons, setLessons, next, back, gradient }: {
+  subjects: Draft[]; lessons: DraftLesson[]; setLessons: (f: (prev: DraftLesson[]) => DraftLesson[]) => void;
+  next: () => void; back: () => void; gradient: string;
+}) {
+  function addRow() {
+    if (subjects.length === 0) return;
+    setLessons(prev => [...prev, { subjectName: subjects[0].name, weekday: 1, start: '08:00', end: '08:45' }]);
+  }
+  function update(i: number, patch: Partial<DraftLesson>) {
+    setLessons(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  }
+  function remove(i: number) {
+    setLessons(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan</h2>
+      <p className="text-ink-500 text-sm mt-1">Optional – ein paar Stunden eintragen, oder einfach überspringen.</p>
+
+      {subjects.length === 0 ? (
+        <div className="mt-5 rounded-2xl bg-white/40 border border-white/55 p-4 text-sm text-ink-500 text-center">
+          Erst Fächer wählen, dann kannst du hier Stunden eintragen.
+        </div>
+      ) : (
+        <div className="mt-5 space-y-2">
+          {lessons.map((l, i) => (
+            <div key={i} className="flex items-center gap-1.5 rounded-2xl bg-white/40 border border-white/55 p-2">
+              <select
+                value={l.subjectName}
+                onChange={e => update(i, { subjectName: e.target.value })}
+                className="flex-1 min-w-0 px-2 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none cursor-pointer"
+              >
+                {subjects.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+              </select>
+              <select
+                value={l.weekday}
+                onChange={e => update(i, { weekday: Number(e.target.value) as Weekday })}
+                className="px-2 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none cursor-pointer"
+              >
+                {WEEKDAYS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+              <input type="time" value={l.start} onChange={e => update(i, { start: e.target.value })}
+                className="px-1.5 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none w-[5.5rem]" />
+              <input type="time" value={l.end} onChange={e => update(i, { end: e.target.value })}
+                className="px-1.5 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none w-[5.5rem]" />
+              <button onClick={() => remove(i)} className="size-7 rounded-full hover:bg-rose-100 text-ink-400 hover:text-rose-500 grid place-items-center transition flex-shrink-0">
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={addRow}
+            className="w-full py-2.5 rounded-2xl border border-dashed border-ink-300 text-ink-500 hover:text-ink-700 hover:border-ink-400 bg-white/30 transition flex items-center justify-center gap-1.5 text-sm font-medium"
+          >
+            <Plus className="size-4" /> Stunde hinzufügen
+          </button>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <PrimaryBtn onClick={next} gradient={gradient}>
+          {lessons.length ? `Mit ${lessons.length} Stunde${lessons.length !== 1 ? 'n' : ''} weiter` : 'Weiter'}
+          <ChevronRight className="size-4" />
+        </PrimaryBtn>
+      </div>
+    </GlassCard>
+  );
+}
+
+/* ─── Step: Account ──────────────────────────────────────────────────── */
 
 function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
   onAuthed: () => void; onSkip: () => void; back: () => void; onSaveState: () => void; gradient: string;
@@ -845,7 +1138,7 @@ function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900">Konto erstellen</h2>
       <p className="text-ink-500 text-sm mt-1 leading-relaxed">
-        Optional – ermöglicht Sync zwischen deinen Geräten.<br />
+        Optional – ermöglicht Sync zwischen deinen Geräten und Freunde.<br />
         Du kannst das auch später in den Einstellungen einrichten.
       </p>
 
@@ -874,8 +1167,7 @@ function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
         <div className="mt-6 space-y-3">
           <div className="text-sm font-semibold text-ink-700">{mode === 'login' ? 'Anmelden' : 'Registrieren'}</div>
           <GlassInput value={email} onChange={setEmail} placeholder="E-Mail" type="email" autoFocus />
-          <GlassInput value={password} onChange={setPassword} placeholder="Passwort (mind. 6 Zeichen)" type="password"
-            onKeyDown={e => e.key === 'Enter' && submit()} />
+          <GlassInput value={password} onChange={setPassword} placeholder="Passwort (mind. 6 Zeichen)" type="password" onKeyDown={e => e.key === 'Enter' && submit()} />
           {error && <div className="text-xs text-rose-600 px-1">{error}</div>}
           <PrimaryBtn onClick={submit} disabled={loading || !email || !password} gradient={gradient}>
             {loading ? 'Bitte warten…' : mode === 'login' ? 'Anmelden' : 'Registrieren'}
@@ -899,13 +1191,95 @@ function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
   );
 }
 
-/* ─── Step 5: Friend-Code (optional) ─────────────────────────────────── */
+/* ─── Step: Freunde (nur eingeloggt) ─────────────────────────────────── */
+
+function FriendsStep({ next, back, gradient }: { next: () => void; back: () => void; gradient: string }) {
+  const sendFriendRequest = useStore(s => s.sendFriendRequest);
+  const myProfile = useStore(s => s.myProfile);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState<string[]>([]);
+
+  async function send() {
+    const c = code.trim();
+    if (!c) return;
+    setBusy(true); setError(null);
+    try {
+      await sendFriendRequest(c);
+      setSent(prev => [...prev, c.toUpperCase()]);
+      setCode('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Users className="size-6 text-theme-deep" />Freunde hinzufügen</h2>
+      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
+        Hast du den Freundecode eines Mitschülers? Gib ihn ein, um eine Anfrage zu senden.
+        Ihr könnt dann Hausaufgaben & Stundenpläne teilen.
+      </p>
+
+      {myProfile?.friendCode && (
+        <div className="mt-4 rounded-2xl bg-white/55 border border-white/65 p-3 text-center">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">Dein Freundecode</div>
+          <div className="font-display font-extrabold text-2xl tracking-[0.2em] text-ink-900 mt-0.5">{myProfile.friendCode}</div>
+          <div className="text-xs text-ink-500 mt-0.5">Teile ihn mit Freunden, damit sie dich finden.</div>
+        </div>
+      )}
+
+      <div className="mt-5 flex gap-2">
+        <input
+          value={code}
+          onChange={e => setCode(e.target.value.toUpperCase())}
+          placeholder="Code des Freundes"
+          onKeyDown={e => e.key === 'Enter' && send()}
+          className="flex-1 px-4 py-3.5 rounded-2xl bg-white/30 border border-white/50 text-ink-900 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-white/70 focus:bg-white/50 transition text-base tracking-widest uppercase"
+        />
+        <button
+          onClick={send}
+          disabled={busy || !code.trim()}
+          className="px-5 rounded-2xl text-white font-semibold flex items-center gap-1.5 disabled:opacity-40"
+          style={{ background: gradient }}
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}Senden
+        </button>
+      </div>
+      {error && (
+        <div className="mt-2 rounded-2xl bg-rose-50 border border-rose-200 p-2.5 text-sm text-rose-700 flex items-start gap-2">
+          <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />{error}
+        </div>
+      )}
+      {sent.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {sent.map(c => (
+            <div key={c} className="flex items-center gap-2 text-sm text-emerald-700">
+              <Check className="size-4" />Anfrage an <span className="font-semibold tracking-wider">{c}</span> gesendet
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5">
+        <PrimaryBtn onClick={next} gradient={gradient}>
+          Weiter <ChevronRight className="size-4" />
+        </PrimaryBtn>
+      </div>
+    </GlassCard>
+  );
+}
+
+/* ─── Step: Stundenplan-Code vom Freund (Abschluss) ──────────────────── */
 
 function FriendCodeStep({ finish, back, gradient }: {
   finish: () => void; back: () => void; gradient: string;
 }) {
   const authUser = useStore(s => s.authUser);
-  const addSubject = useStore(s => s.addSubject);
   const importSharedSchedule = useStore(s => s.importSharedSchedule);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -936,11 +1310,7 @@ function FriendCodeStep({ finish, back, gradient }: {
     setBusy(true);
     setError(null);
     try {
-      // Erst die normalen Fächer aus dem Onboarding-Buffer schreiben + onboarded:true
-      // Das macht finish() schon. Aber wir wollen NACH finish noch die geteilten
-      // Lessons übernehmen. Trick: finish() ruft load(), das setzt activeSchoolYearId.
       await finish();
-      // Kleine Verzögerung, damit Store geladen ist.
       await new Promise(r => setTimeout(r, 200));
       await importSharedSchedule(preview.payload, 'replace');
     } catch (e) {
@@ -950,10 +1320,7 @@ function FriendCodeStep({ finish, back, gradient }: {
     }
   }
 
-  void addSubject; // wird nur via finish() benutzt
-
   if (!authUser) {
-    // Ohne Account macht der Code keinen Sinn → direkt durch.
     return (
       <GlassCard className="p-8 text-center">
         <BackBtn onClick={back} />
@@ -978,24 +1345,17 @@ function FriendCodeStep({ finish, back, gradient }: {
           <div className="font-display font-bold text-lg text-ink-900">
             {preview.ownerName ? `${preview.ownerName}s Stundenplan` : 'Stundenplan'}
           </div>
-          <div className="text-sm text-ink-600 mt-0.5">
-            {preview.subjects} Fächer · {preview.lessons} Stunden
-          </div>
+          <div className="text-sm text-ink-600 mt-0.5">{preview.subjects} Fächer · {preview.lessons} Stunden</div>
         </div>
         <div className="text-xs text-ink-500 mt-3 leading-relaxed">
           Wenn du übernimmst, werden die Fächer aus dem Code zu deinen hinzugefügt
-          (gleichnamige werden zusammengeführt) und alle Stunden in dein aktuelles
-          Schuljahr eingetragen.
+          (gleichnamige werden zusammengeführt) und alle Stunden in dein aktuelles Schuljahr eingetragen.
         </div>
         <div className="mt-5 space-y-2">
           <PrimaryBtn onClick={adoptAndFinish} disabled={busy} gradient={gradient}>
             {busy ? <><Loader2 className="size-4 animate-spin" />Übernehme …</> : <>Übernehmen & los geht's</>}
           </PrimaryBtn>
-          <button
-            onClick={finish}
-            disabled={busy}
-            className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition"
-          >
+          <button onClick={finish} disabled={busy} className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition">
             Ohne übernehmen weiter
           </button>
         </div>
@@ -1015,11 +1375,7 @@ function FriendCodeStep({ finish, back, gradient }: {
 
       <div className="mt-6 space-y-3">
         <FriendCodeBoxes value={code} onChange={setCode} />
-        <PrimaryBtn
-          onClick={lookup}
-          disabled={busy || code.length !== 4}
-          gradient={gradient}
-        >
+        <PrimaryBtn onClick={lookup} disabled={busy || code.length !== 4} gradient={gradient}>
           {busy ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen <ChevronRight className="size-4" /></>}
         </PrimaryBtn>
         {error && (
@@ -1027,10 +1383,7 @@ function FriendCodeStep({ finish, back, gradient }: {
             <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />{error}
           </div>
         )}
-        <button
-          onClick={finish}
-          className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition"
-        >
+        <button onClick={finish} className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition">
           Habe keinen Code – überspringen
         </button>
       </div>

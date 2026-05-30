@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Settings, ChevronDown, Check, Calendar, Timer, Users, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Trophy, Settings, ChevronDown, Check, Calendar, CalendarClock, Timer, Users, MoreHorizontal, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
+import { Avatar } from '@/components/Avatar';
+import { oberstufeTermsFor, oberstufeTermLabelFor } from '@/types';
 
-const NAV = [
+interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; }
+
+const NAV: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', short: 'Start' },
   { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben', short: 'Aufgaben' },
   { to: '/kalender', icon: CalendarRange, label: 'Kalender', short: 'Kalender' },
@@ -15,9 +19,19 @@ const NAV = [
   { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr' },
 ];
 
+const ABITUR_ITEM: NavItem = { to: '/abitur', icon: Trophy, label: 'Abitur', short: 'Abi' };
+
+/** NAV-Liste, in der Oberstufe um den Abitur-Eintrag (direkt nach Noten) erweitert. */
+function useNavItems(): NavItem[] {
+  const schoolYears = useStore(s => s.schoolYears);
+  const activeId = useStore(s => s.activeSchoolYearId);
+  const isOberstufe = !!schoolYears.find(y => y.id === activeId)?.oberstufe;
+  if (!isOberstufe) return NAV;
+  const i = NAV.findIndex(n => n.to === '/noten');
+  return [...NAV.slice(0, i + 1), ABITUR_ITEM, ...NAV.slice(i + 1)];
+}
+
 const MOBILE_PRIMARY_ROUTES = ['/', '/aufgaben', '/stundenplan', '/noten'];
-const MOBILE_PRIMARY = NAV.filter(item => MOBILE_PRIMARY_ROUTES.includes(item.to));
-const MOBILE_MORE = NAV.filter(item => !MOBILE_PRIMARY_ROUTES.includes(item.to));
 
 function Logo({ small = false }: { small?: boolean }) {
   const size = small ? 'size-8' : 'size-10';
@@ -31,7 +45,9 @@ function Logo({ small = false }: { small?: boolean }) {
 function SchoolYearSwitcher() {
   const schoolYears = useStore(s => s.schoolYears);
   const activeId = useStore(s => s.activeSchoolYearId);
+  const activeTerm = useStore(s => s.activeTerm);
   const setActiveSchoolYear = useStore(s => s.setActiveSchoolYear);
+  const setActiveTerm = useStore(s => s.setActiveTerm);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,16 +65,27 @@ function SchoolYearSwitcher() {
 
   if (!active) return null;
 
+  const isOberstufe = !!active.oberstufe;
+  const terms = oberstufeTermsFor(active.oberstufeJahrgaenge);
+  // Andere Jahre, zwischen denen man weiterhin schnell wechseln kann.
+  const otherYears = schoolYears.filter(y => y.id !== active.id);
+
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/40 hover:bg-white/70 border border-white/50 transition text-left"
       >
-        <Calendar className="size-3.5 text-ink-500 flex-shrink-0" />
+        {isOberstufe
+          ? <CalendarClock className="size-3.5 text-ink-500 flex-shrink-0" />
+          : <Calendar className="size-3.5 text-ink-500 flex-shrink-0" />}
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider text-ink-500 font-semibold">Schuljahr</div>
-          <div className="text-sm font-semibold text-ink-900 truncate">{active.name}</div>
+          <div className="text-[10px] uppercase tracking-wider text-ink-500 font-semibold">
+            {isOberstufe ? 'Halbjahr' : 'Schuljahr'}
+          </div>
+          <div className="text-sm font-semibold text-ink-900 truncate">
+            {isOberstufe ? `${active.name} · ${oberstufeTermLabelFor(activeTerm, active.oberstufeJahrgaenge)}` : active.name}
+          </div>
         </div>
         <ChevronDown className={`size-4 text-ink-400 transition flex-shrink-0 ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -72,23 +99,75 @@ function SchoolYearSwitcher() {
             transition={{ duration: 0.12 }}
             className="absolute z-50 left-0 right-0 mt-1 rounded-2xl glass-strong shadow-soft p-1.5 max-h-[60vh] overflow-y-auto"
           >
-            {schoolYears.map(y => {
-              const isActive = y.id === activeId;
-              return (
-                <button
-                  key={y.id}
-                  onClick={async () => {
-                    setOpen(false);
-                    if (!isActive) await setActiveSchoolYear(y.id);
-                  }}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-sm transition text-left ${isActive ? 'theme-gradient text-white' : 'text-ink-700 hover:bg-white/70'}`}
-                >
-                  <Check className={`size-3.5 flex-shrink-0 ${isActive ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
-                  <span className="flex-1 truncate font-medium">{y.name}</span>
-                </button>
-              );
-            })}
+            {isOberstufe ? (
+              <>
+                {/* Halbjahres-Auswähler */}
+                {terms.map(t => {
+                  const isActive = t.term === activeTerm;
+                  return (
+                    <button
+                      key={t.term}
+                      onClick={async () => {
+                        setOpen(false);
+                        if (!isActive) await setActiveTerm(t.term);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-sm transition text-left ${isActive ? 'theme-gradient text-white' : 'text-ink-700 hover:bg-white/70'}`}
+                    >
+                      <Check className={`size-3.5 flex-shrink-0 ${isActive ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
+                      <span className="flex-1 truncate font-medium">Halbjahr {t.label}</span>
+                    </button>
+                  );
+                })}
+                {otherYears.length > 0 && (
+                  <div className="border-t border-white/40 mt-1 pt-1">
+                    <div className="px-2.5 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-ink-400 font-semibold">Andere Schuljahre</div>
+                    {otherYears.map(y => (
+                      <button
+                        key={y.id}
+                        onClick={async () => {
+                          setOpen(false);
+                          await setActiveSchoolYear(y.id);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-sm text-ink-700 hover:bg-white/70 transition text-left"
+                      >
+                        {y.oberstufe
+                          ? <CalendarClock className="size-3.5 flex-shrink-0 text-ink-400" />
+                          : <Calendar className="size-3.5 flex-shrink-0 text-ink-400" />}
+                        <span className="flex-1 truncate font-medium">{y.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              schoolYears.map(y => {
+                const isActive = y.id === activeId;
+                return (
+                  <button
+                    key={y.id}
+                    onClick={async () => {
+                      setOpen(false);
+                      if (!isActive) await setActiveSchoolYear(y.id);
+                    }}
+                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-sm transition text-left ${isActive ? 'theme-gradient text-white' : 'text-ink-700 hover:bg-white/70'}`}
+                  >
+                    <Check className={`size-3.5 flex-shrink-0 ${isActive ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
+                    <span className="flex-1 truncate font-medium">{y.name}</span>
+                  </button>
+                );
+              })
+            )}
             <div className="border-t border-white/40 mt-1 pt-1">
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  navigate('/einstellungen?section=schoolyears&new=1');
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-theme-deep hover:bg-white/70 transition font-semibold"
+              >
+                <Plus className="size-3.5" />
+                Neues Schuljahr
+              </button>
               <button
                 onClick={() => {
                   setOpen(false);
@@ -109,18 +188,21 @@ function SchoolYearSwitcher() {
 
 export function Sidebar() {
   const settings = useStore(s => s.settings);
+  const navItems = useNavItems();
   return (
     <aside className="hidden md:flex md:flex-col w-[240px] shrink-0 p-4 gap-3 sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-2 py-3">
-        <Logo />
+        {settings?.avatar
+          ? <Avatar name={settings?.name ?? ''} emoji={settings.avatar} className="size-10" textClassName="text-xl" />
+          : <Logo />}
         <div className="min-w-0">
-          <div className="font-display font-extrabold text-ink-900 leading-tight">Notenapp</div>
-          <div className="text-xs text-ink-500 truncate">{settings?.name ?? 'Schule, schöner'}</div>
+          <div className="font-display font-extrabold text-ink-900 leading-tight">{settings?.name || 'Notenapp'}</div>
+          <div className="text-xs text-ink-500 truncate">{settings?.name ? (settings?.school || 'Schulplaner') : 'Schule, schöner'}</div>
         </div>
       </div>
       <SchoolYearSwitcher />
       <nav className="flex flex-col gap-1 mt-2">
-        {NAV.map(item => (
+        {navItems.map(item => (
           <SidebarLink key={item.to} {...item} />
         ))}
       </nav>
@@ -169,6 +251,9 @@ export function MobileTabBar() {
   const loc = useLocation();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
+  const navItems = useNavItems();
+  const MOBILE_PRIMARY = navItems.filter(item => MOBILE_PRIMARY_ROUTES.includes(item.to));
+  const MOBILE_MORE = navItems.filter(item => !MOBILE_PRIMARY_ROUTES.includes(item.to));
 
   // Sheet schließen bei Routenwechsel (z.B. Browser-Back)
   useEffect(() => { setMoreOpen(false); }, [loc.pathname]);

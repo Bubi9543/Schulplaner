@@ -108,6 +108,42 @@ function suggestYearStart(): number {
   return new Date(y, 8, 1).getTime();
 }
 
+// ─── Aktives Halbjahr (Oberstufe) ─────────────────────────────────────────
+// Pro Oberstufen-Schuljahr merken wir uns das zuletzt gewählte Halbjahr
+// (1–4) lokal, damit es einen Reload überlebt. Kein Cloud-Sync nötig –
+// das ist reine View-Präferenz.
+const ACTIVE_TERM_KEY = 'notenapp.activeTerm';
+
+function readActiveTerms(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(ACTIVE_TERM_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getActiveTerm(yearId: string | null): number {
+  if (!yearId) return 1;
+  const t = readActiveTerms()[yearId];
+  return typeof t === 'number' && t >= 1 && t <= 4 ? t : 1;
+}
+
+function writeActiveTerm(yearId: string, term: number): void {
+  try {
+    const all = readActiveTerms();
+    all[yearId] = term;
+    localStorage.setItem(ACTIVE_TERM_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
+
+/** True, wenn die Note in der aktuellen Halbjahres-Ansicht sichtbar sein soll. */
+function gradeInActiveTerm(grade: Grade, year: SchoolYear | undefined, activeTerm: number): boolean {
+  if (!year?.oberstufe) return true;
+  return (grade.term ?? 1) === activeTerm;
+}
+
 /**
  * Sortiert Fächer: erst nach manueller `position` (kleinere zuerst, undefined = ans Ende),
  * dann alphabetisch nach Name. Gruppen werden nicht hier gehandhabt – Gruppierung
@@ -135,6 +171,10 @@ export interface NewYearOptions {
   endDate?: number;
   copySubjectsFromYearId?: string;
   copyLessonsFromYearId?: string;
+  /** Legt das Jahr als bayerische Oberstufe an (4 Halbjahre, Halbjahres-Notenführung). */
+  oberstufe?: boolean;
+  /** Jahrgangsstufen der Q-Phase, z. B. [12,13] (G9) oder [11,12] (G8). Default [12,13]. */
+  oberstufeJahrgaenge?: [number, number];
 }
 
 export type LiveSyncStatus = 'off' | 'connecting' | 'live' | 'error';
@@ -144,6 +184,12 @@ interface State {
   settings: AppSettings | null;
   subjects: Subject[];
   grades: Grade[];
+  /**
+   * Alle Noten des aktiven Schuljahres – OHNE Halbjahres-Filter.
+   * In regulären Jahren identisch zu `grades`; in der Oberstufe enthält es alle
+   * 4 Ausbildungsabschnitte (für Halbjahres-Übersicht & Abi-Rechner).
+   */
+  allYearGrades: Grade[];
   tasks: AppTask[];
   lessons: Lesson[];
   schoolYears: SchoolYear[];
@@ -151,6 +197,11 @@ interface State {
   focusSessions: FocusSession[];
   /** Aktive Schuljahr-ID. Wenn null, gibt es noch keine. */
   activeSchoolYearId: string | null;
+  /**
+   * Aktives Halbjahr (Ausbildungsabschnitt 1–4), nur relevant wenn das aktive
+   * Schuljahr eine Oberstufe ist. Steuert, welche Noten in der View erscheinen.
+   */
+  activeTerm: number;
   authUser: SupabaseUser | null;
   syncStatus: 'idle' | 'syncing' | 'error';
   lastSyncedAt: number | null;
@@ -231,6 +282,8 @@ interface State {
   updateSchoolYear: (id: string, patch: Partial<SchoolYear>) => Promise<void>;
   deleteSchoolYear: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
   setActiveSchoolYear: (id: string) => Promise<void>;
+  /** Wechselt das aktive Halbjahr (Oberstufe) und filtert die Noten-View neu. */
+  setActiveTerm: (term: number) => Promise<void>;
 
   /** Speichert eine abgeschlossene Fokus-Session. */
   addFocusSession: (s: Omit<FocusSession, 'id' | 'schoolYearId'> & { id?: string; schoolYearId?: string }) => Promise<FocusSession>;
@@ -337,10 +390,12 @@ export const useStore = create<State>((set, get) => ({
   settings: null,
   subjects: [],
   grades: [],
+  allYearGrades: [],
   tasks: [],
   lessons: [],
   schoolYears: [],
   activeSchoolYearId: null,
+  activeTerm: 1,
   authUser: null,
   syncStatus: 'idle',
   lastSyncedAt: null,
@@ -392,13 +447,20 @@ export const useStore = create<State>((set, get) => ({
     // Filter nach aktivem Schuljahr
     const subjFilter = (s: { schoolYearId?: string }) => !activeId || s.schoolYearId === activeId;
 
+    // In der Oberstufe zusätzlich nach aktivem Halbjahr filtern (nur Noten).
+    const activeYear = years.find(y => y.id === activeId);
+    const activeTerm = activeYear?.oberstufe ? getActiveTerm(activeId) : 1;
+    const gradeFilter = (g: Grade) => subjFilter(g) && gradeInActiveTerm(g, activeYear, activeTerm);
+
     set({
       loaded: true,
       settings,
       activeSchoolYearId: activeId,
+      activeTerm,
       schoolYears: years.sort((a, b) => b.startDate - a.startDate),
       subjects: migratedSubjects.filter(subjFilter).sort(compareSubjects),
-      grades: allGrades.filter(subjFilter),
+      grades: allGrades.filter(gradeFilter),
+      allYearGrades: allGrades.filter(subjFilter),
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
       focusSessions: allFocusSessions.filter(subjFilter).sort((a, b) => b.startedAt - a.startedAt),
@@ -671,6 +733,7 @@ export const useStore = create<State>((set, get) => ({
     set(state => ({
       subjects: state.subjects.filter(s => s.id !== id),
       grades: state.grades.filter(g => g.subjectId !== id),
+      allYearGrades: state.allYearGrades.filter(g => g.subjectId !== id),
       tasks: state.tasks.filter(t => t.subjectId !== id),
       lessons: state.lessons.filter(l => l.subjectId !== id),
     }));
@@ -720,23 +783,51 @@ export const useStore = create<State>((set, get) => ({
   async addGrade(g) {
     const subj = get().subjects.find(s => s.id === g.subjectId);
     const yid = subj?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
-    const grade: Grade = { ...g, id: g.id ?? uid(), schoolYearId: g.schoolYearId ?? yid } as Grade;
+    const year = get().schoolYears.find(y => y.id === yid);
+    // In der Oberstufe ohne explizites Halbjahr → aktives Halbjahr übernehmen.
+    const term = year?.oberstufe ? (g.term ?? get().activeTerm) : g.term;
+    const grade: Grade = { ...g, id: g.id ?? uid(), schoolYearId: g.schoolYearId ?? yid, term } as Grade;
     await db.grades.add(grade);
-    set(state => ({ grades: [...state.grades, grade] }));
+    const matchesYear = !get().activeSchoolYearId || grade.schoolYearId === get().activeSchoolYearId;
+    set(state => ({
+      // Voll-Jahres-Liste: alle Halbjahre des aktiven Jahres.
+      allYearGrades: matchesYear ? [...state.allYearGrades, grade] : state.allYearGrades,
+      // Gefilterte View: nur wenn passendes Halbjahr.
+      grades: gradeInActiveTerm(grade, year, get().activeTerm) ? [...state.grades, grade] : state.grades,
+    }));
     const { authUser } = get();
     if (authUser) syncRow('grades', grade.id, grade, authUser.id);
     return grade;
   },
   async updateGrade(id, patch) {
     await db.grades.update(id, patch);
-    set(state => ({ grades: state.grades.map(g => g.id === id ? { ...g, ...patch } : g) }));
     const updated = await db.grades.get(id);
+    const { activeSchoolYearId, activeTerm, schoolYears } = get();
+    const year = schoolYears.find(y => y.id === activeSchoolYearId);
+    const matchesYear = updated ? (!activeSchoolYearId || updated.schoolYearId === activeSchoolYearId) : false;
+    set(state => {
+      // Voll-Jahres-Liste pflegen (year-match, halbjahr-unabhängig).
+      const allYearGrades = updated && matchesYear
+        ? (state.allYearGrades.some(g => g.id === id)
+            ? state.allYearGrades.map(g => g.id === id ? updated : g)
+            : [...state.allYearGrades, updated])
+        : state.allYearGrades.filter(g => g.id !== id);
+      // Gefilterte View (halbjahr-bewusst).
+      const exists = state.grades.some(g => g.id === id);
+      const grades = updated && gradeInActiveTerm(updated, year, activeTerm)
+        ? (exists ? state.grades.map(g => g.id === id ? { ...g, ...patch } : g) : [...state.grades, updated])
+        : state.grades.filter(g => g.id !== id);
+      return { grades, allYearGrades };
+    });
     const { authUser } = get();
     if (authUser && updated) syncRow('grades', id, updated, authUser.id);
   },
   async deleteGrade(id) {
     await db.grades.delete(id);
-    set(state => ({ grades: state.grades.filter(g => g.id !== id) }));
+    set(state => ({
+      grades: state.grades.filter(g => g.id !== id),
+      allYearGrades: state.allYearGrades.filter(g => g.id !== id),
+    }));
     const { authUser } = get();
     if (authUser) deleteRow('grades', id);
   },
@@ -902,6 +993,8 @@ export const useStore = create<State>((set, get) => ({
       endDate: opts.endDate,
       active: true, // neues Jahr direkt aktiv
       createdAt: Date.now(),
+      oberstufe: opts.oberstufe || undefined,
+      oberstufeJahrgaenge: opts.oberstufe ? (opts.oberstufeJahrgaenge ?? [12, 13]) : undefined,
     };
     // Alle anderen Jahre deaktivieren
     const existing = await db.schoolYears.toArray();
@@ -1022,6 +1115,14 @@ export const useStore = create<State>((set, get) => ({
     if (authUser) {
       updated.forEach(y => syncRow('school_years', y.id, y, authUser.id));
     }
+  },
+  async setActiveTerm(term) {
+    const { activeSchoolYearId, activeTerm } = get();
+    if (!activeSchoolYearId || term === activeTerm) return;
+    writeActiveTerm(activeSchoolYearId, term);
+    set({ activeTerm: term });
+    // Noten-View neu aus Dexie filtern (load liest das gemerkte Halbjahr).
+    await get().load();
   },
 
   // ─── Fokus / Lern-Sessions ───────────────────────────────────────────────
@@ -1259,11 +1360,13 @@ async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, g
       const grade = data as unknown as Grade;
       await db.grades.put(grade);
       const yid = get().activeSchoolYearId;
-      if (!yid || grade.schoolYearId === yid) {
-        set(state => ({ grades: upsertById(state.grades, grade) }));
-      } else {
-        set(state => ({ grades: state.grades.filter(g => g.id !== grade.id) }));
-      }
+      const year = get().schoolYears.find(y => y.id === yid);
+      const matchesYear = !yid || grade.schoolYearId === yid;
+      const inView = matchesYear && gradeInActiveTerm(grade, year, get().activeTerm);
+      set(state => ({
+        allYearGrades: matchesYear ? upsertById(state.allYearGrades, grade) : state.allYearGrades.filter(g => g.id !== grade.id),
+        grades: inView ? upsertById(state.grades, grade) : state.grades.filter(g => g.id !== grade.id),
+      }));
       break;
     }
     case 'tasks': {
@@ -1332,13 +1435,17 @@ async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get
       set(state => ({
         subjects: state.subjects.filter(s => s.id !== id),
         grades: state.grades.filter(g => g.subjectId !== id),
+        allYearGrades: state.allYearGrades.filter(g => g.subjectId !== id),
         tasks: state.tasks.filter(t => t.subjectId !== id),
         lessons: state.lessons.filter(l => l.subjectId !== id),
       }));
       break;
     case 'grades':
       await db.grades.delete(id);
-      set(state => ({ grades: state.grades.filter(g => g.id !== id) }));
+      set(state => ({
+        grades: state.grades.filter(g => g.id !== id),
+        allYearGrades: state.allYearGrades.filter(g => g.id !== id),
+      }));
       break;
     case 'tasks':
       await db.tasks.delete(id);

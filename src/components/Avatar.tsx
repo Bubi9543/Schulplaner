@@ -1,9 +1,11 @@
 interface Props {
   name: string;
   avatarUrl?: string;
+  /** Optionales Profil-Emoji (lokal). Wird genutzt, wenn kein avatarUrl vorhanden ist. */
+  emoji?: string;
   /** Tailwind size-Klasse, z.B. 'size-10' (Default) oder 'size-16'. */
   className?: string;
-  /** Größe der Initialen (Default 'text-sm'). */
+  /** Größe der Initialen/Emoji (Default 'text-sm'). */
   textClassName?: string;
 }
 
@@ -16,9 +18,10 @@ function initials(name: string): string {
 }
 
 /**
- * Profilbild eines Nutzers – zeigt `avatarUrl`, sonst Initialen auf Theme-Gradient.
+ * Profilbild eines Nutzers – zeigt `avatarUrl`, sonst ein gewähltes `emoji`,
+ * sonst die Initialen auf Theme-Gradient.
  */
-export function Avatar({ name, avatarUrl, className = 'size-10', textClassName = 'text-sm' }: Props) {
+export function Avatar({ name, avatarUrl, emoji, className = 'size-10', textClassName = 'text-sm' }: Props) {
   if (avatarUrl) {
     return (
       <img
@@ -27,6 +30,16 @@ export function Avatar({ name, avatarUrl, className = 'size-10', textClassName =
         className={`${className} rounded-full object-cover bg-ink-100 flex-shrink-0`}
         loading="lazy"
       />
+    );
+  }
+  if (emoji) {
+    return (
+      <div
+        className={`${className} rounded-full theme-gradient grid place-items-center flex-shrink-0 leading-none ${textClassName}`}
+        aria-label={name}
+      >
+        <span>{emoji}</span>
+      </div>
     );
   }
   return (

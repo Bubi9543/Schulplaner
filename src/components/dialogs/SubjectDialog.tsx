@@ -3,9 +3,9 @@ import { Modal } from '@/components/Modal';
 import { IconPicker } from '@/components/IconPicker';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
-import { SUBJECT_COLORS } from '@/types';
-import type { Subject, SubjectCategory } from '@/types';
-import { CATEGORY_LABEL, CATEGORY_DESCRIPTION } from '@/lib/grading';
+import { SUBJECT_COLORS, DEFAULT_GRADING_CONFIG } from '@/types';
+import type { Subject, SubjectCategory, GradingSystem } from '@/types';
+import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, getSystemMeta } from '@/lib/grading';
 import { detectSubjectIcon } from '@/lib/subjectIcons';
 
 interface Props {
@@ -18,7 +18,18 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
   const addSubject = useStore(s => s.addSubject);
   const updateSubject = useStore(s => s.updateSubject);
   const deleteSubject = useStore(s => s.deleteSubject);
+  const settings = useStore(s => s.settings);
+  const schoolYears = useStore(s => s.schoolYears);
+  const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const editing = !!initial?.id;
+
+  // System eines Fachs: beim Bearbeiten beibehalten; sonst aus dem aktiven Jahr
+  // ableiten – in einer Oberstufe immer Punkte (0–15), sonst das Standard-System.
+  const activeYear = schoolYears.find(y => y.id === activeSchoolYearId);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const system: GradingSystem = initial?.system
+    ?? (activeYear?.oberstufe ? 'oberstufe' : (settings?.system ?? 'bayern'));
+  const systemLabel = getSystemMeta(system, config).label;
 
   const [name, setName] = useState(initial?.name ?? '');
   const [short, setShort] = useState(initial?.short ?? '');
@@ -50,7 +61,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       color,
       icon,
       category,
-      system: 'bayern' as const,
+      system,
       teacher: teacher.trim() || undefined,
       room: room.trim() || undefined,
       targetAverage: targetAverage ? parseFloat(targetAverage.replace(',', '.')) : undefined,
@@ -87,7 +98,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
-            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · Bayern (1–6)</div>
+            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · {systemLabel}</div>
           </div>
         </div>
 
@@ -119,18 +130,25 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
           <IconPicker value={icon} autoIcon={detectSubjectIcon(name)} onChange={setIcon} color={color} />
         </div>
 
-        <div>
-          <label className="label">Kategorie</label>
-          <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
-            {(['hauptfach', 'hauptfach-1zu1', 'nebenfach'] as const).map(c => (
-              <button key={c} type="button" onClick={() => setCategory(c)}
-                className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
-                <span className="font-semibold text-sm">{CATEGORY_LABEL[c]}</span>
-                <span className={`text-[10px] mt-0.5 leading-tight font-normal ${category === c ? 'text-white/85' : 'text-ink-500'}`}>{CATEGORY_DESCRIPTION[c]}</span>
-              </button>
-            ))}
+        {system === 'oberstufe' ? (
+          <div className="rounded-2xl bg-theme-soft/40 border border-theme-soft p-3 text-xs text-ink-600 leading-relaxed">
+            Oberstufe: Die Halbjahresleistung ergibt sich aus Klausur ⊕ kleinen Leistungen (1:1).
+            Eine Haupt-/Nebenfach-Kategorie gibt es hier nicht.
           </div>
-        </div>
+        ) : (
+          <div>
+            <label className="label">Kategorie</label>
+            <div className="grid gap-2 grid-cols-1 sm:grid-cols-3">
+              {(['hauptfach', 'hauptfach-1zu1', 'nebenfach'] as const).map(c => (
+                <button key={c} type="button" onClick={() => setCategory(c)}
+                  className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${category === c ? 'btn-primary' : 'btn-ghost'}`}>
+                  <span className="font-semibold text-sm">{CATEGORY_LABEL[c]}</span>
+                  <span className={`text-[10px] mt-0.5 leading-tight font-normal ${category === c ? 'text-white/85' : 'text-ink-500'}`}>{CATEGORY_DESCRIPTION[c]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">

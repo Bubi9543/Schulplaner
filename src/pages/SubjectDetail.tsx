@@ -15,10 +15,10 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, gradeColor, getKindLabel, subjectAverage, isLargeAssessmentKind, BUILTIN_KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
+import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, gradeColor, getKindLabel, subjectAverage, halfYearPoints, isLargeAssessmentKind, BUILTIN_KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
 import { chartTooltipProps } from '@/lib/chartTheme';
-import { DEFAULT_GRADING_CONFIG } from '@/types';
+import { DEFAULT_GRADING_CONFIG, oberstufeTermsFor } from '@/types';
 import type { Grade, AppTask, GradeKind, Subject } from '@/types';
 import { BUILTIN_GRADE_KINDS } from '@/types';
 
@@ -27,6 +27,11 @@ export function SubjectDetailPage() {
   const nav = useNavigate();
   const subjects = useStore(s => s.subjects);
   const grades = useStore(s => s.grades);
+  const allYearGrades = useStore(s => s.allYearGrades);
+  const activeTerm = useStore(s => s.activeTerm);
+  const setActiveTerm = useStore(s => s.setActiveTerm);
+  const schoolYears = useStore(s => s.schoolYears);
+  const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const tasks = useStore(s => s.tasks);
   const lessons = useStore(s => s.lessons);
   const settings = useStore(s => s.settings);
@@ -73,6 +78,22 @@ export function SubjectDetailPage() {
   const lessonCount = subject ? lessons.filter(l => l.subjectId === subject.id).length : 0;
   const openTasks = subject ? tasks.filter(t => t.subjectId === subject.id && !t.done) : [];
 
+  // Oberstufe: Halbjahresleistung je Ausbildungsabschnitt (aus allen Halbjahren).
+  const isOberstufe = subject?.system === 'oberstufe';
+  const oberstufeJahrgaenge = schoolYears.find(y => y.id === activeSchoolYearId)?.oberstufeJahrgaenge;
+  const halfYears = useMemo(() => {
+    if (!subject || !isOberstufe) return [];
+    return oberstufeTermsFor(oberstufeJahrgaenge).map(t => {
+      const termGrades = allYearGrades.filter(g => g.subjectId === subject.id && (g.term ?? 1) === t.term);
+      return {
+        term: t.term,
+        label: t.label,
+        points: halfYearPoints(termGrades.filter(g => !g.isPending), subject, config),
+        count: termGrades.filter(g => !g.isPending).length,
+      };
+    });
+  }, [subject, isOberstufe, allYearGrades, config, oberstufeJahrgaenge]);
+
   if (!subject) {
     return (
       <PageShell title="Fach nicht gefunden">
@@ -84,7 +105,7 @@ export function SubjectDetailPage() {
   }
 
   return (
-    <PageShell title={subject.name} subtitle={`${CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
+    <PageShell title={subject.name} subtitle={`${subject.system === 'oberstufe' ? 'Kurs' : CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
       actions={
         <>
           <button onClick={() => nav('/noten')} className="btn-ghost"><ArrowLeft className="size-4" />Zurück</button>
@@ -94,6 +115,35 @@ export function SubjectDetailPage() {
       }
     >
       <div className="grid grid-cols-12 gap-4 md:gap-5">
+        {isOberstufe && (
+          <Card delay={0} className="col-span-12">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="h3">Halbjahresleistungen</h3>
+              <span className="chip">Klick = Halbjahr wechseln</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {halfYears.map(h => {
+                const isActive = h.term === activeTerm;
+                return (
+                  <button
+                    key={h.term}
+                    onClick={() => { if (!isActive) void setActiveTerm(h.term); }}
+                    className={`rounded-2xl p-3 text-left transition border-2 ${isActive ? 'border-theme bg-theme-soft/40' : 'border-transparent bg-white/60 hover:bg-white'}`}
+                  >
+                    <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">Halbjahr {h.label}</div>
+                    <div className="flex items-end gap-1.5 mt-1">
+                      <span className="font-display font-extrabold text-3xl" style={{ color: h.points !== null ? gradeColor(h.points, 'oberstufe', config) : 'rgb(var(--ink-400))' }}>
+                        {h.points !== null ? h.points : '–'}
+                      </span>
+                      {h.points !== null && <span className="text-xs text-ink-500 mb-1">P</span>}
+                    </div>
+                    <div className="text-[11px] text-ink-400">{h.count} {h.count === 1 ? 'Note' : 'Noten'}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        )}
         <Card delay={0} className="col-span-12 md:col-span-5 lg:col-span-4 !p-6 text-white border-0 relative overflow-hidden">
           <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${subject.color}, ${subject.color}cc)` }} />
           <div className="absolute -top-12 -right-12 size-48 rounded-full bg-white/10 blur-2xl animate-blob" />
@@ -405,8 +455,8 @@ function WhatIfCalculator({
       <p className="subtle mb-4">
         Probier durch, wie sich ausstehende Noten oder neue Wertungen auf deinen Schnitt auswirken.
         Schulaufgaben/Klausuren werden{' '}
-        {subject.category === 'hauptfach' ? <><strong>doppelt</strong></>
-          : subject.category === 'hauptfach-1zu1' ? <><strong>1:1</strong></>
+        {subject.system === 'oberstufe' || subject.category === 'hauptfach-1zu1' ? <><strong>1:1</strong></>
+          : subject.category === 'hauptfach' ? <><strong>doppelt</strong></>
           : <strong>gleich</strong>}
         {' '}wie der Rest verrechnet.
       </p>
@@ -497,7 +547,7 @@ function HypotheticalRowEditor({
   const settings = useStore(s => s.settings);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const isLarge = isLargeAssessmentKind(row.kind, config);
-  const showCategoryHint = subject.category !== 'nebenfach';
+  const showCategoryHint = subject.system === 'oberstufe' || subject.category !== 'nebenfach';
   // Multiplikator-Optionen analog zum GradeDialog.
   const weightOptions = [0.5, 1, 1.5, 2];
 
@@ -531,7 +581,7 @@ function HypotheticalRowEditor({
             <div className="text-[11px] text-ink-500 mt-2 flex items-center gap-1.5">
               {isLarge ? <FileText className="size-3.5 shrink-0" /> : <Pencil className="size-3.5 shrink-0" />}
               <span>{isLarge
-                ? `Zählt als ${subject.category === 'hauptfach' ? 'doppelte' : '1:1'} große Leistung.`
+                ? `Zählt als ${subject.category === 'hauptfach' && subject.system !== 'oberstufe' ? 'doppelte' : '1:1'} große Leistung.`
                 : 'Zählt als kleine Leistung (Rest-Block).'}</span>
             </div>
           )}

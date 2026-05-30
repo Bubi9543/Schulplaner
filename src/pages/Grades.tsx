@@ -17,6 +17,7 @@ import type { Subject, SubjectGroup } from '@/types';
 
 export function GradesPage() {
   const { subjects, grades, settings } = useStore();
+  const allYearGrades = useStore(s => s.allYearGrades);
   const schoolYears = useStore(s => s.schoolYears);
   const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
@@ -30,7 +31,7 @@ export function GradesPage() {
     try {
       const mod = await import('@/lib/pdfReport');
       const year = schoolYears.find(y => y.id === activeSchoolYearId) ?? null;
-      await mod.generateReportPdf({ subjects, grades, settings, schoolYear: year });
+      await mod.generateReportPdf({ subjects, grades, allYearGrades, settings, schoolYear: year });
     } catch (e) {
       alert('PDF-Erstellung fehlgeschlagen: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -398,7 +399,7 @@ function SubjectRow({ subject }: { subject: Subject }) {
       <div className="absolute -right-6 -top-6 size-32 rounded-full bg-white/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center gap-1"><SubjectIcon subject={subject} className="size-3" />{CATEGORY_LABEL[subject.category]}</div>
+          <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center gap-1"><SubjectIcon subject={subject} className="size-3" />{subject.system === 'oberstufe' ? 'Kurs' : CATEGORY_LABEL[subject.category]}</div>
           <div className="font-display font-extrabold text-xl mt-0.5 truncate">{subject.name}</div>
           <div className="text-xs opacity-80">{gradeCount} Noten</div>
         </div>
