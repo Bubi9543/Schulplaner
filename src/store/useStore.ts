@@ -287,6 +287,8 @@ interface State {
 
   /** Speichert eine abgeschlossene Fokus-Session. */
   addFocusSession: (s: Omit<FocusSession, 'id' | 'schoolYearId'> & { id?: string; schoolYearId?: string }) => Promise<FocusSession>;
+  /** Aktualisiert eine bestehende Fokus-Session (Fach, Test, Dauer …). */
+  updateFocusSession: (id: string, patch: Partial<FocusSession>) => Promise<void>;
   /** Löscht eine Fokus-Session. */
   deleteFocusSession: (id: string) => Promise<void>;
 
@@ -1138,6 +1140,17 @@ export const useStore = create<State>((set, get) => ({
     const { authUser } = get();
     if (authUser) syncRow('focus_sessions', session.id, session, authUser.id);
     return session;
+  },
+  async updateFocusSession(id, patch) {
+    await db.focusSessions.update(id, patch);
+    const updated = await db.focusSessions.get(id);
+    set(state => ({
+      focusSessions: state.focusSessions
+        .map(f => (f.id === id ? { ...f, ...patch } : f))
+        .sort((a, b) => b.startedAt - a.startedAt),
+    }));
+    const { authUser } = get();
+    if (authUser && updated) syncRow('focus_sessions', id, updated, authUser.id);
   },
   async deleteFocusSession(id) {
     await db.focusSessions.delete(id);

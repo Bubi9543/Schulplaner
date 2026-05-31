@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Play, Pause, RotateCcw, Check, Timer as TimerIcon, Hourglass, Infinity as InfinityIcon,
   Brain, Coffee, Flame, Clock, Trash2, BarChart3, Target, ChevronRight,
+  Pencil, Plus, Minus, X, Lock, Unlock,
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,9 +14,10 @@ import { useStore } from '@/store/useStore';
 import { getKindLabel } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
-import { startOfISOWeek } from '@/lib/studyShare';
+import { startOfISOWeek, computeStreak } from '@/lib/studyShare';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
+import { StreakFlame } from '@/components/StreakFlame';
 import { SubjectIcon } from '@/components/SubjectIcon';
 
 // ─── Helfer ────────────────────────────────────────────────────────────────
@@ -198,6 +200,22 @@ export function FokusPage() {
   const [tm, setTm] = useState<TimerState>(loadTimer);
   const [now, setNow] = useState(() => Date.now());
 
+  // Versteckter „Ehrlichkeits"-Schalter: 5× auf die „Letzte Sessions"-Überschrift
+  // tippen, um beim Bearbeiten auch das Verlängern der Zeit freizuschalten.
+  const [extendUnlocked, setExtendUnlocked] = useState(false);
+  const unlockClicks = useRef(0);
+  const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSecretTap = useCallback(() => {
+    if (extendUnlocked) return;
+    unlockClicks.current += 1;
+    if (unlockTimer.current) clearTimeout(unlockTimer.current);
+    unlockTimer.current = setTimeout(() => { unlockClicks.current = 0; }, 1500);
+    if (unlockClicks.current >= 5) {
+      setExtendUnlocked(true);
+      unlockClicks.current = 0;
+    }
+  }, [extendUnlocked]);
+
   const update = useCallback((fn: (s: TimerState) => TimerState) => {
     setTm(prev => saveTimer(fn(prev)));
   }, []);
@@ -282,6 +300,10 @@ export function FokusPage() {
     }
     return { week, today, all };
   }, [focusSessions, weekStart, todayStart]);
+
+  // Lern-Streak: aufeinanderfolgende Tage mit Lernzeit.
+  const streak = useMemo(() => computeStreak(focusSessions, now), [focusSessions, now]);
+  const studiedToday = stats.today > 0;
 
   // Lernzeit pro Fach (gesamt)
   const perSubject = useMemo(() => {
@@ -533,6 +555,23 @@ export function FokusPage() {
 
           {/* Wochen-Überblick */}
           <Card delay={0.1}>
+            {/* Streak-Banner */}
+            <div className="flex items-center gap-3 mb-4 rounded-2xl p-3 bg-gradient-to-r from-orange-500/10 to-amber-400/10 border border-orange-500/20">
+              <StreakFlame size={34} active={streak > 0} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-display font-extrabold text-2xl leading-none tabular-nums text-ink-900">{streak}</span>
+                  <span className="text-sm font-semibold text-ink-600">{streak === 1 ? 'Tag' : 'Tage'} Streak</span>
+                </div>
+                <div className="text-[11px] text-ink-500 mt-0.5">
+                  {streak === 0
+                    ? 'Lern heute, um eine Streak zu starten 🔥'
+                    : studiedToday
+                      ? 'Stark – heute schon dabei! Bleib dran.'
+                      : 'Heute noch nicht gelernt – halt die Flamme am Leben!'}
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-3 gap-3 mb-4">
               <StatMini icon={Clock} label="Heute" value={formatDuration(stats.today)} />
               <StatMini icon={Flame} label="Diese Woche" value={formatDuration(stats.week)} highlight />
@@ -623,12 +662,26 @@ export function FokusPage() {
 
         {/* ─── Letzte Sessions ─── */}
         <Card delay={0.3} className="col-span-12 md:col-span-6">
-          <h3 className="h3 mb-3 flex items-center gap-2"><Clock className="size-5" style={{ color: 'var(--theme-primary)' }} />Letzte Sessions</h3>
+          <h3 className="h3 mb-3 flex items-center gap-2">
+            {/* Die Überschrift ist der versteckte 5-Tap-Schalter. */}
+            <button
+              onClick={handleSecretTap}
+              className="flex items-center gap-2 select-none cursor-default"
+              title={extendUnlocked ? 'Zeit-Verlängern ist freigeschaltet' : undefined}
+            >
+              <Clock className="size-5" style={{ color: 'var(--theme-primary)' }} />Letzte Sessions
+            </button>
+            {extendUnlocked && (
+              <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-500" title="Beim Bearbeiten lässt sich die Zeit jetzt auch verlängern.">
+                <Unlock className="size-3" />offen
+              </span>
+            )}
+          </h3>
           {!hasSessions ? (
             <Empty icon={TimerIcon} title="Noch keine Sessions" description="Starte deinen ersten Fokus-Timer oben." />
           ) : (
             <ul className="space-y-1.5">
-              {focusSessions.slice(0, 8).map(f => <SessionRow key={f.id} session={f} />)}
+              {focusSessions.slice(0, 8).map(f => <SessionRow key={f.id} session={f} extendUnlocked={extendUnlocked} />)}
             </ul>
           )}
         </Card>
@@ -669,16 +722,29 @@ function StatMini({ icon: Icon, label, value, highlight }: { icon: typeof Clock;
   );
 }
 
-function SessionRow({ session }: { session: FocusSession }) {
+function SessionRow({ session, extendUnlocked }: { session: FocusSession; extendUnlocked: boolean }) {
   const subjects = useStore(s => s.subjects);
   const grades = useStore(s => s.grades);
   const settings = useStore(s => s.settings);
+  const updateFocusSession = useStore(s => s.updateFocusSession);
   const deleteFocusSession = useStore(s => s.deleteFocusSession);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const [confirm, setConfirm] = useState(false);
+  const [editing, setEditing] = useState(false);
   const s = session.subjectId ? subjects.find(x => x.id === session.subjectId) : undefined;
   const g = session.gradeId ? grades.find(x => x.id === session.gradeId) : undefined;
   const ModeIcon = MODE_META[session.mode].icon;
+
+  if (editing) {
+    return (
+      <SessionEditor
+        session={session}
+        extendUnlocked={extendUnlocked}
+        onClose={() => setEditing(false)}
+        onSave={patch => { void updateFocusSession(session.id, patch); setEditing(false); }}
+      />
+    );
+  }
 
   if (confirm) {
     return (
@@ -707,9 +773,150 @@ function SessionRow({ session }: { session: FocusSession }) {
         </div>
       </div>
       <span className="text-sm font-bold tabular-nums text-ink-700 flex-shrink-0">{formatDuration(session.focusedMs)}</span>
+      <button onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 transition text-ink-400 hover:text-[var(--theme-primary)] flex-shrink-0" title="Bearbeiten">
+        <Pencil className="size-4" />
+      </button>
       <button onClick={() => setConfirm(true)} className="opacity-0 group-hover:opacity-100 transition text-ink-400 hover:text-rose-500 flex-shrink-0" title="Löschen">
         <Trash2 className="size-4" />
       </button>
+    </li>
+  );
+}
+
+// ─── Session-Editor ──────────────────────────────────────────────────────────
+
+function SessionEditor({ session, extendUnlocked, onClose, onSave }: {
+  session: FocusSession;
+  extendUnlocked: boolean;
+  onClose: () => void;
+  onSave: (patch: Partial<FocusSession>) => void;
+}) {
+  const subjects = useStore(s => s.subjects);
+  const grades = useStore(s => s.grades);
+  const settings = useStore(s => s.settings);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+
+  const [subjectId, setSubjectId] = useState<string | undefined>(session.subjectId);
+  const [gradeId, setGradeId] = useState<string | undefined>(session.gradeId);
+  const originalMin = Math.max(1, Math.round(session.focusedMs / 60000));
+  const [minutes, setMinutes] = useState(originalMin);
+
+  // Ohne Freischaltung lässt sich die Zeit nur verkürzen.
+  const maxMin = extendUnlocked ? 24 * 60 : originalMin;
+
+  const subjectTests = useMemo(() => {
+    if (!subjectId) return [];
+    return grades
+      .filter(gr => gr.subjectId === subjectId)
+      .sort((a, b) => {
+        const ap = a.isPending ? 0 : 1;
+        const bp = b.isPending ? 0 : 1;
+        if (ap !== bp) return ap - bp;
+        return (b.date ?? 0) - (a.date ?? 0);
+      });
+  }, [grades, subjectId]);
+
+  const clamp = (v: number) => Math.max(1, Math.min(maxMin, v));
+  const save = () => {
+    const m = clamp(minutes);
+    onSave({ subjectId, gradeId, focusedMs: m * 60000, endedAt: session.startedAt + m * 60000 });
+  };
+
+  return (
+    <li className="rounded-2xl p-3 bg-[rgb(var(--ink-100))] border border-[rgb(var(--ink-200))] space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Session bearbeiten</span>
+        <button onClick={onClose} className="text-ink-400 hover:text-ink-700 transition" title="Abbrechen"><X className="size-4" /></button>
+      </div>
+
+      {/* Fach */}
+      <div>
+        <label className="label text-xs">Fach</label>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          <button
+            onClick={() => { setSubjectId(undefined); setGradeId(undefined); }}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition ${!subjectId ? 'text-white' : ''}`}
+            style={!subjectId
+              ? { background: 'rgb(var(--ink-500))', borderColor: 'rgb(var(--ink-500))' }
+              : { borderColor: 'rgb(var(--ink-300))', color: 'rgb(var(--ink-600))' }}
+          >
+            Allgemein
+          </button>
+          {subjects.map(sub => {
+            const sel = subjectId === sub.id;
+            return (
+              <button
+                key={sub.id}
+                onClick={() => { setSubjectId(sub.id); setGradeId(undefined); }}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition inline-flex items-center gap-1.5"
+                style={sel
+                  ? { background: sub.color, borderColor: sub.color, color: 'white' }
+                  : { borderColor: sub.color, color: sub.color }}
+              >
+                {sel ? <Check className="size-3" /> : <SubjectIcon subject={sub} className="size-3" />}{sub.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Test */}
+      {subjectId && subjectTests.length > 0 && (
+        <div>
+          <label className="label text-xs">Test / Prüfung</label>
+          <select
+            value={gradeId ?? ''}
+            onChange={e => setGradeId(e.target.value || undefined)}
+            className="input mt-1 text-sm"
+          >
+            <option value="">Kein bestimmter Test</option>
+            {subjectTests.map(gr => (
+              <option key={gr.id} value={gr.id}>
+                {(gr.title || getKindLabel(gr.kind, config))}
+                {gr.isPending ? ' · geplant' : ''}
+                {gr.date ? ` · ${new Date(gr.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Dauer */}
+      <div>
+        <label className="label text-xs flex items-center gap-1.5">
+          Dauer (Minuten)
+          {extendUnlocked
+            ? <span className="inline-flex items-center gap-1 text-amber-500"><Unlock className="size-3" />verlängern frei</span>
+            : <span className="inline-flex items-center gap-1 text-ink-400"><Lock className="size-3" />nur kürzer</span>}
+        </label>
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            onClick={() => setMinutes(m => clamp(m - 5))}
+            className="size-9 grid place-items-center rounded-lg bg-[rgb(var(--ink-200))] text-ink-600 hover:bg-[rgb(var(--ink-300))] transition"
+            title="−5 min"
+          ><Minus className="size-4" /></button>
+          <input
+            type="number"
+            value={minutes}
+            min={1}
+            max={maxMin}
+            onChange={e => setMinutes(clamp(Number(e.target.value) || 1))}
+            className="input text-sm text-center tabular-nums w-20"
+          />
+          <button
+            onClick={() => setMinutes(m => clamp(m + 5))}
+            disabled={minutes >= maxMin}
+            className="size-9 grid place-items-center rounded-lg bg-[rgb(var(--ink-200))] text-ink-600 hover:bg-[rgb(var(--ink-300))] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title="+5 min"
+          ><Plus className="size-4" /></button>
+          <span className="text-xs text-ink-500">von {originalMin} min</span>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-[rgb(var(--ink-200))] text-ink-700 text-xs font-bold hover:bg-[rgb(var(--ink-300))] transition">Abbrechen</button>
+        <button onClick={save} className="px-3 py-1.5 rounded-lg theme-gradient text-white text-xs font-bold shadow-glow hover:brightness-105 transition inline-flex items-center gap-1.5"><Check className="size-3.5" />Speichern</button>
+      </div>
     </li>
   );
 }

@@ -28,7 +28,15 @@ CREATE TABLE IF NOT EXISTS public.study_weekly (
 
 -- Index für schnelle Wochen-Abfragen (Rangliste lädt nach week_start)
 CREATE INDEX IF NOT EXISTS study_weekly_week_idx ON public.study_weekly(week_start);
+
+-- Lern-Streak (aufeinanderfolgende Tage mit Lernzeit), für die Flamme in der
+-- Rangliste. Bestehende Installationen einfach diese Zeile nachziehen lassen:
+ALTER TABLE public.study_weekly ADD COLUMN IF NOT EXISTS streak integer NOT NULL DEFAULT 0;
 ```
+
+> Die App funktioniert auch **ohne** die `streak`-Spalte weiter (sie fällt dann
+> stillschweigend auf die reine Lernzeit zurück) – aber ohne die Spalte sehen
+> Freunde die Flamme nicht. Führe das `ALTER TABLE` aus, um die Streaks zu teilen.
 
 ---
 

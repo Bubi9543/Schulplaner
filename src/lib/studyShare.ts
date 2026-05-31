@@ -21,6 +21,8 @@ export interface WeeklyStudyEntry {
   totalMs: number;
   /** Profilbild-URL (aus user_profiles), falls vorhanden. */
   avatarUrl?: string;
+  /** Aktuelle Lern-Streak (aufeinanderfolgende Tage mit Lernzeit). */
+  streak?: number;
 }
 
 interface WeeklyRow {
@@ -28,6 +30,7 @@ interface WeeklyRow {
   display_name: string;
   week_start: string; // YYYY-MM-DD
   total_ms: number;
+  streak?: number | null;
 }
 
 /**
@@ -59,21 +62,62 @@ function fromDateKey(key: string): number {
 }
 
 /**
+ * Berechnet die aktuelle Lern-Streak: die Anzahl aufeinanderfolgender
+ * Kalendertage (lokal) mit mindestens einer Fokus-Session, gerechnet ab heute.
+ *
+ * Wurde heute noch nicht gelernt, die Streak aber gestern noch lief, bleibt sie
+ * bis Tagesende „am Leben" und zählt durch gestern – so verliert man sie nicht
+ * nur, weil der heutige Tag noch jung ist.
+ */
+export function computeStreak(sessions: { startedAt: number; focusedMs: number }[], now: number = Date.now()): number {
+  const days = new Set<string>();
+  for (const s of sessions) {
+    if (s.focusedMs > 0) days.add(toDateKey(s.startedAt));
+  }
+  if (days.size === 0) return 0;
+
+  const DAY = 86400000;
+  const todayKey = toDateKey(now);
+  const yesterdayKey = toDateKey(now - DAY);
+
+  let cursor: number;
+  if (days.has(todayKey)) cursor = now;
+  else if (days.has(yesterdayKey)) cursor = now - DAY;
+  else return 0;
+
+  let streak = 0;
+  while (days.has(toDateKey(cursor))) {
+    streak++;
+    cursor -= DAY;
+  }
+  return streak;
+}
+
+/**
  * Veröffentlicht (upsert) die fokussierte Lernzeit der aktuellen Woche.
  * Wird nach jeder gespeicherten Fokus-Session aufgerufen.
  */
-export async function publishWeeklyStudy(weekStart: number, totalMs: number, displayName: string): Promise<void> {
+export async function publishWeeklyStudy(weekStart: number, totalMs: number, displayName: string, streak = 0): Promise<void> {
   if (!supabase) return;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
-  await supabase.from('study_weekly').upsert({
+  const base = {
     user_id: user.id,
     week_start: toDateKey(weekStart),
     display_name: displayName,
     total_ms: Math.round(totalMs),
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id,week_start' });
+  };
+
+  const { error } = await supabase
+    .from('study_weekly')
+    .upsert({ ...base, streak: Math.round(streak) }, { onConflict: 'user_id,week_start' });
+
+  // Fallback, falls die `streak`-Spalte noch nicht migriert wurde.
+  if (error && /streak/i.test(error.message)) {
+    await supabase.from('study_weekly').upsert(base, { onConflict: 'user_id,week_start' });
+  }
 }
 
 /**
@@ -84,17 +128,26 @@ export async function fetchWeeklyLeaderboard(userIds: string[], weekStart: numbe
   if (!supabase || userIds.length === 0) return [];
   const weekKey = toDateKey(weekStart);
 
-  const [weeklyRes, profilesRes] = await Promise.all([
-    supabase
+  const selectWeekly = (cols: string) =>
+    supabase!
       .from('study_weekly')
-      .select('user_id, display_name, week_start, total_ms')
+      .select(cols)
       .eq('week_start', weekKey)
-      .in('user_id', userIds),
+      .in('user_id', userIds);
+
+  const [weeklyResRaw, profilesRes] = await Promise.all([
+    selectWeekly('user_id, display_name, week_start, total_ms, streak'),
     supabase
       .from('user_profiles')
       .select('user_id, avatar_url')
       .in('user_id', userIds),
   ]);
+
+  // Fallback ohne `streak`, falls die Spalte noch nicht migriert wurde.
+  let weeklyRes = weeklyResRaw;
+  if (weeklyRes.error && /streak/i.test(weeklyRes.error.message)) {
+    weeklyRes = await selectWeekly('user_id, display_name, week_start, total_ms');
+  }
 
   if (weeklyRes.error) {
     console.warn('fetchWeeklyLeaderboard error:', weeklyRes.error.message);
@@ -106,11 +159,12 @@ export async function fetchWeeklyLeaderboard(userIds: string[], weekStart: numbe
     avatars.set(p.user_id, p.avatar_url ?? undefined);
   }
 
-  return (weeklyRes.data as WeeklyRow[]).map(row => ({
+  return (weeklyRes.data as unknown as WeeklyRow[]).map(row => ({
     userId: row.user_id,
     displayName: row.display_name,
     weekStart: fromDateKey(row.week_start),
     totalMs: row.total_ms,
     avatarUrl: avatars.get(row.user_id),
+    streak: row.streak ?? 0,
   }));
 }
