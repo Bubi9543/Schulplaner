@@ -1775,7 +1775,7 @@ function DataSection() {
   }
 
   async function loadDemo() {
-    if (!confirm('Demodaten laden? Bestehende Daten werden ersetzt.')) return;
+    if (!confirm('Demodaten laden? Das aktuelle Schuljahr wird überschrieben – andere Schuljahre bleiben erhalten.')) return;
     await installDemo();
     await load();
     // Wenn eingeloggt: Cloud-Stand komplett mit Demo überschreiben.
@@ -1783,7 +1783,7 @@ function DataSection() {
   }
 
   async function loadOberstufeDemo() {
-    if (!confirm('Oberstufe-Demodaten laden? Bestehende Daten werden ersetzt.')) return;
+    if (!confirm('Oberstufe-Demodaten laden? Das aktuelle Schuljahr wird überschrieben – andere Schuljahre bleiben erhalten.')) return;
     await installOberstufeDemo();
     await load();
     if (authUser) await replaceCloud();
@@ -1843,7 +1843,7 @@ function DataSection() {
 
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Verwaltung</h3>
-        <Row label="Demodaten" hint="Lädt fertige Beispieldaten (überschreibt alles).">
+        <Row label="Demodaten" hint="Lädt fertige Beispieldaten ins aktuelle Schuljahr (andere Jahre bleiben erhalten).">
           <div className="flex gap-2">
             <button onClick={loadDemo} className="btn-ghost"><Wand2 className="size-4" />Schule</button>
             <button onClick={loadOberstufeDemo} className="btn-ghost"><GraduationCap className="size-4" />Oberstufe</button>

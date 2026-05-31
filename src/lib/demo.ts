@@ -1,7 +1,7 @@
 import { db, uid } from './db';
 import { defaultWeight } from './grading';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Weekday, GradeKind } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Weekday, GradeKind, SchoolYear } from '@/types';
 
 const SUBJECTS_DEMO: Array<Omit<Subject, 'id' | 'createdAt'>> = [
   { name: 'Mathematik', short: 'M', color: '#6366f1', category: 'hauptfach', system: 'bayern', teacher: 'Frau Bauer', room: 'B204', targetAverage: 2.5 },
@@ -17,6 +17,40 @@ const SUBJECTS_DEMO: Array<Omit<Subject, 'id' | 'createdAt'>> = [
   { name: 'Sport', short: 'Sp', color: '#f97316', category: 'nebenfach', system: 'bayern', teacher: 'Frau Lang', room: 'Halle' },
   { name: 'Musik', short: 'Mu', color: '#8b5cf6', category: 'nebenfach', system: 'bayern', teacher: 'Herr Wolf', room: 'Mu1' },
 ];
+
+/**
+ * Ermittelt das Schuljahr, das von den Demodaten überschrieben werden soll:
+ * das aktuell aktive (sonst das erste vorhandene). Löscht ausschließlich die
+ * Daten DIESES Jahres – andere Schuljahre bleiben unangetastet.
+ * Gibt die Ziel-ID zurück sowie das vorhandene Jahr (falls vorhanden).
+ */
+async function prepareTargetYear(): Promise<{ yearId: string; existing: SchoolYear | null }> {
+  const years = await db.schoolYears.toArray();
+  const existing = years.find(y => y.active) ?? years[0] ?? null;
+  const yearId = existing?.id ?? uid();
+  if (existing) {
+    await db.subjects.where('schoolYearId').equals(yearId).delete();
+    await db.grades.where('schoolYearId').equals(yearId).delete();
+    await db.tasks.where('schoolYearId').equals(yearId).delete();
+    await db.lessons.where('schoolYearId').equals(yearId).delete();
+  }
+  return { yearId, existing };
+}
+
+/** Settings für die Demo setzen, ohne bestehende Nutzerangaben (Name etc.) zu zerstören. */
+async function applyDemoSettings(fallbackName: string, system: AppSettings['system']) {
+  const prev = await db.settings.get('app');
+  const settings: AppSettings = {
+    ...DEFAULT_SETTINGS,
+    ...prev,
+    id: 'app',
+    name: prev?.name ?? fallbackName,
+    system: prev?.system ?? system,
+    onboarded: true,
+    demo: true,
+  };
+  await db.settings.put(settings);
+}
 
 function pick<T>(arr: T[]) { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -123,22 +157,19 @@ function genTasks(subjects: Subject[]): AppTask[] {
 
 export async function installDemo() {
   await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
-    await db.subjects.clear();
-    await db.grades.clear();
-    await db.tasks.clear();
-    await db.lessons.clear();
-    await db.schoolYears.clear();
+    // Nur das aktuelle Schuljahr überschreiben – andere Jahre bleiben erhalten.
+    const { yearId, existing } = await prepareTargetYear();
 
-    // Default Schuljahr für Demo
-    const yearId = uid();
     const now = new Date();
     const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
-    await db.schoolYears.add({
+    // Schuljahr-Datensatz neu schreiben (ID + Aktiv-Status beibehalten). Eventuelle
+    // Oberstufen-/Abitur-Flags werden so entfernt – dies ist ein reguläres Jahr.
+    await db.schoolYears.put({
       id: yearId,
-      name: `${y}/${String(y + 1).slice(2)}`,
-      startDate: new Date(y, 8, 1).getTime(),
-      active: true,
-      createdAt: Date.now(),
+      name: existing?.name ?? `${y}/${String(y + 1).slice(2)}`,
+      startDate: existing?.startDate ?? new Date(y, 8, 1).getTime(),
+      active: existing ? existing.active : true,
+      createdAt: existing?.createdAt ?? Date.now(),
     });
 
     const subjects: Subject[] = SUBJECTS_DEMO.map(s => ({ ...s, id: uid(), createdAt: Date.now(), schoolYearId: yearId }));
@@ -154,15 +185,7 @@ export async function installDemo() {
     const tasks = genTasks(subjects).map(t => ({ ...t, schoolYearId: yearId }));
     await db.tasks.bulkAdd(tasks);
 
-    const settings: AppSettings = {
-      ...DEFAULT_SETTINGS,
-      id: 'app',
-      name: 'Demo-Schüler',
-      system: 'bayern',
-      onboarded: true,
-      demo: true,
-    };
-    await db.settings.put(settings);
+    await applyDemoSettings('Demo-Schüler', 'bayern');
   });
 }
 
@@ -170,9 +193,9 @@ export async function installDemo() {
 
 /** Typische Kurse der bayerischen Q-Phase + ein Zielschnitt in Punkten (0–15). */
 const OBERSTUFE_SUBJECTS: Array<Omit<Subject, 'id' | 'createdAt'> & { targetPoints: number }> = [
-  { name: 'Deutsch',            short: 'D',   color: '#ec4899', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Vogel',  room: 'A112', targetPoints: 10 },
-  { name: 'Mathematik',         short: 'M',   color: '#6366f1', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Bauer',  room: 'B204', targetPoints: 9 },
-  { name: 'Englisch',           short: 'E',   color: '#06b6d4', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Hofer',  room: 'A203', targetPoints: 12 },
+  { name: 'Deutsch',            short: 'D',   color: '#ec4899', category: 'hauptfach-1zu1', system: 'oberstufe', leistungsfach: true, teacher: 'Herr Vogel',  room: 'A112', targetPoints: 10 },
+  { name: 'Mathematik',         short: 'M',   color: '#6366f1', category: 'hauptfach-1zu1', system: 'oberstufe', leistungsfach: true, teacher: 'Frau Bauer',  room: 'B204', targetPoints: 9 },
+  { name: 'Englisch',           short: 'E',   color: '#06b6d4', category: 'hauptfach-1zu1', system: 'oberstufe', leistungsfach: true, teacher: 'Frau Hofer',  room: 'A203', targetPoints: 12 },
   { name: 'Biologie',           short: 'Bi',  color: '#10b981', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Berg',   room: 'C202', targetPoints: 11 },
   { name: 'Geschichte + Sozialkunde', short: 'G+Sk', color: '#f59e0b', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Herr Mayer', room: 'A305', targetPoints: 10 },
   { name: 'Wirtschaft und Recht', short: 'WR', color: '#84cc16', category: 'hauptfach-1zu1', system: 'oberstufe', teacher: 'Frau Albers', room: 'A301', targetPoints: 9 },
@@ -216,14 +239,10 @@ function genOberstufeGradesFor(subject: Subject, targetPoints: number): Grade[] 
 
 export async function installOberstufeDemo() {
   await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.settings, db.schoolYears], async () => {
-    await db.subjects.clear();
-    await db.grades.clear();
-    await db.tasks.clear();
-    await db.lessons.clear();
-    await db.schoolYears.clear();
+    // Nur das aktuelle Schuljahr überschreiben – andere Jahre bleiben erhalten.
+    const { yearId, existing } = await prepareTargetYear();
 
     // Oberstufen-Schuljahr (Q-Phase 12/13). Beginn ~2 Jahre zurück.
-    const yearId = uid();
     const startYear = new Date().getFullYear() - 2;
     const subjects: Subject[] = OBERSTUFE_SUBJECTS.map(({ targetPoints, ...s }) => {
       void targetPoints;
@@ -240,12 +259,12 @@ export async function installOberstufeDemo() {
       if (subj) { examSubjectIds.push(subj.id); examPoints[subj.id] = tgt; }
     }
 
-    await db.schoolYears.add({
+    await db.schoolYears.put({
       id: yearId,
-      name: 'Oberstufe (Demo)',
-      startDate: new Date(startYear, 8, 1).getTime(),
-      active: true,
-      createdAt: Date.now(),
+      name: existing?.name ?? 'Oberstufe (Demo)',
+      startDate: existing?.startDate ?? new Date(startYear, 8, 1).getTime(),
+      active: existing ? existing.active : true,
+      createdAt: existing?.createdAt ?? Date.now(),
       oberstufe: true,
       oberstufeJahrgaenge: [12, 13],
       abitur: { examSubjectIds, examPoints, fullSubjectIds: [], struckKeys: [] },
@@ -266,16 +285,7 @@ export async function installOberstufeDemo() {
     const tasks = genTasks(subjects).map(t => ({ ...t, schoolYearId: yearId }));
     await db.tasks.bulkAdd(tasks);
 
-    const settings: AppSettings = {
-      ...DEFAULT_SETTINGS,
-      id: 'app',
-      name: 'Demo-Oberstufe',
-      classLevel: '12',
-      system: 'oberstufe',
-      onboarded: true,
-      demo: true,
-    };
-    await db.settings.put(settings);
+    await applyDemoSettings('Demo-Oberstufe', 'oberstufe');
   });
   // Aktives Halbjahr auf 12/1 setzen (sauberer Startzustand).
   try { localStorage.setItem('notenapp.activeTerm', JSON.stringify({})); } catch { /* ignore */ }

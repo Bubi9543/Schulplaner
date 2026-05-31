@@ -158,6 +158,7 @@ export function AbiturPage() {
                       <SubjectIcon subject={s} className="size-4" />
                     </span>
                     <span className="font-semibold text-ink-800 truncate">{s.name}</span>
+                    {s.leistungsfach && <span className="text-[9px] font-bold uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded flex-shrink-0">LF</span>}
                   </button>
                   {selected && (
                     <div className="flex items-center gap-2 flex-shrink-0">

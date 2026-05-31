@@ -399,7 +399,7 @@ function SubjectRow({ subject }: { subject: Subject }) {
       <div className="absolute -right-6 -top-6 size-32 rounded-full bg-white/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center gap-1"><SubjectIcon subject={subject} className="size-3" />{subject.system === 'oberstufe' ? 'Kurs' : CATEGORY_LABEL[subject.category]}</div>
+          <div className="text-[10px] uppercase tracking-wider opacity-80 flex items-center gap-1"><SubjectIcon subject={subject} className="size-3" />{subject.system === 'oberstufe' ? (subject.leistungsfach ? 'Leistungsfach' : 'Kurs') : CATEGORY_LABEL[subject.category]}</div>
           <div className="font-display font-extrabold text-xl mt-0.5 truncate">{subject.name}</div>
           <div className="text-xs opacity-80">{gradeCount} Noten</div>
         </div>

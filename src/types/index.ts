@@ -90,6 +90,12 @@ export interface Subject {
   groupId?: string;
   /** Manuelle Sortierreihenfolge. Kleinere Werte zuerst. Fehlende Werte werden ans Ende gehängt und alphabetisch sortiert. */
   position?: number;
+  /**
+   * Oberstufe (Bayern G9): Fach auf erhöhtem Anforderungsniveau (Leistungsfach).
+   * Rein organisatorisch/kennzeichnend – ändert die Punkteberechnung NICHT
+   * (in Bayern zählen Leistungsfächer nicht doppelt).
+   */
+  leistungsfach?: boolean;
 }
 
 /**

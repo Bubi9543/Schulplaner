@@ -105,7 +105,7 @@ export function SubjectDetailPage() {
   }
 
   return (
-    <PageShell title={subject.name} subtitle={`${subject.system === 'oberstufe' ? 'Kurs' : CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
+    <PageShell title={subject.name} subtitle={`${subject.system === 'oberstufe' ? (subject.leistungsfach ? 'Leistungsfach' : 'Kurs') : CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
       actions={
         <>
           <button onClick={() => nav('/noten')} className="btn-ghost"><ArrowLeft className="size-4" />Zurück</button>

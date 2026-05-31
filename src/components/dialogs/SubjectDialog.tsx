@@ -36,6 +36,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
   const [color, setColor] = useState(initial?.color ?? SUBJECT_COLORS[0]);
   const [icon, setIcon] = useState<string | undefined>(initial?.icon);
   const [category, setCategory] = useState<SubjectCategory>(initial?.category ?? 'nebenfach');
+  const [leistungsfach, setLeistungsfach] = useState<boolean>(initial?.leistungsfach ?? false);
   const [teacher, setTeacher] = useState(initial?.teacher ?? '');
   const [room, setRoom] = useState(initial?.room ?? '');
   const [targetAverage, setTargetAverage] = useState<string>(initial?.targetAverage?.toString() ?? '');
@@ -47,6 +48,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       setColor(initial?.color ?? SUBJECT_COLORS[0]);
       setIcon(initial?.icon);
       setCategory(initial?.category ?? 'nebenfach');
+      setLeistungsfach(initial?.leistungsfach ?? false);
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
       setTargetAverage(initial?.targetAverage?.toString() ?? '');
@@ -62,6 +64,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       icon,
       category,
       system,
+      leistungsfach: system === 'oberstufe' ? leistungsfach : undefined,
       teacher: teacher.trim() || undefined,
       room: room.trim() || undefined,
       targetAverage: targetAverage ? parseFloat(targetAverage.replace(',', '.')) : undefined,
@@ -98,7 +101,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
           </div>
           <div className="text-white">
             <div className="font-display font-bold text-lg">{name || 'Fachname'}</div>
-            <div className="text-xs opacity-80">{CATEGORY_LABEL[category]} · {systemLabel}</div>
+            <div className="text-xs opacity-80">{system === 'oberstufe' ? (leistungsfach ? 'Leistungsfach' : 'Kurs') : CATEGORY_LABEL[category]} · {systemLabel}</div>
           </div>
         </div>
 
@@ -131,9 +134,23 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
         </div>
 
         {system === 'oberstufe' ? (
-          <div className="rounded-2xl bg-theme-soft/40 border border-theme-soft p-3 text-xs text-ink-600 leading-relaxed">
-            Oberstufe: Die Halbjahresleistung ergibt sich aus Klausur ⊕ kleinen Leistungen (1:1).
-            Eine Haupt-/Nebenfach-Kategorie gibt es hier nicht.
+          <div>
+            <label className="label">Niveau</label>
+            <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
+              <button type="button" onClick={() => setLeistungsfach(false)}
+                className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${!leistungsfach ? 'btn-primary' : 'btn-ghost'}`}>
+                <span className="font-semibold text-sm">Grundlegendes Niveau</span>
+                <span className={`text-[10px] mt-0.5 leading-tight font-normal ${!leistungsfach ? 'text-white/85' : 'text-ink-500'}`}>Reguläres Oberstufenfach</span>
+              </button>
+              <button type="button" onClick={() => setLeistungsfach(true)}
+                className={`btn flex-col items-start text-left h-auto py-2.5 px-3 ${leistungsfach ? 'btn-primary' : 'btn-ghost'}`}>
+                <span className="font-semibold text-sm">Leistungsfach</span>
+                <span className={`text-[10px] mt-0.5 leading-tight font-normal ${leistungsfach ? 'text-white/85' : 'text-ink-500'}`}>Erhöhtes Anforderungsniveau (z. B. Deutsch, Mathe + 1)</span>
+              </button>
+            </div>
+            <div className="subtle mt-1.5 text-xs">
+              Halbjahresleistung = Klausur ⊕ kleine Leistungen (1:1). Das Leistungsfach zählt in Bayern <strong>nicht doppelt</strong> – die Kennzeichnung dient nur der Übersicht.
+            </div>
           </div>
         ) : (
           <div>
