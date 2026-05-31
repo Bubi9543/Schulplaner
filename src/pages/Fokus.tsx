@@ -465,9 +465,9 @@ export function FokusPage() {
 
           {/* Dauer-Presets */}
           {!active && (
-            <div className="mt-6 pt-4 border-t border-[rgb(var(--ink-200)/0.6)]">
+            <div className="mt-4 pt-4 border-t border-[rgb(var(--ink-200)/0.6)]">
               {tm.mode === 'pomodoro' && (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <PresetRow label="Fokus" value={tm.pomoFocusMin} options={[15, 25, 30, 45, 50]} onPick={v => update(s => ({ ...s, pomoFocusMin: v }))} />
                   <PresetRow label="Pause" value={tm.pomoBreakMin} options={[5, 10, 15]} onPick={v => update(s => ({ ...s, pomoBreakMin: v }))} />
                 </div>
@@ -476,7 +476,7 @@ export function FokusPage() {
                 <PresetRow label="Dauer" value={tm.timerMin} options={[10, 15, 25, 30, 45, 60, 90]} onPick={v => update(s => ({ ...s, timerMin: v }))} />
               )}
               {tm.mode === 'stopwatch' && (
-                <p className="text-center text-xs text-ink-500">Die Stoppuhr zählt offen hoch – beende die Session mit dem grünen Haken.</p>
+                <p className="text-center text-sm text-ink-500">Die Stoppuhr zählt offen hoch – beende die Session mit dem grünen Haken.</p>
               )}
             </div>
           )}
@@ -555,23 +555,6 @@ export function FokusPage() {
 
           {/* Wochen-Überblick */}
           <Card delay={0.1}>
-            {/* Streak-Banner */}
-            <div className="flex items-center gap-3 mb-4 rounded-2xl p-3 bg-gradient-to-r from-orange-500/10 to-amber-400/10 border border-orange-500/20">
-              <StreakFlame size={34} active={streak > 0} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="font-display font-extrabold text-2xl leading-none tabular-nums text-ink-900">{streak}</span>
-                  <span className="text-sm font-semibold text-ink-600">{streak === 1 ? 'Tag' : 'Tage'} Streak</span>
-                </div>
-                <div className="text-[11px] text-ink-500 mt-0.5">
-                  {streak === 0
-                    ? 'Lern heute, um eine Streak zu starten 🔥'
-                    : studiedToday
-                      ? 'Stark – heute schon dabei! Bleib dran.'
-                      : 'Heute noch nicht gelernt – halt die Flamme am Leben!'}
-                </div>
-              </div>
-            </div>
             <div className="grid grid-cols-3 gap-3 mb-4">
               <StatMini icon={Clock} label="Heute" value={formatDuration(stats.today)} />
               <StatMini icon={Flame} label="Diese Woche" value={formatDuration(stats.week)} highlight />
@@ -594,6 +577,26 @@ export function FokusPage() {
             </div>
           </Card>
         </div>
+
+        {/* ─── Streak ─── */}
+        <Card delay={0.12} className="col-span-12 md:col-span-6">
+          <div className="flex items-center gap-4">
+            <StreakFlame size={42} active={streak > 0} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="font-display font-extrabold text-3xl leading-none tabular-nums text-ink-900">{streak}</span>
+                <span className="text-base font-semibold text-ink-600">{streak === 1 ? 'Tag' : 'Tage'} Streak</span>
+              </div>
+              <div className="text-xs text-ink-500 mt-0.5">
+                {streak === 0
+                  ? 'Lern heute, um eine Streak zu starten'
+                  : studiedToday
+                    ? 'Stark – heute schon dabei! Bleib dran.'
+                    : 'Heute noch nicht gelernt – halt die Flamme am Leben!'}
+              </div>
+            </div>
+          </div>
+        </Card>
 
         {/* ─── Lernzeit pro Fach ─── */}
         <Card delay={0.15} className="col-span-12 md:col-span-6">
@@ -694,14 +697,14 @@ export function FokusPage() {
 
 function PresetRow({ label, value, options, onPick }: { label: string; value: number; options: number[]; onPick: (v: number) => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-semibold text-ink-500 w-12 flex-shrink-0">{label}</span>
-      <div className="flex flex-wrap gap-1.5">
+    <div className="flex items-center gap-3">
+      <span className="text-sm font-semibold text-ink-500 w-14 flex-shrink-0">{label}</span>
+      <div className="flex flex-wrap gap-2">
         {options.map(o => {
           const sel = o === value;
           return (
             <button key={o} onClick={() => onPick(o)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${sel ? 'text-white' : 'bg-[rgb(var(--ink-200))] text-ink-600 hover:bg-[rgb(var(--ink-300))]'}`}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${sel ? 'text-white' : 'bg-[rgb(var(--ink-200))] text-ink-600 hover:bg-[rgb(var(--ink-300))]'}`}
               style={sel ? { background: 'var(--theme-primary)' } : undefined}>
               {o} min
             </button>
