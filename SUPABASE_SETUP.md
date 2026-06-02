@@ -198,6 +198,58 @@ alter publication supabase_realtime add table user_settings;
 
 > Falls einzelne `alter publication`-Zeilen mit „relation … is already member of publication" fehlschlagen, ist das harmlos – einfach die restlichen Zeilen einzeln laufen lassen.
 
+### 3a. Fokus-Sessions & Karteikarten (Nachtrag)
+
+Diese Tabellen kamen mit dem Fokus- bzw. Karteikarten-Feature dazu. Wer sein
+Projekt vor diesen Features eingerichtet hat, führt zusätzlich aus:
+
+```sql
+-- Fokus-/Lern-Sessions
+create table if not exists focus_sessions (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+-- Karteikarten: Kästen, Themengebiete und Karten
+create table if not exists decks (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists card_topics (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists flashcards (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table focus_sessions enable row level security;
+alter table decks          enable row level security;
+alter table card_topics    enable row level security;
+alter table flashcards     enable row level security;
+
+create policy "own focus_sessions" on focus_sessions for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own decks"          on decks          for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own card_topics"    on card_topics    for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own flashcards"     on flashcards     for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+alter publication supabase_realtime add table focus_sessions;
+alter publication supabase_realtime add table decks;
+alter publication supabase_realtime add table card_topics;
+alter publication supabase_realtime add table flashcards;
+```
+
 ## 4. Storage Bucket für Fotos
 
 In `Storage → Create new bucket`:

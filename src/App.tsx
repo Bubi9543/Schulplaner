@@ -13,6 +13,7 @@ import { GradesPage } from '@/pages/Grades';
 import { SubjectDetailPage } from '@/pages/SubjectDetail';
 import { AbiturPage } from '@/pages/Abitur';
 import { FokusPage } from '@/pages/Fokus';
+import { KarteikartenPage, DeckDetailPage } from '@/pages/Karteikarten';
 import { FriendsPage } from '@/pages/Friends';
 import { SettingsPage } from '@/pages/Settings';
 import { ImpressumPage, DatenschutzPage } from '@/pages/Legal';
@@ -89,6 +90,8 @@ export default function App() {
             <Route path="/noten/:subjectId" element={<SubjectDetailPage />} />
             <Route path="/abitur" element={<AbiturPage />} />
             <Route path="/fokus" element={<FokusPage />} />
+            <Route path="/karteikarten" element={<KarteikartenPage />} />
+            <Route path="/karteikarten/:deckId" element={<DeckDetailPage />} />
             <Route path="/freunde" element={<FriendsPage />} />
             <Route path="/einstellungen" element={<SettingsPage />} />
             <Route path="/impressum" element={<ImpressumPage />} />

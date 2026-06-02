@@ -262,6 +262,94 @@ export interface Lesson {
   schoolYearId?: string;
 }
 
+// ─── Karteikarten / Spaced Repetition (Leitner) ─────────────────────────────
+
+/** Anzahl der Leitner-Fächer (Boxen). Eine Karte wandert von 1 bis LEITNER_BOXES. */
+export const LEITNER_BOXES = 5;
+
+/**
+ * Abfragerichtung einer Lern-Session.
+ * - front-back: Vorderseite zeigen, Rückseite abfragen (Default).
+ * - back-front: umgekehrt.
+ * - mixed: pro Karte zufällig.
+ */
+export type ReviewDirection = 'front-back' | 'back-front' | 'mixed';
+
+/** Lernmodus einer Session. */
+export type ReviewMode = 'flip' | 'match';
+
+/**
+ * Ein „Kasten" – das Haupt-Behältnis für Karteikarten (z. B. „Mathe").
+ * Optional einem Fach (Subject) zugeordnet.
+ */
+export interface Deck {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  /** Name eines lucide-Icons (siehe src/lib/subjectIcons.ts). Optional. */
+  icon?: string;
+  /** Optionales übergeordnetes Fach (Subject.id). */
+  subjectId?: string;
+  /** Zugehöriges Schuljahr. Wird beim Anlegen vom aktiven Jahr geerbt. */
+  schoolYearId?: string;
+  /** Manuelle Sortierreihenfolge. Kleinere Werte zuerst. */
+  position?: number;
+  createdAt: number;
+}
+
+/** Ein Themengebiet/Kapitel innerhalb eines Kastens. */
+export interface CardTopic {
+  id: string;
+  deckId: string;
+  name: string;
+  color?: string;
+  position?: number;
+  createdAt: number;
+}
+
+/**
+ * Eine Karteikarte mit Vorder- und Rückseite. Der Lernfortschritt wird über
+ * das Leitner-Fach (`box`, 1–LEITNER_BOXES) getrackt.
+ */
+export interface Flashcard {
+  id: string;
+  deckId: string;
+  /** Optionales Themengebiet (CardTopic.id). */
+  topicId?: string;
+  front: string;
+  back: string;
+  /** Leitner-Fach (1 = neu/oft, LEITNER_BOXES = sitzt). */
+  box: number;
+  /** Letzter Abruf (ms timestamp). */
+  reviewedAt?: number;
+  /** Statistik: wie oft richtig/falsch beantwortet. */
+  correctCount?: number;
+  wrongCount?: number;
+  createdAt: number;
+  /** Zugehöriges Schuljahr. Vom Deck geerbt beim Anlegen. */
+  schoolYearId?: string;
+}
+
+/** Standardisiertes Austauschformat für KI-Import & Sharing eines Kastens. */
+export interface DeckExport {
+  /** Schema-Version für Vorwärtskompatibilität. */
+  version: 1;
+  kind: 'notenapp-deck';
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  /** Themengebiete (optional). Karten referenzieren sie über `topic`. */
+  topics?: string[];
+  cards: Array<{
+    front: string;
+    back: string;
+    /** Name des Themengebiets (muss nicht in `topics` stehen – wird sonst angelegt). */
+    topic?: string;
+  }>;
+}
+
 export type ColorThemeId = 'indigo' | 'ocean' | 'sunset' | 'forest' | 'rose' | 'crimson' | 'sunshine' | 'mono' | 'rainbow';
 export type ThemeMode = 'light' | 'dark' | 'auto';
 export type DensityMode = 'comfortable' | 'compact';

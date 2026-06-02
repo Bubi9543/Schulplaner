@@ -12,13 +12,15 @@ import {
   Plus, ListTodo, GraduationCap, NotebookPen, CheckCircle2, Circle,
   TrendingUp, TrendingDown, Sparkles, ArrowRight, Briefcase, FileText,
   Calendar, GripHorizontal, X, Award, Clock, BookOpen, BarChart2, Pencil,
-  Target, Trophy, Layers, AlertTriangle, Palmtree, Loader2,
+  Target, Trophy, Layers, AlertTriangle, Palmtree, Loader2, Flame, Zap, Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
 import { GradeBadge } from '@/components/GradeBadge';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { TodayTimeline } from '@/components/TodayTimeline';
+import { StudyLeaderboard } from '@/components/StudyLeaderboard';
+import { startOfISOWeek } from '@/lib/studyShare';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
@@ -49,7 +51,9 @@ type WidgetType =
   | 'subject-leaderboard'
   | 'weekly-progress'
   | 'group-averages'
-  | 'next-holiday';
+  | 'next-holiday'
+  | 'focus-stats'
+  | 'study-leaderboard';
 
 interface WidgetInstance { id: string; type: WidgetType; }
 
@@ -96,6 +100,8 @@ const WIDGET_META: Record<WidgetType, {
   'weekly-progress':    { label: 'Wochenfortschritt',    icon: CheckCircle2, defaultSize: { w: 5, h: 6 } },
   'group-averages':     { label: 'Schnitt pro Gruppe',   icon: Layers,      defaultSize: { w: 6, h: 6 } },
   'next-holiday':       { label: 'Nächste Ferien',       icon: Palmtree,    defaultSize: { w: 5, h: 5 } },
+  'focus-stats':        { label: 'Lernzeit',             icon: Flame,       defaultSize: { w: 5, h: 5 } },
+  'study-leaderboard':  { label: 'Lern-Rangliste',       icon: Users,       defaultSize: { w: 5, h: 7 } },
 };
 
 const QUICK_BUTTON_META: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -1051,6 +1057,118 @@ function NextHolidayWidget() {
   );
 }
 
+/** Lernzeit-Dauer kompakt: „2 h 15 min", „45 min", „0 min". */
+function fmtFocusDuration(ms: number): string {
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m} min`;
+  if (m === 0) return `${h} h`;
+  return `${h} h ${m} min`;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Lernzeit-Widget: Streak · Zeit · Sessions nebeneinander.
+ * - Streak: Tage in Folge mit mind. einer Session (heute oder gestern als Anker).
+ * - Zeit/Sessions: kumuliert für die laufende Woche (ISO, Mo–So).
+ */
+function FocusStatsWidget() {
+  const focusSessions = useStore(s => s.focusSessions);
+
+  const { streak, weekMs, weekCount } = useMemo(() => {
+    const now = Date.now();
+    const weekStart = startOfISOWeek(now);
+    let weekMs = 0, weekCount = 0;
+    const daysWithSession = new Set<number>();
+    for (const f of focusSessions) {
+      const d = new Date(f.startedAt); d.setHours(0, 0, 0, 0);
+      daysWithSession.add(d.getTime());
+      if (f.startedAt >= weekStart) { weekMs += f.focusedMs; weekCount++; }
+    }
+    // Streak ab heute zurückzählen; wenn heute noch nichts war, gestern als Anker.
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let cursor = today.getTime();
+    if (!daysWithSession.has(cursor)) cursor -= DAY_MS;
+    let streak = 0;
+    while (daysWithSession.has(cursor)) { streak++; cursor -= DAY_MS; }
+    return { streak, weekMs, weekCount };
+  }, [focusSessions]);
+
+  const hasData = focusSessions.length > 0;
+
+  const tiles = [
+    {
+      icon: Flame,
+      value: String(streak),
+      label: streak === 1 ? 'Tag Streak' : 'Tage Streak',
+      badge: 'bg-amber-500/15 text-amber-500',
+    },
+    {
+      icon: Clock,
+      value: fmtFocusDuration(weekMs),
+      label: 'Diese Woche',
+      badge: 'bg-sky-500/15 text-sky-500',
+    },
+    {
+      icon: Zap,
+      value: String(weekCount),
+      label: weekCount === 1 ? 'Session' : 'Sessions',
+      badge: 'bg-emerald-500/15 text-emerald-500',
+    },
+  ];
+
+  return (
+    <div className="h-full flex flex-col widget-pad">
+      <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <h3 className="h3 flex items-center gap-2"><Flame className="size-5 text-amber-500" />Lernzeit</h3>
+        <Link to="/fokus" className="text-sm text-theme-deep font-semibold hover:underline">Fokus</Link>
+      </div>
+      {!hasData ? (
+        <div className="flex-1 grid place-items-center text-center text-sm text-ink-500 px-4">
+          <div>
+            <Flame className="size-6 mx-auto mb-1.5 text-ink-300" />
+            Noch keine Lern-Sessions.
+            <Link to="/fokus" className="block mt-2 text-theme-deep font-semibold hover:underline">
+              Jetzt fokussieren →
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 grid grid-cols-3 gap-2">
+          {tiles.map(({ icon: Icon, value, label, badge }) => (
+            <div key={label} className="flex flex-col items-center justify-center text-center gap-1.5 rounded-2xl p-2 bg-[rgb(var(--ink-100))]">
+              <div className={cn('size-9 rounded-xl grid place-items-center flex-shrink-0', badge)}>
+                <Icon className="size-[18px]" />
+              </div>
+              <div className="font-display font-extrabold text-ink-900 leading-none text-[clamp(0.9rem,5.5cqi,1.35rem)] tabular-nums">
+                {value}
+              </div>
+              <div className="text-[clamp(0.6rem,3cqi,0.7rem)] text-ink-500 font-medium leading-tight">
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Wöchentliche Lern-Rangliste mit Freunden – nutzt die geteilte Komponente. */
+function StudyLeaderboardWidget() {
+  const focusSessions = useStore(s => s.focusSessions);
+  const { weekStart, weekTotalMs } = useMemo(() => {
+    const weekStart = startOfISOWeek(Date.now());
+    let weekTotalMs = 0;
+    for (const f of focusSessions) if (f.startedAt >= weekStart) weekTotalMs += f.focusedMs;
+    return { weekStart, weekTotalMs };
+  }, [focusSessions]);
+
+  return <StudyLeaderboard weekTotalMs={weekTotalMs} weekStart={weekStart} bare delay={0} />;
+}
+
 // ─── Widget router ─────────────────────────────────────────────────────────────
 
 function WidgetRouter({
@@ -1076,6 +1194,8 @@ function WidgetRouter({
     case 'weekly-progress':    return <WeeklyProgressWidget />;
     case 'group-averages':     return <GroupAveragesWidget />;
     case 'next-holiday':       return <NextHolidayWidget />;
+    case 'focus-stats':        return <FocusStatsWidget />;
+    case 'study-leaderboard':  return <StudyLeaderboardWidget />;
   }
 }
 

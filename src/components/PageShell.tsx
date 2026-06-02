@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 
 interface Props {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;

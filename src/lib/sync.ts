@@ -1,11 +1,11 @@
 import { supabase } from './supabase';
 import { db } from './db';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, FocusSession } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, FocusSession, Deck, CardTopic, Flashcard } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-export type SyncTable = 'subjects' | 'grades' | 'tasks' | 'lessons' | 'photos' | 'school_years' | 'focus_sessions';
+export type SyncTable = 'subjects' | 'grades' | 'tasks' | 'lessons' | 'photos' | 'school_years' | 'focus_sessions' | 'decks' | 'card_topics' | 'flashcards';
 
-const TABLES: SyncTable[] = ['subjects', 'grades', 'tasks', 'lessons', 'photos', 'school_years', 'focus_sessions'];
+const TABLES: SyncTable[] = ['subjects', 'grades', 'tasks', 'lessons', 'photos', 'school_years', 'focus_sessions', 'decks', 'card_topics', 'flashcards'];
 
 function row(id: string, userId: string, data: unknown) {
   return { id, user_id: userId, data, updated_at: new Date().toISOString() };
@@ -13,7 +13,7 @@ function row(id: string, userId: string, data: unknown) {
 
 export async function uploadAll(userId: string): Promise<void> {
   if (!supabase) return;
-  const [subjects, grades, tasks, lessons, photos, schoolYears, focusSessions, settings] = await Promise.all([
+  const [subjects, grades, tasks, lessons, photos, schoolYears, focusSessions, decks, cardTopics, flashcards, settings] = await Promise.all([
     db.subjects.toArray(),
     db.grades.toArray(),
     db.tasks.toArray(),
@@ -21,6 +21,9 @@ export async function uploadAll(userId: string): Promise<void> {
     db.photos.toArray(),
     db.schoolYears.toArray(),
     db.focusSessions.toArray(),
+    db.decks.toArray(),
+    db.cardTopics.toArray(),
+    db.flashcards.toArray(),
     db.settings.get('app'),
   ]);
 
@@ -32,6 +35,9 @@ export async function uploadAll(userId: string): Promise<void> {
     photos.length && supabase.from('photos').upsert(photos.map(p => row(p.id, userId, p))),
     schoolYears.length && supabase.from('school_years').upsert(schoolYears.map(y => row(y.id, userId, y))),
     focusSessions.length && supabase.from('focus_sessions').upsert(focusSessions.map(f => row(f.id, userId, f))),
+    decks.length && supabase.from('decks').upsert(decks.map(d => row(d.id, userId, d))),
+    cardTopics.length && supabase.from('card_topics').upsert(cardTopics.map(t => row(t.id, userId, t))),
+    flashcards.length && supabase.from('flashcards').upsert(flashcards.map(c => row(c.id, userId, c))),
     settings && supabase.from('user_settings').upsert({ user_id: userId, data: settings, updated_at: new Date().toISOString() }),
   ]);
 }
@@ -42,7 +48,7 @@ export async function uploadAll(userId: string): Promise<void> {
  */
 export async function downloadAll(userId: string): Promise<boolean> {
   if (!supabase) return false;
-  const [sRes, gRes, tRes, lRes, pRes, yRes, fRes, setRes] = await Promise.all([
+  const [sRes, gRes, tRes, lRes, pRes, yRes, fRes, dRes, ctRes, fcRes, setRes] = await Promise.all([
     supabase.from('subjects').select('data').eq('user_id', userId),
     supabase.from('grades').select('data').eq('user_id', userId),
     supabase.from('tasks').select('data').eq('user_id', userId),
@@ -50,6 +56,9 @@ export async function downloadAll(userId: string): Promise<boolean> {
     supabase.from('photos').select('data').eq('user_id', userId),
     supabase.from('school_years').select('data').eq('user_id', userId),
     supabase.from('focus_sessions').select('data').eq('user_id', userId),
+    supabase.from('decks').select('data').eq('user_id', userId),
+    supabase.from('card_topics').select('data').eq('user_id', userId),
+    supabase.from('flashcards').select('data').eq('user_id', userId),
     supabase.from('user_settings').select('data').eq('user_id', userId).maybeSingle(),
   ]);
 
@@ -60,13 +69,16 @@ export async function downloadAll(userId: string): Promise<boolean> {
   const photos: Photo[] = (pRes.data ?? []).map(r => r.data);
   const schoolYears: SchoolYear[] = (yRes.data ?? []).map(r => r.data);
   const focusSessions: FocusSession[] = (fRes.data ?? []).map(r => r.data);
+  const decks: Deck[] = (dRes.data ?? []).map(r => r.data);
+  const cardTopics: CardTopic[] = (ctRes.data ?? []).map(r => r.data);
+  const flashcards: Flashcard[] = (fcRes.data ?? []).map(r => r.data);
   const settings: AppSettings | null = setRes.data?.data ?? null;
 
-  if (!subjects.length && !grades.length && !tasks.length && !lessons.length && !photos.length && !schoolYears.length && !focusSessions.length && !settings) {
+  if (!subjects.length && !grades.length && !tasks.length && !lessons.length && !photos.length && !schoolYears.length && !focusSessions.length && !decks.length && !cardTopics.length && !flashcards.length && !settings) {
     return false;
   }
 
-  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.photos, db.schoolYears, db.focusSessions, db.settings], async () => {
+  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.photos, db.schoolYears, db.focusSessions, db.decks, db.cardTopics, db.flashcards, db.settings], async () => {
     await db.subjects.clear(); if (subjects.length) await db.subjects.bulkPut(subjects);
     await db.grades.clear(); if (grades.length) await db.grades.bulkPut(grades);
     await db.tasks.clear(); if (tasks.length) await db.tasks.bulkPut(tasks);
@@ -74,6 +86,9 @@ export async function downloadAll(userId: string): Promise<boolean> {
     await db.photos.clear(); if (photos.length) await db.photos.bulkPut(photos);
     await db.schoolYears.clear(); if (schoolYears.length) await db.schoolYears.bulkPut(schoolYears);
     await db.focusSessions.clear(); if (focusSessions.length) await db.focusSessions.bulkPut(focusSessions);
+    await db.decks.clear(); if (decks.length) await db.decks.bulkPut(decks);
+    await db.cardTopics.clear(); if (cardTopics.length) await db.cardTopics.bulkPut(cardTopics);
+    await db.flashcards.clear(); if (flashcards.length) await db.flashcards.bulkPut(flashcards);
     if (settings) await db.settings.put({ ...settings, id: 'app' });
   });
   return true;

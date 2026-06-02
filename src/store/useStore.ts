@@ -5,7 +5,8 @@ import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime
 import type { SyncTable } from '@/lib/sync';
 import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription, FocusSession } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription, FocusSession, Deck, CardTopic, Flashcard, DeckExport } from '@/types';
+import { reviewPatch, deckExportToEntities } from '@/lib/flashcards';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
@@ -156,6 +157,14 @@ export function compareSubjects(a: Subject, b: Subject): number {
   return a.name.localeCompare(b.name, 'de');
 }
 
+/** Sortiert Kästen nach manueller `position`, dann alphabetisch. */
+export function compareDecks(a: Deck, b: Deck): number {
+  const ap = typeof a.position === 'number' ? a.position : Number.POSITIVE_INFINITY;
+  const bp = typeof b.position === 'number' ? b.position : Number.POSITIVE_INFINITY;
+  if (ap !== bp) return ap - bp;
+  return a.name.localeCompare(b.name, 'de');
+}
+
 // Kleine, immutable Helfer für In-Memory-State.
 function upsertById<T extends { id: string }>(arr: T[], item: T): T[] {
   const i = arr.findIndex(x => x.id === item.id);
@@ -195,6 +204,12 @@ interface State {
   schoolYears: SchoolYear[];
   /** Lern-/Fokus-Sessions (gefiltert nach aktivem Schuljahr). */
   focusSessions: FocusSession[];
+  /** Karteikarten-Kästen (gefiltert nach aktivem Schuljahr). */
+  decks: Deck[];
+  /** Themengebiete der geladenen Kästen. */
+  cardTopics: CardTopic[];
+  /** Karten der geladenen Kästen. */
+  flashcards: Flashcard[];
   /** Aktive Schuljahr-ID. Wenn null, gibt es noch keine. */
   activeSchoolYearId: string | null;
   /**
@@ -291,6 +306,28 @@ interface State {
   updateFocusSession: (id: string, patch: Partial<FocusSession>) => Promise<void>;
   /** Löscht eine Fokus-Session. */
   deleteFocusSession: (id: string) => Promise<void>;
+
+  // ─── Karteikarten ──────────────────────────────────────────────────────────
+  /** Legt einen neuen Kasten an. */
+  addDeck: (d: Omit<Deck, 'id' | 'createdAt'> & { id?: string }) => Promise<Deck>;
+  updateDeck: (id: string, patch: Partial<Deck>) => Promise<void>;
+  /** Löscht einen Kasten samt aller Themen & Karten (kaskadiert lokal + Cloud). */
+  deleteDeck: (id: string) => Promise<void>;
+  addTopic: (t: Omit<CardTopic, 'id' | 'createdAt'> & { id?: string }) => Promise<CardTopic>;
+  updateTopic: (id: string, patch: Partial<CardTopic>) => Promise<void>;
+  /** Löscht ein Thema. mode 'wipe' = Karten mitlöschen, 'orphan' = Karten behalten (ohne Thema). */
+  deleteTopic: (id: string, mode?: 'wipe' | 'orphan') => Promise<void>;
+  addCard: (c: Omit<Flashcard, 'id' | 'createdAt' | 'box'> & { id?: string; box?: number }) => Promise<Flashcard>;
+  updateCard: (id: string, patch: Partial<Flashcard>) => Promise<void>;
+  deleteCard: (id: string) => Promise<void>;
+  /** Verschiebt eine Karte in ein anderes Thema (oder „kein Thema"). */
+  moveCard: (id: string, topicId: string | undefined) => Promise<void>;
+  /** Bewertet eine Karte (Leitner-Schritt richtig/falsch). */
+  reviewCard: (id: string, correct: boolean) => Promise<void>;
+  /** Setzt den Lernfortschritt eines Kastens zurück (alle Karten → Fach 1). */
+  resetDeckProgress: (deckId: string) => Promise<void>;
+  /** Importiert ein DeckExport (KI/Datei/Link) als neuen oder in einen bestehenden Kasten. */
+  importDeck: (exp: DeckExport, opts?: { intoDeckId?: string; subjectId?: string }) => Promise<Deck>;
 
   /** Holt alle geteilten Hausaufgaben der Freunde neu aus der Cloud. */
   refreshFriendTasks: () => Promise<void>;
@@ -403,6 +440,9 @@ export const useStore = create<State>((set, get) => ({
   lastSyncedAt: null,
   liveSync: 'off',
   focusSessions: [],
+  decks: [],
+  cardTopics: [],
+  flashcards: [],
   friendTasks: [],
   friendTasksLoading: false,
   dismissedFriendTaskIds: new Set<string>(),
@@ -413,7 +453,7 @@ export const useStore = create<State>((set, get) => ({
   friendsLoading: false,
 
   async load() {
-    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions] = await Promise.all([
+    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions, allDecks, allCardTopics, allFlashcards] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
@@ -422,6 +462,9 @@ export const useStore = create<State>((set, get) => ({
       db.schoolYears.toArray(),
       db.friendTasks.toArray(),
       db.focusSessions.toArray(),
+      db.decks.toArray(),
+      db.cardTopics.toArray(),
+      db.flashcards.toArray(),
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
     if (settings) {
@@ -454,6 +497,10 @@ export const useStore = create<State>((set, get) => ({
     const activeTerm = activeYear?.oberstufe ? getActiveTerm(activeId) : 1;
     const gradeFilter = (g: Grade) => subjFilter(g) && gradeInActiveTerm(g, activeYear, activeTerm);
 
+    // Karteikarten: Kästen nach Jahr filtern, Themen & Karten über Kasten-Zugehörigkeit.
+    const yearDecks = allDecks.filter(subjFilter).sort(compareDecks);
+    const deckIds = new Set(yearDecks.map(d => d.id));
+
     set({
       loaded: true,
       settings,
@@ -466,6 +513,9 @@ export const useStore = create<State>((set, get) => ({
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
       focusSessions: allFocusSessions.filter(subjFilter).sort((a, b) => b.startedAt - a.startedAt),
+      decks: yearDecks,
+      cardTopics: allCardTopics.filter(t => deckIds.has(t.deckId)),
+      flashcards: allFlashcards.filter(c => deckIds.has(c.deckId)),
       friendTasks: allFriendTasks,
     });
 
@@ -1159,6 +1209,192 @@ export const useStore = create<State>((set, get) => ({
     if (authUser) deleteRow('focus_sessions', id);
   },
 
+  // ─── Karteikarten ──────────────────────────────────────────────────────────
+
+  async addDeck(d) {
+    const yid = d.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const maxPos = get().decks.reduce((m, x) => Math.max(m, x.position ?? 0), -1);
+    const deck: Deck = { ...d, id: d.id ?? uid(), createdAt: Date.now(), schoolYearId: yid, position: d.position ?? maxPos + 1 };
+    await db.decks.add(deck);
+    if (!get().activeSchoolYearId || deck.schoolYearId === get().activeSchoolYearId) {
+      set(state => ({ decks: [...state.decks, deck].sort(compareDecks) }));
+    }
+    const { authUser } = get();
+    if (authUser) syncRow('decks', deck.id, deck, authUser.id);
+    return deck;
+  },
+  async updateDeck(id, patch) {
+    await db.decks.update(id, patch);
+    set(state => ({ decks: state.decks.map(d => d.id === id ? { ...d, ...patch } : d).sort(compareDecks) }));
+    const updated = await db.decks.get(id);
+    const { authUser } = get();
+    if (authUser && updated) syncRow('decks', id, updated, authUser.id);
+  },
+  async deleteDeck(id) {
+    const [topicRows, cardRows] = await Promise.all([
+      db.cardTopics.where('deckId').equals(id).toArray(),
+      db.flashcards.where('deckId').equals(id).toArray(),
+    ]);
+    const topicIds = topicRows.map(t => t.id);
+    const cardIds = cardRows.map(c => c.id);
+    await db.transaction('rw', [db.decks, db.cardTopics, db.flashcards], async () => {
+      await db.decks.delete(id);
+      await db.cardTopics.where('deckId').equals(id).delete();
+      await db.flashcards.where('deckId').equals(id).delete();
+    });
+    set(state => ({
+      decks: state.decks.filter(d => d.id !== id),
+      cardTopics: state.cardTopics.filter(t => t.deckId !== id),
+      flashcards: state.flashcards.filter(c => c.deckId !== id),
+    }));
+    const { authUser } = get();
+    if (authUser) {
+      deleteRow('decks', id);
+      topicIds.forEach(tid => deleteRow('card_topics', tid));
+      cardIds.forEach(cid => deleteRow('flashcards', cid));
+    }
+  },
+
+  async addTopic(t) {
+    const maxPos = get().cardTopics.filter(x => x.deckId === t.deckId).reduce((m, x) => Math.max(m, x.position ?? 0), -1);
+    const topic: CardTopic = { ...t, id: t.id ?? uid(), createdAt: Date.now(), position: t.position ?? maxPos + 1 };
+    await db.cardTopics.add(topic);
+    set(state => ({ cardTopics: [...state.cardTopics, topic] }));
+    const { authUser } = get();
+    if (authUser) syncRow('card_topics', topic.id, topic, authUser.id);
+    return topic;
+  },
+  async updateTopic(id, patch) {
+    await db.cardTopics.update(id, patch);
+    set(state => ({ cardTopics: state.cardTopics.map(t => t.id === id ? { ...t, ...patch } : t) }));
+    const updated = await db.cardTopics.get(id);
+    const { authUser } = get();
+    if (authUser && updated) syncRow('card_topics', id, updated, authUser.id);
+  },
+  async deleteTopic(id, mode = 'orphan') {
+    const { authUser } = get();
+    if (mode === 'wipe') {
+      const cardRows = await db.flashcards.where('topicId').equals(id).toArray();
+      const cardIds = cardRows.map(c => c.id);
+      await db.transaction('rw', [db.cardTopics, db.flashcards], async () => {
+        await db.cardTopics.delete(id);
+        await db.flashcards.where('topicId').equals(id).delete();
+      });
+      set(state => ({
+        cardTopics: state.cardTopics.filter(t => t.id !== id),
+        flashcards: state.flashcards.filter(c => c.topicId !== id),
+      }));
+      if (authUser) {
+        deleteRow('card_topics', id);
+        cardIds.forEach(cid => deleteRow('flashcards', cid));
+      }
+    } else {
+      // Karten behalten, nur Thema-Zuordnung entfernen.
+      const cardRows = await db.flashcards.where('topicId').equals(id).toArray();
+      await db.transaction('rw', [db.cardTopics, db.flashcards], async () => {
+        await db.cardTopics.delete(id);
+        for (const c of cardRows) await db.flashcards.update(c.id, { topicId: undefined });
+      });
+      set(state => ({
+        cardTopics: state.cardTopics.filter(t => t.id !== id),
+        flashcards: state.flashcards.map(c => c.topicId === id ? { ...c, topicId: undefined } : c),
+      }));
+      if (authUser) {
+        deleteRow('card_topics', id);
+        for (const c of cardRows) {
+          const updated = { ...c, topicId: undefined };
+          syncRow('flashcards', c.id, updated, authUser.id);
+        }
+      }
+    }
+  },
+
+  async addCard(c) {
+    const deck = get().decks.find(d => d.id === c.deckId);
+    const yid = c.schoolYearId ?? deck?.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const card: Flashcard = {
+      ...c,
+      id: c.id ?? uid(),
+      box: c.box ?? 1,
+      correctCount: c.correctCount ?? 0,
+      wrongCount: c.wrongCount ?? 0,
+      createdAt: Date.now(),
+      schoolYearId: yid,
+    };
+    await db.flashcards.add(card);
+    set(state => ({ flashcards: [...state.flashcards, card] }));
+    const { authUser } = get();
+    if (authUser) syncRow('flashcards', card.id, card, authUser.id);
+    return card;
+  },
+  async updateCard(id, patch) {
+    await db.flashcards.update(id, patch);
+    set(state => ({ flashcards: state.flashcards.map(c => c.id === id ? { ...c, ...patch } : c) }));
+    const updated = await db.flashcards.get(id);
+    const { authUser } = get();
+    if (authUser && updated) syncRow('flashcards', id, updated, authUser.id);
+  },
+  async deleteCard(id) {
+    await db.flashcards.delete(id);
+    set(state => ({ flashcards: state.flashcards.filter(c => c.id !== id) }));
+    const { authUser } = get();
+    if (authUser) deleteRow('flashcards', id);
+  },
+  async moveCard(id, topicId) {
+    await get().updateCard(id, { topicId });
+  },
+  async reviewCard(id, correct) {
+    const card = get().flashcards.find(c => c.id === id);
+    if (!card) return;
+    await get().updateCard(id, reviewPatch(card, correct));
+  },
+  async resetDeckProgress(deckId) {
+    const cards = get().flashcards.filter(c => c.deckId === deckId);
+    if (cards.length === 0) return;
+    const patch = { box: 1, reviewedAt: undefined, correctCount: 0, wrongCount: 0 };
+    await db.transaction('rw', db.flashcards, async () => {
+      for (const c of cards) await db.flashcards.update(c.id, patch);
+    });
+    set(state => ({
+      flashcards: state.flashcards.map(c => c.deckId === deckId ? { ...c, ...patch } : c),
+    }));
+    const { authUser } = get();
+    if (authUser) {
+      for (const c of cards) syncRow('flashcards', c.id, { ...c, ...patch }, authUser.id);
+    }
+  },
+  async importDeck(exp, opts = {}) {
+    const yid = get().activeSchoolYearId ?? undefined;
+    const intoDeck = opts.intoDeckId ? get().decks.find(d => d.id === opts.intoDeckId) : undefined;
+    const existingTopics = intoDeck ? get().cardTopics.filter(t => t.deckId === intoDeck.id) : [];
+    const { deck, topics, cards } = deckExportToEntities(exp, {
+      schoolYearId: yid,
+      subjectId: opts.subjectId,
+      existingDeck: intoDeck,
+      existingTopics,
+    });
+
+    await db.transaction('rw', [db.decks, db.cardTopics, db.flashcards], async () => {
+      if (!intoDeck) await db.decks.add(deck);
+      if (topics.length) await db.cardTopics.bulkAdd(topics);
+      if (cards.length) await db.flashcards.bulkAdd(cards);
+    });
+
+    set(state => ({
+      decks: intoDeck ? state.decks : [...state.decks, deck].sort(compareDecks),
+      cardTopics: [...state.cardTopics, ...topics],
+      flashcards: [...state.flashcards, ...cards],
+    }));
+
+    const { authUser } = get();
+    if (authUser) {
+      if (!intoDeck) syncRow('decks', deck.id, deck, authUser.id);
+      topics.forEach(t => syncRow('card_topics', t.id, t, authUser.id));
+      cards.forEach(c => syncRow('flashcards', c.id, c, authUser.id));
+    }
+    return deck;
+  },
+
   // ─── Homework Sharing ────────────────────────────────────────────────────
 
   async refreshFriendTasks() {
@@ -1438,6 +1674,38 @@ async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, g
       }
       break;
     }
+    case 'decks': {
+      const deck = data as unknown as Deck;
+      await db.decks.put(deck);
+      const yid = get().activeSchoolYearId;
+      if (!yid || deck.schoolYearId === yid) {
+        set(state => ({ decks: upsertById(state.decks, deck).sort(compareDecks) }));
+      } else {
+        set(state => ({ decks: state.decks.filter(d => d.id !== deck.id) }));
+      }
+      break;
+    }
+    case 'card_topics': {
+      const topic = data as unknown as CardTopic;
+      await db.cardTopics.put(topic);
+      // Nur aufnehmen, wenn der zugehörige Kasten in der aktuellen Jahres-View ist.
+      if (get().decks.some(d => d.id === topic.deckId)) {
+        set(state => ({ cardTopics: upsertById(state.cardTopics, topic) }));
+      } else {
+        set(state => ({ cardTopics: state.cardTopics.filter(t => t.id !== topic.id) }));
+      }
+      break;
+    }
+    case 'flashcards': {
+      const card = data as unknown as Flashcard;
+      await db.flashcards.put(card);
+      if (get().decks.some(d => d.id === card.deckId)) {
+        set(state => ({ flashcards: upsertById(state.flashcards, card) }));
+      } else {
+        set(state => ({ flashcards: state.flashcards.filter(c => c.id !== card.id) }));
+      }
+      break;
+    }
   }
 }
 
@@ -1481,6 +1749,26 @@ async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get
     case 'focus_sessions':
       await db.focusSessions.delete(id);
       set(state => ({ focusSessions: state.focusSessions.filter(f => f.id !== id) }));
+      break;
+    case 'decks':
+      await db.transaction('rw', [db.decks, db.cardTopics, db.flashcards], async () => {
+        await db.decks.delete(id);
+        await db.cardTopics.where('deckId').equals(id).delete();
+        await db.flashcards.where('deckId').equals(id).delete();
+      });
+      set(state => ({
+        decks: state.decks.filter(d => d.id !== id),
+        cardTopics: state.cardTopics.filter(t => t.deckId !== id),
+        flashcards: state.flashcards.filter(c => c.deckId !== id),
+      }));
+      break;
+    case 'card_topics':
+      await db.cardTopics.delete(id);
+      set(state => ({ cardTopics: state.cardTopics.filter(t => t.id !== id) }));
+      break;
+    case 'flashcards':
+      await db.flashcards.delete(id);
+      set(state => ({ flashcards: state.flashcards.filter(c => c.id !== id) }));
       break;
   }
 }
