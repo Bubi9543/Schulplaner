@@ -96,7 +96,7 @@ export function DatenschutzPage() {
 
         <Section title="2. Welche Daten wir verarbeiten">
           <p className="text-ink-700 leading-relaxed mb-2">
-            Die Notenapp ist eine sogenannte „Local-First"-App – das heißt: standardmäßig werden deine Daten <strong>nur in deinem Browser</strong> (IndexedDB) gespeichert.
+            Der Schulplaner ist eine sogenannte „Local-First"-App – das heißt: standardmäßig werden deine Daten <strong>nur in deinem Browser</strong> (IndexedDB) gespeichert.
             Erst wenn du dich freiwillig einloggst und Cloud-Sync aktivierst, werden deine Daten zusätzlich auf einen Server übertragen.
           </p>
           <p className="text-ink-700 leading-relaxed mb-2">Konkret verarbeiten wir je nach Nutzung:</p>

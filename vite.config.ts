@@ -16,8 +16,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
       },
       manifest: {
-        name: 'Notenapp',
-        short_name: 'Noten',
+        name: 'Schulplaner',
+        short_name: 'Schulplaner',
         description: 'Deine Schulnoten, Aufgaben und der Stundenplan – schön übersichtlich.',
         theme_color: '#6366f1',
         background_color: '#0f1220',

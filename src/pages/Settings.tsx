@@ -2328,7 +2328,7 @@ function ShortcutGuide({ token, onCopy, copied }: { token: string; onCopy: (v: s
       <ol className="text-xs text-ink-700 leading-relaxed space-y-2 list-decimal list-inside">
         <li><strong>Token kopieren</strong> (Button oben unter „Dein Token"). Du brauchst ihn gleich genau einmal.</li>
         <li><strong>„Shortcut installieren"</strong> tippen → iOS fragt: „Shortcut hinzufügen?" → bestätigen.</li>
-        <li>Beim ersten Start fragt der Shortcut: „Notenapp-Token einfügen". Token einsetzen → fertig.</li>
+        <li>Beim ersten Start fragt der Shortcut: „Schulplaner-Token einfügen". Token einsetzen → fertig.</li>
         <li>Shortcut zu Home-Bildschirm oder Widget hinzufügen — und Aufgaben künftig per Tap anlegen.</li>
       </ol>
 

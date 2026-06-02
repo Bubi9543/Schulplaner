@@ -197,7 +197,7 @@ export function Sidebar() {
           ? <Avatar name={settings?.name ?? ''} emoji={settings.avatar} className="size-10" textClassName="text-xl" />
           : <Logo />}
         <div className="min-w-0">
-          <div className="font-display font-extrabold text-ink-900 leading-tight">{settings?.name || 'Notenapp'}</div>
+          <div className="font-display font-extrabold text-ink-900 leading-tight">{settings?.name || 'Schulplaner'}</div>
           <div className="text-xs text-ink-500 truncate">{settings?.name ? (settings?.school || 'Schulplaner') : 'Schule, schöner'}</div>
         </div>
       </div>

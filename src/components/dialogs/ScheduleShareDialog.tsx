@@ -168,7 +168,7 @@ function ShareTab() {
 
   async function shareNative() {
     if (!share) return;
-    const text = `Mein Stundenplan-Code für Notenapp: ${share.code}\n(7 Tage gültig)`;
+    const text = `Mein Stundenplan-Code für Schulplaner: ${share.code}\n(7 Tage gültig)`;
     if (typeof navigator !== 'undefined' && 'share' in navigator) {
       try {
         await (navigator as Navigator).share({ title: 'Stundenplan-Code', text });

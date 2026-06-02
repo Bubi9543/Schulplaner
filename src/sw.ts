@@ -40,7 +40,7 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: 'Notenapp', body: event.data.text() };
+    payload = { title: 'Schulplaner', body: event.data.text() };
   }
 
   const options: NotificationOptions = {
