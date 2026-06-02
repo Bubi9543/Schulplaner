@@ -2,7 +2,8 @@ import { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Plus, Layers, Sparkles, BookOpen, Play, Pencil, Trash2, Share2,
-  ChevronLeft, FolderPlus, MoreHorizontal, RotateCcw, GraduationCap, Upload,
+  ChevronLeft, FolderPlus, Folder, MoreHorizontal, RotateCcw, GraduationCap, Upload,
+  Inbox, Check, X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageShell } from '@/components/PageShell';
@@ -12,7 +13,7 @@ import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
 import { dueCards, deckMastery, boxDistribution, decodeDeckShare } from '@/lib/flashcards';
 import { LEITNER_BOXES } from '@/types';
-import type { Deck, Flashcard, CardTopic } from '@/types';
+import type { Deck, Flashcard, CardTopic, DeckFolder } from '@/types';
 import { DeckDialog } from '@/components/flashcards/DeckDialog';
 import { CardDialog } from '@/components/flashcards/CardDialog';
 import { AiImportDialog } from '@/components/flashcards/AiImportDialog';
@@ -23,9 +24,21 @@ import { StudySession } from '@/components/flashcards/StudySession';
 
 export function KarteikartenPage() {
   const decks = useStore(s => s.decks);
+  const folders = useStore(s => s.deckFolders);
   const flashcards = useStore(s => s.flashcards);
   const reviewCard = useStore(s => s.reviewCard);
+  const updateCard = useStore(s => s.updateCard);
+  const addDeckFolder = useStore(s => s.addDeckFolder);
+  const updateDeckFolder = useStore(s => s.updateDeckFolder);
+  const deleteDeckFolder = useStore(s => s.deleteDeckFolder);
+  const incomingDeckShares = useStore(s => s.incomingDeckShares);
+  const loadDeckShares = useStore(s => s.loadDeckShares);
+  const acceptDeckShare = useStore(s => s.acceptDeckShare);
+  const dismissDeckShare = useStore(s => s.dismissDeckShare);
   const [params, setParams] = useSearchParams();
+
+  // Erhaltene Kästen beim Öffnen der Seite frisch ziehen.
+  useEffect(() => { void loadDeckShares(); }, [loadDeckShares]);
 
   const [deckDialog, setDeckDialog] = useState(false);
   const [importDialog, setImportDialog] = useState(false);
@@ -58,12 +71,32 @@ export function KarteikartenPage() {
     return map;
   }, [flashcards]);
 
+  const ungrouped = useMemo(() => decks.filter(d => !d.folderId), [decks]);
+
+  async function addFolderPrompt() {
+    const name = prompt('Name des neuen Ordners:');
+    if (name?.trim()) await addDeckFolder({ name: name.trim() });
+  }
+
+  const renderDeck = (deck: Deck, i: number) => (
+    <DeckCard
+      key={deck.id}
+      deck={deck}
+      cards={cardsByDeck.get(deck.id) ?? []}
+      delay={i * 0.04}
+      onQuickStudy={(name, cards) => setStudy({ name, cards })}
+    />
+  );
+
   return (
     <PageShell
       title="Karteikarten"
       subtitle="Lerne mit dem Leitner-System – richtig Beantwortetes kommt seltener dran."
       actions={
         <>
+          <button onClick={addFolderPrompt} className="btn-ghost">
+            <FolderPlus className="size-4" /> Ordner
+          </button>
           <button onClick={() => setImportDialog(true)} className="btn-ghost">
             <Sparkles className="size-4" /> KI-Import
           </button>
@@ -77,7 +110,35 @@ export function KarteikartenPage() {
         <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 px-4 py-3 text-sm text-rose-700 mb-4">{importError}</div>
       )}
 
-      {decks.length === 0 ? (
+      {incomingDeckShares.length > 0 && (
+        <div className="mb-5 space-y-2">
+          <div className="flex items-center gap-2 px-1">
+            <Inbox className="size-4 text-theme-deep" />
+            <h2 className="font-display font-bold text-ink-900">Von Freunden erhalten</h2>
+            <span className="text-xs text-ink-400">{incomingDeckShares.length}</span>
+          </div>
+          {incomingDeckShares.map(share => (
+            <Card key={share.id} className="!p-3 flex items-center gap-3">
+              <div className="size-10 rounded-2xl theme-gradient grid place-items-center text-white flex-shrink-0">
+                <Layers className="size-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-ink-900 truncate">{share.deckName}</div>
+                <div className="text-xs text-ink-500 truncate">von {share.senderName} · {share.cardCount} {share.cardCount === 1 ? 'Karte' : 'Karten'}</div>
+              </div>
+              <button onClick={() => acceptDeckShare(share.id)} className="btn-primary py-2 px-3 text-sm flex-shrink-0">
+                <Check className="size-4" /> Übernehmen
+              </button>
+              <button onClick={() => dismissDeckShare(share.id)} title="Verwerfen"
+                className="size-9 grid place-items-center rounded-full hover:bg-white/70 text-ink-400 transition flex-shrink-0">
+                <X className="size-4" />
+              </button>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {decks.length === 0 && incomingDeckShares.length === 0 ? (
         <Card>
           <Empty
             icon={Layers}
@@ -91,17 +152,35 @@ export function KarteikartenPage() {
             }
           />
         </Card>
-      ) : (
+      ) : folders.length === 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {decks.map((deck, i) => (
-            <DeckCard
-              key={deck.id}
-              deck={deck}
-              cards={cardsByDeck.get(deck.id) ?? []}
-              delay={i * 0.04}
-              onQuickStudy={(name, cards) => setStudy({ name, cards })}
-            />
-          ))}
+          {decks.map(renderDeck)}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {folders.map(folder => {
+            const folderDecks = decks.filter(d => d.folderId === folder.id);
+            return (
+              <FolderSection
+                key={folder.id}
+                folder={folder}
+                count={folderDecks.length}
+                onRename={async () => { const n = prompt('Ordner umbenennen:', folder.name); if (n?.trim()) await updateDeckFolder(folder.id, { name: n.trim() }); }}
+                onDelete={async () => { if (confirm(`Ordner „${folder.name}" löschen? Die Kästen bleiben erhalten.`)) await deleteDeckFolder(folder.id); }}
+              >
+                {folderDecks.length === 0 ? (
+                  <p className="subtle text-sm px-1">Noch keine Kästen in diesem Ordner.</p>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{folderDecks.map(renderDeck)}</div>
+                )}
+              </FolderSection>
+            );
+          })}
+          {ungrouped.length > 0 && (
+            <FolderSection folder={null} count={ungrouped.length}>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{ungrouped.map(renderDeck)}</div>
+            </FolderSection>
+          )}
         </div>
       )}
 
@@ -119,9 +198,39 @@ export function KarteikartenPage() {
           cards={study.cards}
           onClose={() => setStudy(null)}
           onReview={reviewCard}
+          restoreCard={updateCard}
         />
       )}
     </PageShell>
+  );
+}
+
+function FolderSection({ folder, count, children, onRename, onDelete }: {
+  folder: DeckFolder | null;
+  count: number;
+  children: React.ReactNode;
+  onRename?: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3 px-1">
+        <Folder className="size-4 flex-shrink-0" style={{ color: folder?.color ?? 'rgb(var(--ink-400))' }} />
+        <h2 className="font-display font-bold text-ink-900">{folder ? folder.name : 'Ohne Ordner'}</h2>
+        <span className="text-xs text-ink-400">{count}</span>
+        {folder && onRename && (
+          <button onClick={onRename} className="size-7 grid place-items-center rounded-full hover:bg-white/70 text-ink-400 transition ml-1" title="Ordner umbenennen">
+            <Pencil className="size-3.5" />
+          </button>
+        )}
+        {folder && onDelete && (
+          <button onClick={onDelete} className="size-7 grid place-items-center rounded-full hover:bg-white/70 text-rose-400 transition" title="Ordner löschen">
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -182,6 +291,7 @@ export function DeckDetailPage() {
   const allTopics = useStore(s => s.cardTopics);
   const subjects = useStore(s => s.subjects);
   const reviewCard = useStore(s => s.reviewCard);
+  const updateCard = useStore(s => s.updateCard);
   const deleteTopic = useStore(s => s.deleteTopic);
   const updateTopic = useStore(s => s.updateTopic);
   const addTopic = useStore(s => s.addTopic);
@@ -365,7 +475,7 @@ export function DeckDetailPage() {
         />
       )}
       {study && (
-        <StudySession open deckName={study.name} cards={study.cards} onClose={() => setStudy(null)} onReview={reviewCard} />
+        <StudySession open deckName={study.name} cards={study.cards} onClose={() => setStudy(null)} onReview={reviewCard} restoreCard={updateCard} />
       )}
     </PageShell>
   );

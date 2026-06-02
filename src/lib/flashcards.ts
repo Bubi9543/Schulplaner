@@ -1,5 +1,5 @@
 import { LEITNER_BOXES } from '@/types';
-import type { Deck, CardTopic, Flashcard, DeckExport } from '@/types';
+import type { Deck, CardTopic, Flashcard, DeckExport, ReviewOutcome } from '@/types';
 import { uid } from '@/lib/db';
 
 // ─── Leitner-Algorithmus ─────────────────────────────────────────────────────
@@ -10,22 +10,36 @@ import { uid } from '@/lib/db';
 /** Tage bis eine Karte je Leitner-Fach erneut fällig wird (Index = box-1). */
 export const BOX_INTERVALS_DAYS = [0, 1, 3, 7, 16] as const;
 
-/** Liefert das neue Leitner-Fach nach einer Antwort. */
-export function nextBox(box: number, correct: boolean): number {
-  if (!correct) return 1;
-  return Math.min(LEITNER_BOXES, Math.max(1, box) + 1);
+/** Liefert das neue Leitner-Fach nach einer Bewertung. */
+export function nextBox(box: number, outcome: ReviewOutcome): number {
+  const cur = Math.max(1, Math.min(LEITNER_BOXES, box));
+  if (outcome === 'wrong') return 1;
+  if (outcome === 'partial') return cur; // bleibt im selben Fach
+  return Math.min(LEITNER_BOXES, cur + 1);
 }
 
 /**
  * Baut den Update-Patch für eine bewertete Karte (Leitner-Schritt + Statistik).
  */
-export function reviewPatch(card: Flashcard, correct: boolean): Partial<Flashcard> {
+export function reviewPatch(card: Flashcard, outcome: ReviewOutcome): Partial<Flashcard> {
   return {
-    box: nextBox(card.box, correct),
+    box: nextBox(card.box, outcome),
     reviewedAt: Date.now(),
-    correctCount: (card.correctCount ?? 0) + (correct ? 1 : 0),
-    wrongCount: (card.wrongCount ?? 0) + (correct ? 0 : 1),
+    correctCount: (card.correctCount ?? 0) + (outcome === 'correct' ? 1 : 0),
+    wrongCount: (card.wrongCount ?? 0) + (outcome === 'wrong' ? 1 : 0),
   };
+}
+
+/**
+ * Lern-Aktivität aus Karten für die Streak-Berechnung: jede zuletzt gelernte
+ * Karte zählt als „Session" an ihrem Review-Tag. Format passt zu computeStreak().
+ */
+export function flashcardActivity(cards: Flashcard[]): { startedAt: number; focusedMs: number }[] {
+  const out: { startedAt: number; focusedMs: number }[] = [];
+  for (const c of cards) {
+    if (c.reviewedAt) out.push({ startedAt: c.reviewedAt, focusedMs: 1 });
+  }
+  return out;
 }
 
 /** Ob eine Karte jetzt zur Wiederholung ansteht (nie gelernt = sofort fällig). */
@@ -71,22 +85,21 @@ export function buildAiPrompt(deckName?: string): string {
   return `Du bist ein Lern-Assistent, der aus Lernmaterial Karteikarten erstellt.
 
 Ich gebe dir Lernstoff (Text, Foto von Notizen, PDF o. Ä.) zu „${titel}".
-Erstelle daraus prägnante Frage-Antwort-Karteikarten und gruppiere sie in sinnvolle Themengebiete.
+Erstelle daraus prägnante Frage-Antwort-Karteikarten.
 
 Regeln:
 - Vorderseite ("front") = kurze, eindeutige Frage oder ein Begriff.
 - Rückseite ("back") = knappe, korrekte Antwort/Definition (keine Romane).
 - Pro wichtigem Fakt genau eine Karte. Keine Dubletten.
-- Ordne jede Karte einem Themengebiet ("topic") zu.
+- Erstelle KEINE Themen/Kategorien – die Einteilung mache ich selbst.
 - Antworte AUSSCHLIESSLICH mit gültigem JSON nach diesem Schema – kein Fließtext, kein Markdown, keine Code-Fences:
 
 {
   "version": 1,
   "kind": "notenapp-deck",
   "name": "${deckName?.trim() || 'Name des Kastens'}",
-  "topics": ["Themengebiet A", "Themengebiet B"],
   "cards": [
-    { "topic": "Themengebiet A", "front": "Frage?", "back": "Antwort" }
+    { "front": "Frage?", "back": "Antwort" }
   ]
 }
 

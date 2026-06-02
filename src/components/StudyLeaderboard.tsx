@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { StreakFlame } from '@/components/StreakFlame';
 import { publishWeeklyStudy, fetchWeeklyLeaderboard, computeStreak } from '@/lib/studyShare';
+import { flashcardActivity } from '@/lib/flashcards';
 import { getOrCreateMyProfile } from '@/lib/homeworkShare';
 import type { WeeklyStudyEntry } from '@/lib/studyShare';
 
@@ -38,10 +39,14 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
   const friends = useStore(s => s.friends);
   const myProfile = useStore(s => s.myProfile);
   const focusSessions = useStore(s => s.focusSessions);
+  const flashcards = useStore(s => s.flashcards);
   const [entries, setEntries] = useState<WeeklyStudyEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const myStreak = useMemo(() => computeStreak(focusSessions), [focusSessions]);
+  const myStreak = useMemo(
+    () => computeStreak([...focusSessions, ...flashcardActivity(flashcards)]),
+    [focusSessions, flashcards],
+  );
   const friendIds = friends.map(f => f.userId).join(',');
 
   const refresh = useCallback(async () => {

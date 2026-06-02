@@ -212,7 +212,14 @@ create table if not exists focus_sessions (
   updated_at timestamptz not null default now()
 );
 
--- Karteikarten: Kästen, Themengebiete und Karten
+-- Karteikarten: Ordner, Kästen, Themengebiete und Karten
+create table if not exists deck_folders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists decks (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -234,20 +241,46 @@ create table if not exists flashcards (
   updated_at timestamptz not null default now()
 );
 
+-- Direkt an Freunde verschickte Kästen (In-App-Inbox)
+create table if not exists deck_shares (
+  id           text primary key,
+  sender_id    uuid not null references auth.users(id) on delete cascade,
+  sender_name  text,
+  recipient_id uuid not null references auth.users(id) on delete cascade,
+  deck_name    text,
+  card_count   int,
+  payload      jsonb not null,
+  created_at   bigint not null
+);
+create index if not exists deck_shares_recipient_idx on deck_shares(recipient_id);
+
 alter table focus_sessions enable row level security;
+alter table deck_folders   enable row level security;
 alter table decks          enable row level security;
 alter table card_topics    enable row level security;
 alter table flashcards     enable row level security;
 
 create policy "own focus_sessions" on focus_sessions for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own deck_folders"   on deck_folders   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own decks"          on decks          for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own card_topics"    on card_topics    for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own flashcards"     on flashcards     for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- deck_shares: Sender darf einfügen; Sender & Empfänger dürfen lesen/löschen.
+alter table deck_shares enable row level security;
+create policy "deck_shares_insert" on deck_shares for insert to authenticated
+  with check (sender_id = auth.uid());
+create policy "deck_shares_select" on deck_shares for select to authenticated
+  using (sender_id = auth.uid() or recipient_id = auth.uid());
+create policy "deck_shares_delete" on deck_shares for delete to authenticated
+  using (sender_id = auth.uid() or recipient_id = auth.uid());
+
 alter publication supabase_realtime add table focus_sessions;
+alter publication supabase_realtime add table deck_folders;
 alter publication supabase_realtime add table decks;
 alter publication supabase_realtime add table card_topics;
 alter publication supabase_realtime add table flashcards;
+alter publication supabase_realtime add table deck_shares;
 ```
 
 ## 4. Storage Bucket für Fotos

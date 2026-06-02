@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, SchoolHoliday, FriendTask, FocusSession, Deck, CardTopic, Flashcard } from '@/types';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, SchoolHoliday, FriendTask, FocusSession, Deck, CardTopic, Flashcard, DeckFolder } from '@/types';
 
 export class NotenDB extends Dexie {
   subjects!: Table<Subject, string>;
@@ -13,6 +13,7 @@ export class NotenDB extends Dexie {
   holidays!: Table<SchoolHoliday, string>;
   friendTasks!: Table<FriendTask, string>;
   focusSessions!: Table<FocusSession, string>;
+  deckFolders!: Table<DeckFolder, string>;
   decks!: Table<Deck, string>;
   cardTopics!: Table<CardTopic, string>;
   flashcards!: Table<Flashcard, string>;
@@ -123,6 +124,23 @@ export class NotenDB extends Dexie {
       friendTasks: 'id, ownerUserId, dueDate, fetchedAt',
       focusSessions: 'id, subjectId, gradeId, schoolYearId, startedAt',
       decks: 'id, subjectId, schoolYearId, position, createdAt',
+      cardTopics: 'id, deckId, position, createdAt',
+      flashcards: 'id, deckId, topicId, box, schoolYearId, createdAt',
+    });
+
+    this.version(10).stores({
+      subjects: 'id, name, system, category, schoolYearId, createdAt',
+      grades: 'id, subjectId, schoolYearId, date, kind, isPending',
+      tasks: 'id, subjectId, schoolYearId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, schoolYearId, weekday, start',
+      settings: 'id',
+      photos: 'id, refId, refType, createdAt',
+      schoolYears: 'id, active, startDate, createdAt',
+      holidays: 'id, cacheKey, startDate, endDate',
+      friendTasks: 'id, ownerUserId, dueDate, fetchedAt',
+      focusSessions: 'id, subjectId, gradeId, schoolYearId, startedAt',
+      deckFolders: 'id, schoolYearId, position, createdAt',
+      decks: 'id, subjectId, folderId, schoolYearId, position, createdAt',
       cardTopics: 'id, deckId, position, createdAt',
       flashcards: 'id, deckId, topicId, box, schoolYearId, createdAt',
     });

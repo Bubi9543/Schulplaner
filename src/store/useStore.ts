@@ -5,8 +5,10 @@ import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime
 import type { SyncTable } from '@/lib/sync';
 import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription, FocusSession, Deck, CardTopic, Flashcard, DeckExport } from '@/types';
-import { reviewPatch, deckExportToEntities } from '@/lib/flashcards';
+import type { Subject, Grade, AppTask, Lesson, AppSettings, GradingSystemConfig, SchoolYear, Photo, FriendTask, HomeworkSubscription, FocusSession, Deck, CardTopic, Flashcard, DeckExport, DeckFolder, ReviewOutcome } from '@/types';
+import { reviewPatch, deckExportToEntities, buildDeckExport } from '@/lib/flashcards';
+import { sendDeckToFriends as sendDeckToFriendsApi, fetchIncomingDeckShares, deleteDeckShare } from '@/lib/deckShare';
+import type { IncomingDeckShare } from '@/lib/deckShare';
 import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
@@ -204,12 +206,16 @@ interface State {
   schoolYears: SchoolYear[];
   /** Lern-/Fokus-Sessions (gefiltert nach aktivem Schuljahr). */
   focusSessions: FocusSession[];
+  /** Ordner zum Gruppieren der Kästen (gefiltert nach aktivem Schuljahr). */
+  deckFolders: DeckFolder[];
   /** Karteikarten-Kästen (gefiltert nach aktivem Schuljahr). */
   decks: Deck[];
   /** Themengebiete der geladenen Kästen. */
   cardTopics: CardTopic[];
   /** Karten der geladenen Kästen. */
   flashcards: Flashcard[];
+  /** Von Freunden direkt erhaltene Kästen (Inbox). */
+  incomingDeckShares: IncomingDeckShare[];
   /** Aktive Schuljahr-ID. Wenn null, gibt es noch keine. */
   activeSchoolYearId: string | null;
   /**
@@ -308,6 +314,11 @@ interface State {
   deleteFocusSession: (id: string) => Promise<void>;
 
   // ─── Karteikarten ──────────────────────────────────────────────────────────
+  /** Legt einen neuen Ordner für Kästen an. */
+  addDeckFolder: (f: Omit<DeckFolder, 'id' | 'createdAt'> & { id?: string }) => Promise<DeckFolder>;
+  updateDeckFolder: (id: string, patch: Partial<DeckFolder>) => Promise<void>;
+  /** Löscht einen Ordner; enthaltene Kästen bleiben erhalten (ohne Ordner). */
+  deleteDeckFolder: (id: string) => Promise<void>;
   /** Legt einen neuen Kasten an. */
   addDeck: (d: Omit<Deck, 'id' | 'createdAt'> & { id?: string }) => Promise<Deck>;
   updateDeck: (id: string, patch: Partial<Deck>) => Promise<void>;
@@ -322,12 +333,20 @@ interface State {
   deleteCard: (id: string) => Promise<void>;
   /** Verschiebt eine Karte in ein anderes Thema (oder „kein Thema"). */
   moveCard: (id: string, topicId: string | undefined) => Promise<void>;
-  /** Bewertet eine Karte (Leitner-Schritt richtig/falsch). */
-  reviewCard: (id: string, correct: boolean) => Promise<void>;
+  /** Bewertet eine Karte (Leitner-Schritt: correct/partial/wrong). */
+  reviewCard: (id: string, outcome: ReviewOutcome) => Promise<void>;
   /** Setzt den Lernfortschritt eines Kastens zurück (alle Karten → Fach 1). */
   resetDeckProgress: (deckId: string) => Promise<void>;
   /** Importiert ein DeckExport (KI/Datei/Link) als neuen oder in einen bestehenden Kasten. */
   importDeck: (exp: DeckExport, opts?: { intoDeckId?: string; subjectId?: string }) => Promise<Deck>;
+  /** Schickt einen Kasten direkt an ausgewählte Freunde (In-App). Gibt die Anzahl der Empfänger zurück. */
+  sendDeckToFriends: (deckId: string, recipientIds: string[]) => Promise<number>;
+  /** Lädt die von Freunden erhaltenen Kästen (Inbox) neu. */
+  loadDeckShares: () => Promise<void>;
+  /** Übernimmt einen erhaltenen Kasten als eigene Kopie und entfernt ihn aus der Inbox. */
+  acceptDeckShare: (shareId: string) => Promise<Deck | null>;
+  /** Verwirft einen erhaltenen Kasten (ohne Import). */
+  dismissDeckShare: (shareId: string) => Promise<void>;
 
   /** Holt alle geteilten Hausaufgaben der Freunde neu aus der Cloud. */
   refreshFriendTasks: () => Promise<void>;
@@ -440,9 +459,11 @@ export const useStore = create<State>((set, get) => ({
   lastSyncedAt: null,
   liveSync: 'off',
   focusSessions: [],
+  deckFolders: [],
   decks: [],
   cardTopics: [],
   flashcards: [],
+  incomingDeckShares: [],
   friendTasks: [],
   friendTasksLoading: false,
   dismissedFriendTaskIds: new Set<string>(),
@@ -453,7 +474,7 @@ export const useStore = create<State>((set, get) => ({
   friendsLoading: false,
 
   async load() {
-    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions, allDecks, allCardTopics, allFlashcards] = await Promise.all([
+    const [storedSettings, allSubjects, allGrades, allTasks, allLessons, allYears, allFriendTasks, allFocusSessions, allDeckFolders, allDecks, allCardTopics, allFlashcards] = await Promise.all([
       db.settings.get('app'),
       db.subjects.toArray(),
       db.grades.toArray(),
@@ -462,6 +483,7 @@ export const useStore = create<State>((set, get) => ({
       db.schoolYears.toArray(),
       db.friendTasks.toArray(),
       db.focusSessions.toArray(),
+      db.deckFolders.toArray(),
       db.decks.toArray(),
       db.cardTopics.toArray(),
       db.flashcards.toArray(),
@@ -497,7 +519,8 @@ export const useStore = create<State>((set, get) => ({
     const activeTerm = activeYear?.oberstufe ? getActiveTerm(activeId) : 1;
     const gradeFilter = (g: Grade) => subjFilter(g) && gradeInActiveTerm(g, activeYear, activeTerm);
 
-    // Karteikarten: Kästen nach Jahr filtern, Themen & Karten über Kasten-Zugehörigkeit.
+    // Karteikarten: Ordner & Kästen nach Jahr filtern, Themen & Karten über Kasten-Zugehörigkeit.
+    const yearFolders = allDeckFolders.filter(subjFilter).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     const yearDecks = allDecks.filter(subjFilter).sort(compareDecks);
     const deckIds = new Set(yearDecks.map(d => d.id));
 
@@ -513,6 +536,7 @@ export const useStore = create<State>((set, get) => ({
       tasks: allTasks.filter(subjFilter).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)),
       lessons: allLessons.filter(subjFilter),
       focusSessions: allFocusSessions.filter(subjFilter).sort((a, b) => b.startedAt - a.startedAt),
+      deckFolders: yearFolders,
       decks: yearDecks,
       cardTopics: allCardTopics.filter(t => deckIds.has(t.deckId)),
       flashcards: allFlashcards.filter(c => deckIds.has(c.deckId)),
@@ -621,6 +645,7 @@ export const useStore = create<State>((set, get) => ({
     set({
       authUser: null, lastSyncedAt: null,
       myProfile: null, friends: [], incomingRequests: [], outgoingRequests: [],
+      incomingDeckShares: [],
     });
   },
 
@@ -1211,6 +1236,43 @@ export const useStore = create<State>((set, get) => ({
 
   // ─── Karteikarten ──────────────────────────────────────────────────────────
 
+  async addDeckFolder(f) {
+    const yid = f.schoolYearId ?? get().activeSchoolYearId ?? undefined;
+    const maxPos = get().deckFolders.reduce((m, x) => Math.max(m, x.position ?? 0), -1);
+    const folder: DeckFolder = { ...f, id: f.id ?? uid(), createdAt: Date.now(), schoolYearId: yid, position: f.position ?? maxPos + 1 };
+    await db.deckFolders.add(folder);
+    if (!get().activeSchoolYearId || folder.schoolYearId === get().activeSchoolYearId) {
+      set(state => ({ deckFolders: [...state.deckFolders, folder].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) }));
+    }
+    const { authUser } = get();
+    if (authUser) syncRow('deck_folders', folder.id, folder, authUser.id);
+    return folder;
+  },
+  async updateDeckFolder(id, patch) {
+    await db.deckFolders.update(id, patch);
+    set(state => ({ deckFolders: state.deckFolders.map(f => f.id === id ? { ...f, ...patch } : f).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) }));
+    const updated = await db.deckFolders.get(id);
+    const { authUser } = get();
+    if (authUser && updated) syncRow('deck_folders', id, updated, authUser.id);
+  },
+  async deleteDeckFolder(id) {
+    // Enthaltene Kästen behalten – nur die Ordner-Zuordnung lösen.
+    const deckRows = await db.decks.where('folderId').equals(id).toArray();
+    await db.transaction('rw', [db.deckFolders, db.decks], async () => {
+      await db.deckFolders.delete(id);
+      for (const d of deckRows) await db.decks.update(d.id, { folderId: undefined });
+    });
+    set(state => ({
+      deckFolders: state.deckFolders.filter(f => f.id !== id),
+      decks: state.decks.map(d => d.folderId === id ? { ...d, folderId: undefined } : d),
+    }));
+    const { authUser } = get();
+    if (authUser) {
+      deleteRow('deck_folders', id);
+      for (const d of deckRows) syncRow('decks', d.id, { ...d, folderId: undefined }, authUser.id);
+    }
+  },
+
   async addDeck(d) {
     const yid = d.schoolYearId ?? get().activeSchoolYearId ?? undefined;
     const maxPos = get().decks.reduce((m, x) => Math.max(m, x.position ?? 0), -1);
@@ -1343,10 +1405,10 @@ export const useStore = create<State>((set, get) => ({
   async moveCard(id, topicId) {
     await get().updateCard(id, { topicId });
   },
-  async reviewCard(id, correct) {
+  async reviewCard(id, outcome) {
     const card = get().flashcards.find(c => c.id === id);
     if (!card) return;
-    await get().updateCard(id, reviewPatch(card, correct));
+    await get().updateCard(id, reviewPatch(card, outcome));
   },
   async resetDeckProgress(deckId) {
     const cards = get().flashcards.filter(c => c.deckId === deckId);
@@ -1393,6 +1455,41 @@ export const useStore = create<State>((set, get) => ({
       cards.forEach(c => syncRow('flashcards', c.id, c, authUser.id));
     }
     return deck;
+  },
+
+  async sendDeckToFriends(deckId, recipientIds) {
+    const { decks, cardTopics, flashcards, myProfile, settings } = get();
+    const deck = decks.find(d => d.id === deckId);
+    if (!deck || recipientIds.length === 0) return 0;
+    const topics = cardTopics.filter(t => t.deckId === deckId);
+    const cards = flashcards.filter(c => c.deckId === deckId);
+    const payload = buildDeckExport(deck, topics, cards);
+    const senderName = myProfile?.displayName ?? settings?.name ?? 'Ein Freund';
+    return sendDeckToFriendsApi(payload, recipientIds, senderName);
+  },
+  async loadDeckShares() {
+    if (!get().authUser) {
+      if (get().incomingDeckShares.length) set({ incomingDeckShares: [] });
+      return;
+    }
+    try {
+      const shares = await fetchIncomingDeckShares();
+      set({ incomingDeckShares: shares });
+    } catch (e) {
+      console.warn('loadDeckShares failed:', e);
+    }
+  },
+  async acceptDeckShare(shareId) {
+    const share = get().incomingDeckShares.find(s => s.id === shareId);
+    if (!share) return null;
+    const deck = await get().importDeck(share.payload);
+    await deleteDeckShare(shareId);
+    set(state => ({ incomingDeckShares: state.incomingDeckShares.filter(s => s.id !== shareId) }));
+    return deck;
+  },
+  async dismissDeckShare(shareId) {
+    await deleteDeckShare(shareId);
+    set(state => ({ incomingDeckShares: state.incomingDeckShares.filter(s => s.id !== shareId) }));
   },
 
   // ─── Homework Sharing ────────────────────────────────────────────────────
@@ -1479,6 +1576,8 @@ export const useStore = create<State>((set, get) => ({
       });
       // Geteilte Hausaufgaben der (jetzt geladenen) Freunde nachziehen.
       void get().refreshFriendTasks();
+      // Erhaltene Kästen (Inbox) nachziehen.
+      void get().loadDeckShares();
     } catch (e) {
       console.warn('loadFriends failed:', e);
       set({ friendsLoading: false });
@@ -1674,6 +1773,17 @@ async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, g
       }
       break;
     }
+    case 'deck_folders': {
+      const folder = data as unknown as DeckFolder;
+      await db.deckFolders.put(folder);
+      const yid = get().activeSchoolYearId;
+      if (!yid || folder.schoolYearId === yid) {
+        set(state => ({ deckFolders: upsertById(state.deckFolders, folder).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) }));
+      } else {
+        set(state => ({ deckFolders: state.deckFolders.filter(f => f.id !== folder.id) }));
+      }
+      break;
+    }
     case 'decks': {
       const deck = data as unknown as Deck;
       await db.decks.put(deck);
@@ -1749,6 +1859,13 @@ async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get
     case 'focus_sessions':
       await db.focusSessions.delete(id);
       set(state => ({ focusSessions: state.focusSessions.filter(f => f.id !== id) }));
+      break;
+    case 'deck_folders':
+      await db.deckFolders.delete(id);
+      set(state => ({
+        deckFolders: state.deckFolders.filter(f => f.id !== id),
+        decks: state.decks.map(d => d.folderId === id ? { ...d, folderId: undefined } : d),
+      }));
       break;
     case 'decks':
       await db.transaction('rw', [db.decks, db.cardTopics, db.flashcards], async () => {

@@ -1076,17 +1076,20 @@ const DAY_MS = 86_400_000;
  */
 function FocusStatsWidget() {
   const focusSessions = useStore(s => s.focusSessions);
+  const flashcards = useStore(s => s.flashcards);
 
   const { streak, weekMs, weekCount } = useMemo(() => {
     const now = Date.now();
     const weekStart = startOfISOWeek(now);
     let weekMs = 0, weekCount = 0;
     const daysWithSession = new Set<number>();
+    const addDay = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); daysWithSession.add(d.getTime()); };
     for (const f of focusSessions) {
-      const d = new Date(f.startedAt); d.setHours(0, 0, 0, 0);
-      daysWithSession.add(d.getTime());
+      addDay(f.startedAt);
       if (f.startedAt >= weekStart) { weekMs += f.focusedMs; weekCount++; }
     }
+    // Karteikarten-Lernen zählt ebenfalls für die Streak.
+    for (const c of flashcards) if (c.reviewedAt) addDay(c.reviewedAt);
     // Streak ab heute zurückzählen; wenn heute noch nichts war, gestern als Anker.
     const today = new Date(); today.setHours(0, 0, 0, 0);
     let cursor = today.getTime();
@@ -1094,9 +1097,9 @@ function FocusStatsWidget() {
     let streak = 0;
     while (daysWithSession.has(cursor)) { streak++; cursor -= DAY_MS; }
     return { streak, weekMs, weekCount };
-  }, [focusSessions]);
+  }, [focusSessions, flashcards]);
 
-  const hasData = focusSessions.length > 0;
+  const hasData = focusSessions.length > 0 || flashcards.some(c => c.reviewedAt);
 
   const tiles = [
     {

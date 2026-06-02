@@ -15,6 +15,7 @@ import { getKindLabel } from '@/lib/grading';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
 import { startOfISOWeek, computeStreak } from '@/lib/studyShare';
+import { flashcardActivity } from '@/lib/flashcards';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
 import { StreakFlame } from '@/components/StreakFlame';
@@ -193,6 +194,7 @@ export function FokusPage() {
   const subjects = useStore(s => s.subjects);
   const grades = useStore(s => s.grades);
   const focusSessions = useStore(s => s.focusSessions);
+  const flashcards = useStore(s => s.flashcards);
   const settings = useStore(s => s.settings);
   const addFocusSession = useStore(s => s.addFocusSession);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
@@ -301,8 +303,11 @@ export function FokusPage() {
     return { week, today, all };
   }, [focusSessions, weekStart, todayStart]);
 
-  // Lern-Streak: aufeinanderfolgende Tage mit Lernzeit.
-  const streak = useMemo(() => computeStreak(focusSessions, now), [focusSessions, now]);
+  // Lern-Streak: aufeinanderfolgende Tage mit Lernzeit ODER Karteikarten-Lernen.
+  const streak = useMemo(
+    () => computeStreak([...focusSessions, ...flashcardActivity(flashcards)], now),
+    [focusSessions, flashcards, now],
+  );
   const studiedToday = stats.today > 0;
 
   // Lernzeit pro Fach (gesamt)

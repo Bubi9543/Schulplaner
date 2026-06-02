@@ -279,6 +279,25 @@ export type ReviewDirection = 'front-back' | 'back-front' | 'mixed';
 export type ReviewMode = 'flip' | 'match';
 
 /**
+ * Ergebnis einer Karten-Bewertung (Leitner).
+ * - correct: ein Fach weiter.
+ * - partial: weder richtig noch falsch → bleibt im selben Fach.
+ * - wrong: zurück in Fach 1.
+ */
+export type ReviewOutcome = 'correct' | 'partial' | 'wrong';
+
+/** Ein Ordner zum Gruppieren mehrerer Karteikästen (rein organisatorisch). */
+export interface DeckFolder {
+  id: string;
+  name: string;
+  color?: string;
+  position?: number;
+  /** Zugehöriges Schuljahr. Wird beim Anlegen vom aktiven Jahr geerbt. */
+  schoolYearId?: string;
+  createdAt: number;
+}
+
+/**
  * Ein „Kasten" – das Haupt-Behältnis für Karteikarten (z. B. „Mathe").
  * Optional einem Fach (Subject) zugeordnet.
  */
@@ -291,6 +310,8 @@ export interface Deck {
   icon?: string;
   /** Optionales übergeordnetes Fach (Subject.id). */
   subjectId?: string;
+  /** Optionaler Ordner (DeckFolder.id) zum Gruppieren. */
+  folderId?: string;
   /** Zugehöriges Schuljahr. Wird beim Anlegen vom aktiven Jahr geerbt. */
   schoolYearId?: string;
   /** Manuelle Sortierreihenfolge. Kleinere Werte zuerst. */

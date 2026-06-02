@@ -18,11 +18,15 @@ interface Props {
   initial?: Partial<Deck>;
 }
 
+const NEW_FOLDER = '__new__';
+
 export function DeckDialog({ open, onClose, initial }: Props) {
   const addDeck = useStore(s => s.addDeck);
   const updateDeck = useStore(s => s.updateDeck);
   const deleteDeck = useStore(s => s.deleteDeck);
+  const addDeckFolder = useStore(s => s.addDeckFolder);
   const subjects = useStore(s => s.subjects);
+  const folders = useStore(s => s.deckFolders);
   const editing = !!initial?.id;
 
   const [name, setName] = useState('');
@@ -30,6 +34,8 @@ export function DeckDialog({ open, onClose, initial }: Props) {
   const [color, setColor] = useState(DECK_COLORS[0]);
   const [icon, setIcon] = useState<string | undefined>(undefined);
   const [subjectId, setSubjectId] = useState<string | undefined>(undefined);
+  const [folderSel, setFolderSel] = useState<string>('');
+  const [newFolder, setNewFolder] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -38,17 +44,24 @@ export function DeckDialog({ open, onClose, initial }: Props) {
       setColor(initial?.color ?? randomDeckColor());
       setIcon(initial?.icon);
       setSubjectId(initial?.subjectId);
+      setFolderSel(initial?.folderId ?? '');
+      setNewFolder('');
     }
   }, [open, initial]);
 
   async function save() {
     if (!name.trim()) return;
+    let folderId = folderSel || undefined;
+    if (folderSel === NEW_FOLDER) {
+      folderId = newFolder.trim() ? (await addDeckFolder({ name: newFolder.trim() })).id : undefined;
+    }
     const payload = {
       name: name.trim(),
       description: description.trim() || undefined,
       color,
       icon,
       subjectId: subjectId || undefined,
+      folderId,
     };
     if (editing && initial?.id) await updateDeck(initial.id, payload);
     else await addDeck(payload);
@@ -108,6 +121,19 @@ export function DeckDialog({ open, onClose, initial }: Props) {
         <div>
           <label className="label">Icon</label>
           <IconPicker value={icon} autoIcon={detectSubjectIcon(name) || 'Layers'} onChange={setIcon} color={color} />
+        </div>
+
+        <div>
+          <label className="label">Ordner (optional)</label>
+          <select className="input" value={folderSel} onChange={e => setFolderSel(e.target.value)}>
+            <option value="">— Kein Ordner —</option>
+            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            <option value={NEW_FOLDER}>+ Neuer Ordner …</option>
+          </select>
+          {folderSel === NEW_FOLDER && (
+            <input className="input mt-2" autoFocus value={newFolder} onChange={e => setNewFolder(e.target.value)}
+              placeholder="Name des neuen Ordners" />
+          )}
         </div>
 
         {subjects.length > 0 && (

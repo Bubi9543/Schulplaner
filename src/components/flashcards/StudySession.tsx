@@ -1,10 +1,10 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import {
-  X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy,
-  ThumbsUp, ThumbsDown, ChevronRight, PartyPopper,
+  X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy, Undo2, Flag,
+  ThumbsUp, ThumbsDown, Equal, ChevronRight, PartyPopper,
 } from 'lucide-react';
-import type { Flashcard, ReviewDirection, ReviewMode } from '@/types';
+import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome } from '@/types';
 import { LEITNER_BOXES } from '@/types';
 
 interface Props {
@@ -13,7 +13,9 @@ interface Props {
   deckName: string;
   cards: Flashcard[];
   /** Bewertung an den Store weiterreichen (Leitner). */
-  onReview: (cardId: string, correct: boolean) => void;
+  onReview: (cardId: string, outcome: ReviewOutcome) => void;
+  /** Setzt eine Karte auf einen früheren Stand zurück (für „Zurück"). */
+  restoreCard: (cardId: string, snapshot: Partial<Flashcard>) => void;
 }
 
 type Phase = 'config' | 'flip' | 'match' | 'done';
@@ -39,7 +41,12 @@ function hashFlip(id: string): boolean {
   return (h & 1) === 0;
 }
 
-export function StudySession({ open, onClose, deckName, cards, onReview }: Props) {
+/** Snapshot der Leitner-relevanten Felder (für „Zurück"/Undo). */
+function snapshotOf(card: Flashcard): Partial<Flashcard> {
+  return { box: card.box, reviewedAt: card.reviewedAt, correctCount: card.correctCount, wrongCount: card.wrongCount };
+}
+
+export function StudySession({ open, onClose, deckName, cards, onReview, restoreCard }: Props) {
   const [phase, setPhase] = useState<Phase>('config');
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
   const [mode, setMode] = useState<ReviewMode>('flip');
@@ -79,7 +86,7 @@ export function StudySession({ open, onClose, deckName, cards, onReview }: Props
             />
           )}
           {phase === 'flip' && (
-            <FlipRunner cards={cards} direction={direction} onReview={onReview} onDone={() => setPhase('done')} />
+            <FlipRunner cards={cards} direction={direction} onReview={onReview} restoreCard={restoreCard} onDone={() => setPhase('done')} />
           )}
           {phase === 'match' && (
             <MatchRunner cards={cards} direction={direction} onReview={onReview} onDone={() => setPhase('done')} />
@@ -160,14 +167,17 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, onStart }: 
 
 // ─── Schritt: Aufdecken + Swipe ──────────────────────────────────────────────
 
-function FlipRunner({ cards, direction, onReview, onDone }: {
+function FlipRunner({ cards, direction, onReview, restoreCard, onDone }: {
   cards: Flashcard[]; direction: ReviewDirection;
-  onReview: (id: string, correct: boolean) => void; onDone: () => void;
+  onReview: (id: string, outcome: ReviewOutcome) => void;
+  restoreCard: (id: string, snapshot: Partial<Flashcard>) => void;
+  onDone: () => void;
 }) {
   const queue = useMemo(() => shuffle(cards), [cards]);
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [correctN, setCorrectN] = useState(0);
+  const [stats, setStats] = useState({ correct: 0, partial: 0, wrong: 0 });
+  const [history, setHistory] = useState<ReviewOutcome[]>([]);
 
   const card = queue[index];
   const x = useMotionValue(0);
@@ -175,92 +185,143 @@ function FlipRunner({ cards, direction, onReview, onDone }: {
   const likeOpacity = useTransform(x, [40, 140], [0, 1]);
   const nopeOpacity = useTransform(x, [-140, -40], [1, 0]);
 
-  const advance = useCallback((correct: boolean) => {
+  const advance = useCallback((outcome: ReviewOutcome) => {
     if (!card) return;
-    onReview(card.id, correct);
-    if (correct) setCorrectN(n => n + 1);
+    onReview(card.id, outcome);
+    setStats(s => ({ ...s, [outcome]: s[outcome] + 1 }));
+    setHistory(h => [...h, outcome]);
     if (index + 1 >= queue.length) onDone();
     else { setIndex(i => i + 1); setFlipped(false); x.set(0); }
   }, [card, index, queue.length, onReview, onDone, x]);
+
+  // Zur vorherigen Karte zurück: deren Bewertung rückgängig machen (Snapshot
+  // vom Session-Start aus der Queue wiederherstellen) und Statistik korrigieren.
+  const goBack = useCallback(() => {
+    if (index === 0) return;
+    const prev = queue[index - 1];
+    restoreCard(prev.id, snapshotOf(prev));
+    const last = history[history.length - 1];
+    if (last) setStats(s => ({ ...s, [last]: Math.max(0, s[last] - 1) }));
+    setHistory(h => h.slice(0, -1));
+    setIndex(i => i - 1);
+    setFlipped(false);
+    x.set(0);
+  }, [index, queue, restoreCard, history, x]);
 
   if (!card) return null;
   const { prompt, answer } = sides(card, direction);
   const progress = (index / queue.length) * 100;
 
   return (
-    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1.25rem)]">
-      {/* Fortschritt */}
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      {/* Fortschritt + Beenden */}
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1 h-2 rounded-full bg-white/50 overflow-hidden">
           <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${progress}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
         </div>
         <span className="text-xs font-semibold text-ink-500 tabular-nums">{index + 1}/{queue.length}</span>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
+          <Flag className="size-3" /> Beenden
+        </button>
       </div>
 
       {/* Kartenstapel */}
       <div className="flex-1 min-h-0 grid place-items-center relative">
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           <motion.div
             key={card.id}
             className="absolute w-full max-w-md aspect-[3/4] max-h-full cursor-pointer touch-none"
-            style={{ x, rotate }}
+            style={{ x, rotate, perspective: 1200 }}
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.7}
             onDragEnd={(_, info) => {
-              if (info.offset.x > 110 || info.velocity.x > 600) advance(true);
-              else if (info.offset.x < -110 || info.velocity.x < -600) advance(false);
+              if (info.offset.x > 110 || info.velocity.x > 600) advance('correct');
+              else if (info.offset.x < -110 || info.velocity.x < -600) advance('wrong');
             }}
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, scale: 0.9 }}
             onClick={() => setFlipped(f => !f)}
           >
-            {/* Swipe-Indikatoren */}
-            <motion.div style={{ opacity: likeOpacity }} className="absolute top-5 left-5 z-10 rotate-[-12deg] rounded-xl border-4 border-emerald-500 text-emerald-500 px-3 py-1 font-display font-extrabold text-xl">
+            {/* Swipe-Indikatoren (liegen über der drehenden Karte) */}
+            <motion.div style={{ opacity: likeOpacity }} className="absolute top-5 left-5 z-20 rotate-[-12deg] rounded-xl border-4 border-emerald-500 text-emerald-500 px-3 py-1 font-display font-extrabold text-xl pointer-events-none">
               GEWUSST
             </motion.div>
-            <motion.div style={{ opacity: nopeOpacity }} className="absolute top-5 right-5 z-10 rotate-[12deg] rounded-xl border-4 border-rose-500 text-rose-500 px-3 py-1 font-display font-extrabold text-xl">
+            <motion.div style={{ opacity: nopeOpacity }} className="absolute top-5 right-5 z-20 rotate-[12deg] rounded-xl border-4 border-rose-500 text-rose-500 px-3 py-1 font-display font-extrabold text-xl pointer-events-none">
               NOCHMAL
             </motion.div>
 
-            <div className="size-full glass-strong rounded-[2rem] shadow-soft p-6 flex flex-col items-center justify-center text-center relative overflow-hidden">
-              <span className="absolute top-4 left-4 chip text-[10px]">Fach {card.box}/{LEITNER_BOXES}</span>
-              <span className="absolute top-4 right-4 text-[10px] uppercase tracking-wider font-semibold text-ink-400">
-                {flipped ? 'Antwort' : 'Frage'}
-              </span>
-              <motion.div
-                key={flipped ? 'a' : 'q'}
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                className="font-display font-bold text-ink-900 text-xl md:text-2xl whitespace-pre-wrap break-words"
-              >
-                {flipped ? answer : prompt}
-              </motion.div>
-              {!flipped && <div className="subtle text-xs mt-6 absolute bottom-5">Tippen zum Aufdecken</div>}
-            </div>
+            {/* 3D-Flip-Container */}
+            <motion.div
+              className="relative size-full"
+              style={{ transformStyle: 'preserve-3d' }}
+              animate={{ rotateY: flipped ? 180 : 0 }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+            >
+              <CardFace label="Frage" text={prompt} box={card.box} hint="Tippen zum Aufdecken" />
+              <CardFace label="Antwort" text={answer} box={card.box} back />
+            </motion.div>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Bewerten-Buttons */}
-      <div className="flex items-center justify-center gap-4 mt-4">
-        <button onClick={() => advance(false)}
-          className="size-16 rounded-full bg-white/70 hover:bg-white shadow-soft grid place-items-center text-rose-500 active:scale-95 transition">
-          <ThumbsDown className="size-7" />
+      {/* Bewerten-Buttons: nicht gewusst · fast · gewusst */}
+      <div className="flex items-center justify-center gap-3 mt-4">
+        <RatingButton color="rose" icon={ThumbsDown} label="Nochmal" onClick={() => advance('wrong')} />
+        <RatingButton color="amber" icon={Equal} label="Fast" onClick={() => advance('partial')} />
+        <RatingButton color="emerald" icon={ThumbsUp} label="Gewusst" onClick={() => advance('correct')} />
+      </div>
+
+      {/* Sekundär-Navigation */}
+      <div className="flex items-center justify-center gap-2 mt-3">
+        <button onClick={goBack} disabled={index === 0}
+          className="btn-soft py-2 text-sm disabled:opacity-40">
+          <Undo2 className="size-4" /> Zurück
         </button>
-        <button onClick={() => setFlipped(f => !f)}
-          className="size-12 rounded-full bg-white/70 hover:bg-white shadow-soft grid place-items-center text-ink-500 active:scale-95 transition">
-          <RotateCcw className="size-5" />
-        </button>
-        <button onClick={() => advance(true)}
-          className="size-16 rounded-full bg-white/70 hover:bg-white shadow-soft grid place-items-center text-emerald-500 active:scale-95 transition">
-          <ThumbsUp className="size-7" />
+        <button onClick={() => setFlipped(f => !f)} className="btn-soft py-2 text-sm">
+          <RotateCcw className="size-4" /> Drehen
         </button>
       </div>
       <div className="text-center subtle text-xs mt-2">
-        Nach links wischen = nochmal · nach rechts = gewusst · {correctN} richtig
+        Links wischen = nochmal · rechts = gewusst · <span className="text-emerald-600 font-semibold">{stats.correct}</span> / <span className="text-amber-600 font-semibold">{stats.partial}</span> / <span className="text-rose-600 font-semibold">{stats.wrong}</span>
       </div>
     </div>
+  );
+}
+
+/** Eine Seite der Karte (Vorder- oder Rückseite, mit Backface-Hiding für den Flip). */
+function CardFace({ label, text, box, hint, back = false }: {
+  label: string; text: string; box: number; hint?: string; back?: boolean;
+}) {
+  return (
+    <div
+      className="absolute inset-0 glass-strong rounded-[2rem] shadow-soft p-6 flex flex-col items-center justify-center text-center overflow-hidden [backface-visibility:hidden]"
+      style={back ? { transform: 'rotateY(180deg)' } : undefined}
+    >
+      <span className="absolute top-4 left-4 chip text-[10px]">Fach {box}/{LEITNER_BOXES}</span>
+      <span className="absolute top-4 right-4 text-[10px] uppercase tracking-wider font-semibold text-ink-400">{label}</span>
+      <div className="font-display font-bold text-ink-900 text-xl md:text-2xl whitespace-pre-wrap break-words">{text}</div>
+      {hint && <div className="subtle text-xs mt-6 absolute bottom-5">{hint}</div>}
+    </div>
+  );
+}
+
+function RatingButton({ color, icon: Icon, label, onClick }: {
+  color: 'rose' | 'amber' | 'emerald'; icon: typeof ThumbsUp; label: string; onClick: () => void;
+}) {
+  const tone = {
+    rose: 'text-rose-500',
+    amber: 'text-amber-500',
+    emerald: 'text-emerald-500',
+  }[color];
+  return (
+    <button onClick={onClick} className="flex flex-col items-center gap-1 active:scale-95 transition">
+      <span className={`size-16 rounded-full bg-white/70 hover:bg-white shadow-soft grid place-items-center ${tone}`}>
+        <Icon className="size-7" />
+      </span>
+      <span className="text-[11px] font-semibold text-ink-500">{label}</span>
+    </button>
   );
 }
 
@@ -270,7 +331,7 @@ interface MatchItem { cardId: string; text: string; side: 'p' | 'a'; }
 
 function MatchRunner({ cards, direction, onReview, onDone }: {
   cards: Flashcard[]; direction: ReviewDirection;
-  onReview: (id: string, correct: boolean) => void; onDone: () => void;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
 }) {
   const BATCH = 5;
   const batches = useMemo(() => {
@@ -311,8 +372,8 @@ function MatchRunner({ cards, direction, onReview, onDone }: {
     if (selected.side === item.side) { setSelected(item); return; } // gleiche Spalte → Auswahl wechseln
     // Paar prüfen
     if (selected.cardId === item.cardId) {
-      const correctFirstTry = !erred.has(item.cardId);
-      onReview(item.cardId, correctFirstTry);
+      // Beim ersten Versuch richtig → correct, nach Fehlversuch → partial (war nicht ganz falsch).
+      onReview(item.cardId, erred.has(item.cardId) ? 'partial' : 'correct');
       setMatched(m => new Set(m).add(item.cardId));
       setSelected(null);
     } else {
@@ -352,6 +413,9 @@ function MatchRunner({ cards, direction, onReview, onDone }: {
           <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${totalProgress}%` }} />
         </div>
         <span className="text-xs font-semibold text-ink-500">Runde {batchIdx + 1}/{batches.length}</span>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
+          <Flag className="size-3" /> Beenden
+        </button>
       </div>
       <p className="subtle text-center text-xs mb-3">Tippe einen Begriff und seine passende Antwort an.</p>
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -378,7 +442,7 @@ function DoneStep({ deckName, onRestart, onClose }: { deckName: string; onRestar
           <Trophy className="size-10 text-white" />
         </div>
         <h2 className="h2 flex items-center justify-center gap-2"><PartyPopper className="size-6 text-amber-500" /> Geschafft!</h2>
-        <p className="subtle mt-2">Du hast „{deckName}" durchgearbeitet. Dein Lernfortschritt wurde gespeichert.</p>
+        <p className="subtle mt-2">Du hast „{deckName}" gelernt. Dein Lernfortschritt wurde gespeichert.</p>
         <div className="flex flex-col gap-2 mt-6">
           <button onClick={onRestart} className="btn-primary w-full"><RotateCcw className="size-4" /> Nochmal lernen</button>
           <button onClick={onClose} className="btn-ghost w-full">Fertig</button>
