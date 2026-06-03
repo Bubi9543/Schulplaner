@@ -42,26 +42,19 @@ export function TodayTimeline({ height }: { height?: number }) {
   const current = getCurrentLesson(lessons, subjects, now);
   const todayLessons = slots.filter(s => s.kind === 'lesson');
 
-  // In den Ferien läuft der Stundenplan nicht.
-  if (isHolidayToday) {
-    return (
-      <div className="py-4">
-        <Empty icon={Palmtree} title="Ferien" description="Schulfrei – heute steht kein Unterricht an. Erhol dich gut!" />
-      </div>
-    );
-  }
-
-  if (todayLessons.length === 0) {
-    return (
-      <div className="py-4">
-        <Empty icon={CalendarOff} title="Heute keine Stunden" description="Genieße den freien Tag oder plane was Schönes." />
-      </div>
-    );
-  }
-
-  const dayStartMin = Math.min(timeToMinutes(settings?.schoolStart ?? '08:00'), todayLessons[0].start) - 15;
-  const dayEndMin = Math.max(timeToMinutes(settings?.schoolEnd ?? '17:00'), todayLessons[todayLessons.length - 1].end) + 15;
-  const totalMin = dayEndMin - dayStartMin;
+  // ── WICHTIG: Alle Hooks + Layout-Werte VOR den Früh-Returns berechnen,
+  //    damit die Hook-Reihenfolge über alle Renders konstant bleibt
+  //    (Rules of Hooks). Sonst crasht die Komponente, sobald isHolidayToday
+  //    oder die Stundenanzahl async umschalten ("Rendered fewer hooks than
+  //    expected") – das hat den schwarzen Bildschirm verursacht.
+  const hasLessons = todayLessons.length > 0;
+  const dayStartMin = hasLessons
+    ? Math.min(timeToMinutes(settings?.schoolStart ?? '08:00'), todayLessons[0].start) - 15
+    : 0;
+  const dayEndMin = hasLessons
+    ? Math.max(timeToMinutes(settings?.schoolEnd ?? '17:00'), todayLessons[todayLessons.length - 1].end) + 15
+    : 0;
+  const totalMin = Math.max(1, dayEndMin - dayStartMin);
   const computedHeight = Math.max(360, totalMin / MIN_PER_PX);
   const finalHeight = height ?? computedHeight;
   const minToPx = (m: number) => ((m - dayStartMin) / totalMin) * finalHeight;
@@ -73,10 +66,28 @@ export function TodayTimeline({ height }: { height?: number }) {
   const showNowLine = nowMin >= dayStartMin && nowMin <= dayEndMin;
 
   useEffect(() => {
-    if (!containerRef.current || !showNowLine) return;
+    if (!containerRef.current || !showNowLine || !hasLessons || isHolidayToday) return;
     const target = minToPx(nowMin) - 80;
     containerRef.current.scrollTo({ top: Math.max(0, target), behavior: level === 'minimal' ? 'auto' : 'smooth' });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Früh-Returns erst NACH allen Hooks.
+  // In den Ferien läuft der Stundenplan nicht.
+  if (isHolidayToday) {
+    return (
+      <div className="py-4">
+        <Empty icon={Palmtree} title="Ferien" description="Schulfrei – heute steht kein Unterricht an. Erhol dich gut!" />
+      </div>
+    );
+  }
+
+  if (!hasLessons) {
+    return (
+      <div className="py-4">
+        <Empty icon={CalendarOff} title="Heute keine Stunden" description="Genieße den freien Tag oder plane was Schönes." />
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="relative overflow-y-auto no-scrollbar" style={{ maxHeight: 540 }}>
