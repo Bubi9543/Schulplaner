@@ -31,6 +31,7 @@ export function KarteikartenPage() {
   const addDeckFolder = useStore(s => s.addDeckFolder);
   const updateDeckFolder = useStore(s => s.updateDeckFolder);
   const deleteDeckFolder = useStore(s => s.deleteDeckFolder);
+  const updateDeck = useStore(s => s.updateDeck);
   const incomingDeckShares = useStore(s => s.incomingDeckShares);
   const loadDeckShares = useStore(s => s.loadDeckShares);
   const acceptDeckShare = useStore(s => s.acceptDeckShare);
@@ -45,6 +46,14 @@ export function KarteikartenPage() {
   const [shareImport, setShareImport] = useState<{ text: string } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [study, setStudy] = useState<{ name: string; cards: Flashcard[] } | null>(null);
+  // Drag & Drop: aktuell gezogener Kasten.
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  async function moveDeck(deckId: string, folderId: string | undefined) {
+    const deck = decks.find(d => d.id === deckId);
+    if (!deck || (deck.folderId ?? undefined) === folderId) return;
+    await updateDeck(deckId, { folderId });
+  }
 
   // Geteilten Kasten aus ?import=<token> aufnehmen.
   useEffect(() => {
@@ -79,13 +88,20 @@ export function KarteikartenPage() {
   }
 
   const renderDeck = (deck: Deck, i: number) => (
-    <DeckCard
+    <div
       key={deck.id}
-      deck={deck}
-      cards={cardsByDeck.get(deck.id) ?? []}
-      delay={i * 0.04}
-      onQuickStudy={(name, cards) => setStudy({ name, cards })}
-    />
+      draggable
+      onDragStart={e => { setDragId(deck.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', deck.id); }}
+      onDragEnd={() => setDragId(null)}
+      className={`transition-opacity ${dragId === deck.id ? 'opacity-40' : ''}`}
+    >
+      <DeckCard
+        deck={deck}
+        cards={cardsByDeck.get(deck.id) ?? []}
+        delay={i * 0.04}
+        onQuickStudy={(name, cards) => setStudy({ name, cards })}
+      />
+    </div>
   );
 
   return (
@@ -165,6 +181,8 @@ export function KarteikartenPage() {
                 key={folder.id}
                 folder={folder}
                 count={folderDecks.length}
+                canDrop={dragId !== null}
+                onDropDeck={() => { if (dragId) { void moveDeck(dragId, folder.id); setDragId(null); } }}
                 onRename={async () => { const n = prompt('Ordner umbenennen:', folder.name); if (n?.trim()) await updateDeckFolder(folder.id, { name: n.trim() }); }}
                 onDelete={async () => { if (confirm(`Ordner „${folder.name}" löschen? Die Kästen bleiben erhalten.`)) await deleteDeckFolder(folder.id); }}
               >
@@ -176,9 +194,18 @@ export function KarteikartenPage() {
               </FolderSection>
             );
           })}
-          {ungrouped.length > 0 && (
-            <FolderSection folder={null} count={ungrouped.length}>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{ungrouped.map(renderDeck)}</div>
+          {(ungrouped.length > 0 || dragId) && (
+            <FolderSection
+              folder={null}
+              count={ungrouped.length}
+              canDrop={dragId !== null}
+              onDropDeck={() => { if (dragId) { void moveDeck(dragId, undefined); setDragId(null); } }}
+            >
+              {ungrouped.length === 0 ? (
+                <p className="subtle text-sm px-1">Kasten hierher ziehen, um ihn aus dem Ordner zu nehmen.</p>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{ungrouped.map(renderDeck)}</div>
+              )}
             </FolderSection>
           )}
         </div>
@@ -205,15 +232,26 @@ export function KarteikartenPage() {
   );
 }
 
-function FolderSection({ folder, count, children, onRename, onDelete }: {
+function FolderSection({ folder, count, children, onRename, onDelete, canDrop, onDropDeck }: {
   folder: DeckFolder | null;
   count: number;
   children: React.ReactNode;
   onRename?: () => void;
   onDelete?: () => void;
+  canDrop?: boolean;
+  onDropDeck?: () => void;
 }) {
+  const [over, setOver] = useState(false);
+  const dropProps = onDropDeck ? {
+    onDragOver: (e: React.DragEvent) => { if (canDrop) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true); } },
+    onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); setOver(false); onDropDeck(); },
+  } : {};
   return (
-    <section>
+    <section
+      {...dropProps}
+      className={`rounded-3xl transition-colors ${over ? 'ring-2 ring-theme-deep/60 bg-theme-deep/5 -m-2 p-2' : ''}`}
+    >
       <div className="flex items-center gap-2 mb-3 px-1">
         <Folder className="size-4 flex-shrink-0" style={{ color: folder?.color ?? 'rgb(var(--ink-400))' }} />
         <h2 className="font-display font-bold text-ink-900">{folder ? folder.name : 'Ohne Ordner'}</h2>

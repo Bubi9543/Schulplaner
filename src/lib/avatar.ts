@@ -52,6 +52,20 @@ async function compressToSquare(file: File): Promise<Blob> {
 }
 
 /**
+ * Komprimiert ein gewähltes Bild center-cropped auf SIZE×SIZE und gibt es als
+ * Data-URL zurück – funktioniert ohne Cloud-Account (lokales Profilbild).
+ */
+export async function fileToAvatarDataUrl(file: File): Promise<string> {
+  const blob = await compressToSquare(file);
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
  * Lädt ein neues Profilbild hoch und gibt die öffentliche (cache-busted) URL zurück.
  * Aktualisiert außerdem `user_profiles.avatar_url`.
  */

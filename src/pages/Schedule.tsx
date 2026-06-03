@@ -46,6 +46,19 @@ export function SchedulePage() {
     return m;
   }, [lessons]);
 
+  // Schulstunden pro Tag: eine Doppelstunde (90 min) zählt als 2, usw.
+  const periodsByDay = useMemo(() => {
+    const m = new Map<number, number>();
+    for (let d = 1; d <= 5; d++) {
+      const total = (byDay.get(d) ?? []).reduce(
+        (sum, l) => sum + Math.max(1, Math.round((toMinutes(l.end) - toMinutes(l.start)) / 45)),
+        0,
+      );
+      m.set(d, total);
+    }
+    return m;
+  }, [byDay]);
+
   const startHour = 7;
   const endHour = 17;
   const totalMinutes = (endHour - startHour) * 60;
@@ -171,7 +184,7 @@ export function SchedulePage() {
             {[1, 2, 3, 4, 5].map(d => (
               <div key={d} className="text-center pb-2">
                 <div className="font-display font-bold text-ink-900">{WEEKDAYS_DE[d]}</div>
-                <div className="text-xs text-ink-500">{byDay.get(d)?.length ?? 0} Stunden</div>
+                <div className="text-xs text-ink-500">{periodsByDay.get(d) ?? 0} Stunden</div>
               </div>
             ))}
             <div className="relative" style={{ height: minHeight * (endHour - startHour) }}>
@@ -195,18 +208,26 @@ export function SchedulePage() {
                   const e = toMinutes(l.end) - startHour * 60;
                   const top = (s / totalMinutes) * 100;
                   const height = ((e - s) / totalMinutes) * 100;
+                  // Kurze Stunden (≈ Einzelstunde) kompakt rendern, damit nichts abgeschnitten wird.
+                  const compact = (e - s) < 50;
                   return (
                     <button
                       key={l.id}
                       onClick={(ev) => { ev.stopPropagation(); if (editMode) setDialog({ open: true, lesson: l }); else nav(`/noten/${subj.id}`); }}
                       onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
-                      className={`absolute left-1 right-1 rounded-xl p-2 text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10 ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
+                      className={`absolute left-1 right-1 rounded-xl ${compact ? 'px-1.5 py-0.5' : 'p-2'} text-white text-left overflow-hidden shadow-soft transition hover:scale-[1.02] hover:z-10 ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
                       style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}cc)` }}
                     >
-                      {editMode && <div className="absolute top-1 right-1 size-5 rounded-full bg-white/90 grid place-items-center shadow"><Pencil className="size-2.5 text-ink-800" /></div>}
-                      <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
-                      <div className="font-display font-bold text-sm truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
-                      {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}
+                      {editMode && <div className="absolute top-0.5 right-0.5 size-4 rounded-full bg-white/90 grid place-items-center shadow"><Pencil className="size-2.5 text-ink-800" /></div>}
+                      {compact ? (
+                        <div className="font-display font-bold text-[11px] leading-tight truncate flex items-center gap-1"><SubjectIcon subject={subj} className="size-3 flex-shrink-0" />{subj.name}</div>
+                      ) : (
+                        <>
+                          <div className="text-[10px] opacity-90 flex items-center gap-1"><Clock className="size-2.5" />{l.start} – {l.end}</div>
+                          <div className="font-display font-bold text-sm truncate flex items-center gap-1.5"><SubjectIcon subject={subj} className="size-3.5 flex-shrink-0" />{subj.name}</div>
+                          {(l.room ?? subj.room) && <div className="text-[10px] opacity-90 flex items-center gap-1"><MapPin className="size-2.5" />{l.room ?? subj.room}</div>}
+                        </>
+                      )}
                     </button>
                   );
                 })}
@@ -259,7 +280,7 @@ export function SchedulePage() {
                       <div className={`text-sm font-bold leading-tight ${d === today ? 'text-[var(--theme-primary)]' : 'text-ink-700'}`}>
                         {WEEKDAYS_DE[d]}
                       </div>
-                      <div className="text-[10px] text-ink-400">{byDay.get(d)?.length ?? 0} Std.</div>
+                      <div className="text-[10px] text-ink-400">{periodsByDay.get(d) ?? 0} Std.</div>
                     </div>
 
                     {/* Time grid */}
@@ -278,16 +299,18 @@ export function SchedulePage() {
                         const e = toMinutes(l.end) - startHour * 60;
                         const top = (s / totalMinutes) * 100;
                         const height = ((e - s) / totalMinutes) * 100;
+                        // Kurze Stunden kompakt: nur Fachname, sonst wird der Text abgeschnitten.
+                        const compact = (e - s) < 50;
                         return (
                           <button
                             key={l.id}
                             onClick={(ev) => { ev.stopPropagation(); if (editMode) setDialog({ open: true, lesson: l }); else nav(`/noten/${subj.id}`); }}
                             onDoubleClick={(ev) => { ev.stopPropagation(); setDialog({ open: true, lesson: l }); }}
-                            className={`absolute left-1 right-1 rounded-xl p-1.5 text-white text-left overflow-hidden shadow-soft transition-transform hover:scale-[1.02] active:scale-[0.98] ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
+                            className={`absolute left-1 right-1 rounded-xl ${compact ? 'px-1 py-0.5' : 'p-1.5'} text-white text-left overflow-hidden shadow-soft transition-transform hover:scale-[1.02] active:scale-[0.98] ${editMode ? 'ring-2 ring-white/80 animate-pulse' : ''}`}
                             style={{ top: `${top}%`, height: `${height}%`, background: `linear-gradient(135deg, ${subj.color}, ${subj.color}bb)` }}
                           >
                             {editMode && <div className="absolute top-0.5 right-0.5 size-4 rounded-full bg-white/90 grid place-items-center"><Pencil className="size-2.5 text-ink-800" /></div>}
-                            <div className="text-[9px] opacity-80 leading-tight">{l.start}–{l.end}</div>
+                            {!compact && <div className="text-[9px] opacity-80 leading-tight">{l.start}–{l.end}</div>}
                             <div className="font-bold text-[11px] leading-tight truncate">{subj.name}</div>
                           </button>
                         );

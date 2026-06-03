@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Trophy, Settings, ChevronDown, Check, Calendar, CalendarClock, Timer, Users, MoreHorizontal, Plus, Layers } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Trophy, Settings, ChevronDown, Check, Calendar, CalendarClock, Timer, Users, MoreHorizontal, Plus, Layers, Calculator } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { Avatar } from '@/components/Avatar';
@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
   { to: '/noten', icon: GraduationCap, label: 'Noten', short: 'Noten' },
   { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus' },
   { to: '/karteikarten', icon: Layers, label: 'Karteikarten', short: 'Karten' },
+  { to: '/rechner', icon: Calculator, label: 'Rechner', short: 'Rechner' },
   { to: '/freunde', icon: Users, label: 'Freunde', short: 'Freunde' },
   { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr' },
 ];
@@ -193,8 +194,8 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:flex-col w-[240px] shrink-0 p-4 gap-3 sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-2 py-3">
-        {settings?.avatar
-          ? <Avatar name={settings?.name ?? ''} emoji={settings.avatar} className="size-10" textClassName="text-xl" />
+        {settings?.avatarUrl
+          ? <Avatar name={settings?.name ?? ''} avatarUrl={settings.avatarUrl} className="size-10" textClassName="text-xl" />
           : <Logo />}
         <div className="min-w-0">
           <div className="font-display font-extrabold text-ink-900 leading-tight">{settings?.name || 'Schulplaner'}</div>

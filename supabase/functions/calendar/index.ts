@@ -47,6 +47,37 @@ interface SchoolYear {
   createdAt: number;
 }
 
+interface HolidayRange { start: string; end: string } // YYYY-MM-DD (inkl.)
+
+/** Lädt Schulferien einer Region für ein Jahr (server-side, ohne Caching). */
+async function fetchHolidaysForYear(region: { country: string; subdivision?: string }, year: number): Promise<HolidayRange[]> {
+  const params = new URLSearchParams({
+    countryIsoCode: region.country,
+    validFrom: `${year}-01-01`,
+    validTo: `${year}-12-31`,
+    languageIsoCode: 'DE',
+  });
+  if (region.subdivision) params.set('subdivisionCode', region.subdivision);
+  try {
+    const res = await fetch(`https://openholidaysapi.org/SchoolHolidays?${params.toString()}`);
+    if (!res.ok) return [];
+    const raw = (await res.json()) as Array<{ startDate: string; endDate: string }>;
+    return raw.map(h => ({ start: h.startDate, end: h.endDate }));
+  } catch {
+    return [];
+  }
+}
+
+/** YYYY-MM-DD in lokaler Zeit. */
+function isoLocal(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function isDateInHolidays(d: Date, holidays: HolidayRange[]): boolean {
+  const day = isoLocal(d);
+  return holidays.some(h => h.start <= day && day <= h.end);
+}
+
 // ─── iCal helpers ────────────────────────────────────────────────────────────
 
 function pad2(n: number): string {
@@ -132,8 +163,9 @@ function buildICS(opts: {
   schoolYear: SchoolYear | null;
   subjects: Subject[];
   lessons: Lesson[];
+  holidays: HolidayRange[];
 }): string {
-  const { ownerName, ownerEmail, schoolYear, subjects, lessons } = opts;
+  const { ownerName, ownerEmail, schoolYear, subjects, lessons, holidays } = opts;
   const calName = ownerName
     ? `Stundenplan – ${ownerName}`
     : ownerEmail
@@ -213,6 +245,20 @@ function buildICS(opts: {
       const byday = ICAL_WEEKDAY[l.weekday];
       const rrule = `RRULE:FREQ=WEEKLY;INTERVAL=${interval};BYDAY=${byday};UNTIL=${until}`;
 
+      // Ferien-Termine ausschließen: alle Vorkommen, die in Schulferien fallen,
+      // als EXDATE markieren – so läuft der Stundenplan während der Ferien nicht.
+      const exdates: string[] = [];
+      if (holidays.length) {
+        const occ = new Date(firstDate);
+        while (occ.getTime() <= yearEnd.getTime()) {
+          if (isDateInHolidays(occ, holidays)) {
+            exdates.push(fmtLocal(occ.getFullYear(), occ.getMonth() + 1, occ.getDate(), sh, sm));
+          }
+          occ.setDate(occ.getDate() + 7 * interval);
+        }
+      }
+      const exdateLine = exdates.length ? `EXDATE;TZID=Europe/Berlin:${exdates.join(',')}` : '';
+
       const room = l.room ?? subj.room ?? '';
       const summary = subj.name + (l.weekParity === 'A' ? ' (A)' : l.weekParity === 'B' ? ' (B)' : '');
       const description = [
@@ -227,6 +273,7 @@ function buildICS(opts: {
         `DTSTART;TZID=Europe/Berlin:${dtstart}`,
         `DTEND;TZID=Europe/Berlin:${dtend}`,
         rrule,
+        exdateLine,
         `SUMMARY:${escapeText(summary)}`,
         room ? `LOCATION:${escapeText(room)}` : '',
         description ? `DESCRIPTION:${description}` : '',
@@ -310,7 +357,7 @@ Deno.serve(async (req) => {
   const subjectsAll = (subjectsRes.data ?? []).map((r: { data: Subject }) => r.data);
   const lessonsAll = (lessonsRes.data ?? []).map((r: { data: Lesson }) => r.data);
   const schoolYears = (schoolYearsRes.data ?? []).map((r: { data: SchoolYear }) => r.data);
-  const settings = (settingsRes.data?.data ?? null) as { name?: string } | null;
+  const settings = (settingsRes.data?.data ?? null) as { name?: string; region?: { country: string; subdivision?: string } } | null;
 
   const activeYear = schoolYears.find((y) => y.active) ?? schoolYears[0] ?? null;
   const subjects = activeYear
@@ -320,11 +367,23 @@ Deno.serve(async (req) => {
     ? lessonsAll.filter((l) => !l.schoolYearId || l.schoolYearId === activeYear.id)
     : lessonsAll;
 
+  // Schulferien für die Region laden, um Stunden während der Ferien auszublenden.
+  let holidays: HolidayRange[] = [];
+  if (settings?.region && activeYear) {
+    const startYear = new Date(activeYear.startDate).getFullYear();
+    const endYear = (activeYear.endDate ? new Date(activeYear.endDate) : new Date(activeYear.startDate)).getFullYear() + (activeYear.endDate ? 0 : 1);
+    const years = new Set<number>();
+    for (let y = startYear; y <= endYear; y++) years.add(y);
+    const results = await Promise.all([...years].map(y => fetchHolidaysForYear(settings.region!, y)));
+    holidays = results.flat();
+  }
+
   const body = buildICS({
     ownerName: settings?.name,
     schoolYear: activeYear,
     subjects,
     lessons,
+    holidays,
   });
 
   return new Response(body, {

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
+import { AvatarUpload } from '@/components/AvatarUpload';
 import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
 import { importData } from '@/lib/portability';
@@ -22,9 +23,6 @@ type Draft = Omit<Subject, 'id' | 'createdAt'>;
 interface DraftLesson { subjectName: string; weekday: Weekday; start: string; end: string; }
 
 const ONBOARDING_PENDING_KEY = 'onboarding_pending';
-
-/** Auswählbare Profil-Emojis. */
-const AVATAR_EMOJIS = ['🦊', '🐼', '🐧', '🐨', '🦁', '🐯', '🐸', '🐙', '🦉', '🐳', '🦄', '🐝', '🌟', '🚀', '🎓', '📚', '🎨', '⚽', '🎸', '🧠', '🍀', '🔥', '🌈', '💡'];
 
 const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Mathematik', short: 'M',   category: 'hauptfach' },
@@ -245,7 +243,7 @@ export function Onboarding() {
 
     await setSettings({
       name: name.trim() || undefined,
-      avatar: avatar || undefined,
+      avatarUrl: avatar || undefined,
       school: school.trim() || undefined,
       classLevel: classLevel.trim() || undefined,
       system,
@@ -746,32 +744,16 @@ function ProfileStep({ name, setName, avatar, setAvatar, school, setSchool, clas
       <p className="text-ink-500 text-sm mt-1">Alles optional – kannst du auch später in den Einstellungen ändern.</p>
 
       <div className="mt-6 space-y-4">
-        {/* Avatar + Name */}
-        <div className="flex items-center gap-3">
-          <div className="size-14 rounded-2xl grid place-items-center text-3xl flex-shrink-0 border border-white/60" style={{ background: gradient }}>
-            {avatar || '🙂'}
-          </div>
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Name</label>
-            <GlassInput value={name} onChange={setName} placeholder="Dein Name" autoFocus onKeyDown={e => e.key === 'Enter' && next()} />
-          </div>
+        {/* Name */}
+        <div>
+          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Name</label>
+          <GlassInput value={name} onChange={setName} placeholder="Dein Name" autoFocus onKeyDown={e => e.key === 'Enter' && next()} />
         </div>
 
-        {/* Emoji-Auswahl */}
+        {/* Profilbild */}
         <div>
-          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Avatar</label>
-          <div className="flex flex-wrap gap-1.5">
-            {AVATAR_EMOJIS.map(e => (
-              <button
-                key={e}
-                onClick={() => setAvatar(avatar === e ? '' : e)}
-                className={`size-9 rounded-xl grid place-items-center text-xl transition ${avatar === e ? 'ring-2 ring-white scale-110 shadow-soft' : 'bg-white/40 hover:bg-white/70'}`}
-                style={avatar === e ? { background: gradient } : undefined}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
+          <label className="block text-xs font-semibold text-ink-600 mb-1.5 pl-1">Profilbild</label>
+          <AvatarUpload value={avatar || undefined} onChange={url => setAvatar(url ?? '')} name={name} />
         </div>
 
         {/* Schule + Klasse */}

@@ -32,6 +32,12 @@ interface PushPayload {
   data?: Record<string, unknown>;
   /** Eigener Tag → neue Pushes mit gleichem Tag ersetzen frühere. */
   tag?: string;
+  /** Bei gleichem Tag trotzdem erneut alarmieren (z. B. mehrfaches Anstupsen). */
+  renotify?: boolean;
+  /** Vibrationsmuster in ms (sofern vom Gerät unterstützt). */
+  vibrate?: number[];
+  /** Benachrichtigung bleibt offen, bis der Nutzer interagiert. */
+  requireInteraction?: boolean;
 }
 
 self.addEventListener('push', (event) => {
@@ -43,13 +49,15 @@ self.addEventListener('push', (event) => {
     payload = { title: 'Schulplaner', body: event.data.text() };
   }
 
-  const options: NotificationOptions = {
+  const options: NotificationOptions & { renotify?: boolean; vibrate?: number[] } = {
     body: payload.body,
     icon: '/icon.svg',
     badge: '/favicon.svg',
     tag: payload.tag,
+    renotify: payload.renotify ?? false,
+    vibrate: payload.vibrate,
     data: { url: payload.url ?? '/', ...(payload.data ?? {}) },
-    requireInteraction: false,
+    requireInteraction: payload.requireInteraction ?? false,
   };
 
   event.waitUntil(self.registration.showNotification(payload.title, options));

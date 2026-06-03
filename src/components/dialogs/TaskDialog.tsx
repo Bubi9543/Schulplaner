@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
+import { useIsHoliday } from '@/lib/useHolidays';
 import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
 import type { AppTask, TaskKind } from '@/types';
@@ -26,6 +27,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
   const now = useTimeNow(30000);
+  const isHolidayToday = useIsHoliday(now);
 
   const editing = !!initial?.id;
   const taskIdRef = useRef<string>(initial?.id ?? uid());
@@ -42,7 +44,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
     if (!open) return;
     let sid = initial?.subjectId ?? '';
     let auto = false;
-    if (!sid && !editing && settings?.autoSelectActiveSubject) {
+    if (!sid && !editing && settings?.autoSelectActiveSubject && !isHolidayToday) {
       const active = getActiveSubject(lessons, subjects, now, settings.activeSubjectThresholdMin);
       if (active) { sid = active.id; auto = true; }
     }
@@ -55,7 +57,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
     setPriority((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
     setShared(initial?.shared ?? settings?.homeworkShareByDefault ?? false);
     taskIdRef.current = initial?.id ?? uid();
-  }, [open, initial, defaultKind, editing, settings, lessons, subjects, now]);
+  }, [open, initial, defaultKind, editing, settings, lessons, subjects, now, isHolidayToday]);
 
   async function save() {
     if (!title.trim()) return;

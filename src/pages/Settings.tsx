@@ -9,6 +9,7 @@ import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { SchoolYearOnboardingDialog } from '@/components/dialogs/SchoolYearOnboardingDialog';
 import { AccountAuth } from '@/components/AccountAuth';
+import { AvatarUpload } from '@/components/AvatarUpload';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateMyProfile } from '@/lib/homeworkShare';
@@ -144,25 +145,18 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-const AVATAR_EMOJIS = ['🦊', '🐼', '🐧', '🐨', '🦁', '🐯', '🐸', '🐙', '🦉', '🐳', '🦄', '🐝', '🌟', '🚀', '🎓', '📚', '🎨', '⚽', '🎸', '🧠', '🍀', '🔥', '🌈', '💡'];
-
 function ProfileSection() {
   const settings = useStore(s => s.settings)!;
   const setSettings = useStore(s => s.setSettings);
   const [name, setName] = useState(settings.name ?? '');
   const [school, setSchool] = useState(settings.school ?? '');
   const [classLevel, setClassLevel] = useState(settings.classLevel ?? '');
-  const avatar = settings.avatar ?? '';
 
   const region = settings.region ?? { country: 'DE' };
   const subOptions = subdivisionsForCountry(region.country);
 
   function save() {
     setSettings({ name: name.trim() || undefined, school: school.trim() || undefined, classLevel: classLevel.trim() || undefined });
-  }
-
-  function setAvatar(e: string) {
-    setSettings({ avatar: avatar === e ? undefined : e });
   }
 
   function setCountry(country: string) {
@@ -178,18 +172,12 @@ function ProfileSection() {
     <AccountAuth compact />
     <Card>
       <h3 className="h3 mb-3 flex items-center gap-2"><User className="size-5 text-theme" />Profil</h3>
-      <Row label="Avatar" hint="Wähle ein Emoji für dein Profil (erscheint in der Seitenleiste).">
-        <div className="flex flex-wrap gap-1.5 max-w-[320px] justify-end">
-          {AVATAR_EMOJIS.map(e => (
-            <button
-              key={e}
-              onClick={() => setAvatar(e)}
-              className={`size-8 rounded-lg grid place-items-center text-lg transition ${avatar === e ? 'theme-gradient ring-2 ring-white scale-110 shadow-soft' : 'bg-white/60 hover:bg-white/80'}`}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
+      <Row label="Profilbild" hint="Erscheint in der Seitenleiste und für deine Freunde.">
+        <AvatarUpload
+          value={settings.avatarUrl}
+          onChange={url => setSettings({ avatarUrl: url })}
+          name={name || settings.name || ''}
+        />
       </Row>
       <Row label="Name" hint="Wird für die Begrüßung im Dashboard verwendet.">
         <input className="input max-w-[260px]" value={name} onChange={e => setName(e.target.value)} onBlur={save} placeholder="Dein Name" />

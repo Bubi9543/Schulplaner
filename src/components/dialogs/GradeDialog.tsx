@@ -6,6 +6,7 @@ import { BUILTIN_GRADE_KINDS } from '@/types';
 import { getKindLabel, getSystemMeta, gradeColor, isGoodGrade, isLargeAssessmentKind } from '@/lib/grading';
 import { hexToRgba } from '@/lib/utils';
 import { getActiveSubject, useTimeNow } from '@/lib/currentLesson';
+import { useIsHoliday } from '@/lib/useHolidays';
 import { Confetti } from '@/components/CountUp';
 import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
@@ -41,6 +42,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const deleteGrade = useStore(s => s.deleteGrade);
   const settings = useStore(s => s.settings);
   const now = useTimeNow(30000);
+  const isHolidayToday = useIsHoliday(now);
 
   const config = settings?.gradingConfig;
   const editing = !!initial?.id;
@@ -48,7 +50,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const initialSubjectId = (() => {
     if (initial?.subjectId) return initial.subjectId;
     if (defaultSubjectId) return defaultSubjectId;
-    if (settings?.autoSelectActiveSubject) {
+    if (settings?.autoSelectActiveSubject && !isHolidayToday) {
       const active = getActiveSubject(lessons, subjects, now, settings.activeSubjectThresholdMin);
       if (active) return active.id;
     }
@@ -78,7 +80,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     const sid = (() => {
       if (initial?.subjectId) return initial.subjectId;
       if (defaultSubjectId) return defaultSubjectId;
-      if (settings?.autoSelectActiveSubject) {
+      if (settings?.autoSelectActiveSubject && !isHolidayToday) {
         const active = getActiveSubject(lessons, subjects, now, settings.activeSubjectThresholdMin);
         if (active) return active.id;
       }

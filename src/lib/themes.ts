@@ -231,6 +231,8 @@ export const ROUTE_THEME_MAP: Record<string, ThemeId> = {
   '/kalender': 'sunset',
   '/stundenplan': 'indigo',
   '/noten': 'forest',
+  '/rechner': 'sunshine',
+  '/anstupsen': 'rose',
   '/einstellungen': 'rose',
 };
 

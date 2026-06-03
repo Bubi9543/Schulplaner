@@ -8,3 +8,7 @@ verify_jwt = false
 
 # push-runner wird via pg_cron getriggert; JWT bleibt aktiviert (Service-Role
 # wird im Authorization-Header mitgesendet).
+
+# nudge ("Anstupsen") wird vom eingeloggten Nutzer aufgerufen → JWT bleibt
+# aktiviert (Standard), damit der Aufrufer serverseitig identifiziert und die
+# Freundschaft geprüft werden kann.

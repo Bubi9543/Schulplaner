@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { Check, MapPin, Coffee } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { buildTodayTimeline, getCurrentLesson, nowToMinutes, timeToMinutes, useTimeNow } from '@/lib/currentLesson';
+import { useIsHoliday } from '@/lib/useHolidays';
 import { useAnimationLevel, microMotionEnabled } from '@/lib/animation';
 import { Empty } from '@/components/Empty';
 import { SubjectIcon } from '@/components/SubjectIcon';
-import { CalendarOff } from 'lucide-react';
+import { CalendarOff, Palmtree } from 'lucide-react';
 
 function fmtMinutes(m: number): string {
   const sign = m < 0;
@@ -35,10 +36,20 @@ export function TodayTimeline({ height }: { height?: number }) {
   const now = useTimeNow(15000);
   const level = useAnimationLevel();
   const containerRef = useRef<HTMLDivElement>(null);
+  const isHolidayToday = useIsHoliday(now);
 
   const slots = buildTodayTimeline(lessons, subjects, now);
   const current = getCurrentLesson(lessons, subjects, now);
   const todayLessons = slots.filter(s => s.kind === 'lesson');
+
+  // In den Ferien läuft der Stundenplan nicht.
+  if (isHolidayToday) {
+    return (
+      <div className="py-4">
+        <Empty icon={Palmtree} title="Ferien" description="Schulfrei – heute steht kein Unterricht an. Erhol dich gut!" />
+      </div>
+    );
+  }
 
   if (todayLessons.length === 0) {
     return (

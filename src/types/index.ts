@@ -394,8 +394,8 @@ export interface Photo {
 export interface AppSettings {
   id: 'app';
   name?: string;
-  /** Optionales Profil-Emoji (lokal, kein Cloud-Upload nötig). Z. B. "🦊". */
-  avatar?: string;
+  /** Profilbild – Data-URL (lokal) oder öffentliche Cloud-URL (für Freunde). */
+  avatarUrl?: string;
   school?: string;
   classLevel?: string;
   system: GradingSystem;
