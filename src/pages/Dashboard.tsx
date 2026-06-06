@@ -28,7 +28,7 @@ import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { useStore } from '@/store/useStore';
 import {
   effectiveWeight, formatAverage, gradeTrend, overallAverage,
-  subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel,
+  subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel, getKindLabel,
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
 import { chartTooltipProps } from '@/lib/chartTheme';
@@ -528,7 +528,8 @@ function SubjectsWidget() {
 
 /**
  * Anstehende Klausuren/Tests-Countdown. Sammelt:
- * - pending Grades vom Typ schulaufgabe/klausur (= geplante große Leistungen)
+ * - alle ausstehenden (pending) Noten – Schulaufgabe, Klausur, Stegreif/Test
+ *   und eigene Notenarten (= geplante benotete Prüfungen)
  * - Tasks vom Typ test/schulaufgabe mit dueDate
  * Sortiert nach Datum, zeigt alle (scrollbar) mit „in X Tagen"-Pille.
  */
@@ -538,14 +539,17 @@ function UpcomingExamsWidget({
   onSelectGrade: (g: Grade) => void;
   onSelectTask: (t: AppTask) => void;
 }) {
-  const { subjects, grades, tasks } = useStore();
+  const { subjects, grades, tasks, settings } = useStore();
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
 
   const items = useMemo(() => {
     const out: Array<{ kind: 'grade' | 'task'; date: number; title: string; subjectId?: string; raw: Grade | AppTask }> = [];
     const now = Date.now();
     for (const g of grades) {
-      if (g.isPending && (g.kind === 'schulaufgabe' || g.kind === 'klausur') && g.date >= now - 86400000) {
-        out.push({ kind: 'grade', date: g.date, title: g.title ?? 'Schulaufgabe', subjectId: g.subjectId, raw: g });
+      // Jede geplante (ausstehende) Note ist eine anstehende Prüfung – egal ob
+      // Schulaufgabe, Klausur, Stegreif/Test oder eigene Notenart.
+      if (g.isPending && g.date >= now - 86400000) {
+        out.push({ kind: 'grade', date: g.date, title: g.title ?? getKindLabel(g.kind, config), subjectId: g.subjectId, raw: g });
       }
     }
     for (const t of tasks) {
@@ -554,7 +558,7 @@ function UpcomingExamsWidget({
       }
     }
     return out.sort((a, b) => a.date - b.date);
-  }, [grades, tasks]);
+  }, [grades, tasks, config]);
 
   return (
     <div className="h-full flex flex-col widget-pad">
@@ -602,7 +606,9 @@ function UpcomingExamsWidget({
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm text-ink-800 truncate">{item.title}</div>
                       <div className="text-xs text-ink-500 truncate">
-                        {subj?.name ?? 'Ohne Fach'} · {item.kind === 'grade' ? 'Schulaufgabe' : 'Test'}
+                        {subj?.name ?? 'Ohne Fach'} · {item.kind === 'grade'
+                          ? getKindLabel((item.raw as Grade).kind, config)
+                          : getTaskKindLabel((item.raw as AppTask).kind, config)}
                       </div>
                     </div>
                     <span className={cn('chip text-[10px] flex-shrink-0', tone)}>
