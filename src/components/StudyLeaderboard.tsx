@@ -27,13 +27,51 @@ interface Props {
   delay?: number;
   /** Ohne eigene Card rendern – z. B. wenn schon in einer Widget-Hülle. */
   bare?: boolean;
+  /** Treppchen (Top 3) über der Liste anzeigen. */
+  podium?: boolean;
+}
+
+/** Treppchen der Woche – Gold/Silber/Bronze für die Top 3. */
+function Podium({ rows, meId }: { rows: WeeklyStudyEntry[]; meId?: string }) {
+  const top = rows.slice(0, 3);
+  if (top.length < 2) return null;
+  const order = [1, 0, 2]; // Silber, Gold, Bronze
+  const heights: Record<number, number> = { 0: 64, 1: 48, 2: 38 };
+  return (
+    <div className="flex items-end justify-center gap-3 mb-4 pt-1">
+      {order.map(idx => {
+        const e = top[idx];
+        if (!e) return <div key={idx} style={{ width: 78 }} />;
+        return (
+          <div key={e.userId} className="flex flex-col items-center gap-1.5" style={{ width: 78 }}>
+            <div className="relative">
+              <Avatar name={e.displayName} avatarUrl={e.avatarUrl} className={idx === 0 ? 'size-14' : 'size-11'} textClassName={idx === 0 ? 'text-lg' : 'text-sm'} />
+              <span className="absolute -top-1 -right-1 size-6 rounded-full grid place-items-center shadow ring-2 ring-[rgb(var(--surface-rgb))]" style={{ background: 'rgb(var(--surface-rgb))' }}>
+                <Medal className="size-4" style={{ color: MEDAL[idx] }} />
+              </span>
+            </div>
+            <div className="text-xs font-semibold text-ink-800 truncate max-w-full text-center">
+              {e.displayName.split(' ')[0]}{e.userId === meId && ' (du)'}
+            </div>
+            <div className="text-[11px] font-bold tabular-nums" style={{ color: 'var(--theme-primary)' }}>{fmtDuration(e.totalMs)}</div>
+            <div
+              className="w-full rounded-t-xl flex items-start justify-center pt-1.5 text-white font-extrabold font-display"
+              style={{ height: heights[idx], background: `linear-gradient(180deg, ${MEDAL[idx]}, ${MEDAL[idx]}bb)` }}
+            >
+              {idx + 1}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
  * Wöchentliche Lern-Rangliste mit Freunden (inkl. Profilbildern).
  * Freunde kommen aus dem Freundes-Graph (`store.friends`).
  */
-export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = false }: Props) {
+export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = false, podium = false }: Props) {
   const authUser = useStore(s => s.authUser);
   const settings = useStore(s => s.settings);
   const friends = useStore(s => s.friends);
@@ -110,6 +148,8 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
           <Link to="/freunde" className="btn-soft mt-3 inline-flex text-sm">Freunde hinzufügen</Link>
         </div>
       ) : entries && entries.length > 0 ? (
+        <>
+        {podium && <Podium rows={entries} meId={authUser.id} />}
         <ul className="space-y-1.5">
           {entries.map((e, i) => {
             const isMe = e.userId === authUser.id;
@@ -135,6 +175,7 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
             );
           })}
         </ul>
+        </>
       ) : (
         <p className="text-sm text-ink-500 py-5 text-center">{loading ? 'Lädt …' : 'Noch keine Lernzeiten diese Woche – sei die/der Erste!'}</p>
       )}

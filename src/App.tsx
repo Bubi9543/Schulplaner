@@ -15,6 +15,7 @@ import { AbiturPage } from '@/pages/Abitur';
 import { FokusPage } from '@/pages/Fokus';
 import { KarteikartenPage, DeckDetailPage } from '@/pages/Karteikarten';
 import { FriendsPage } from '@/pages/Friends';
+import { SocialPage } from '@/pages/Social';
 import { RechnerPage } from '@/pages/Rechner';
 import { AnstupsenPage } from '@/pages/Anstupsen';
 import { SettingsPage } from '@/pages/Settings';
@@ -94,6 +95,7 @@ export default function App() {
             <Route path="/fokus" element={<FokusPage />} />
             <Route path="/karteikarten" element={<KarteikartenPage />} />
             <Route path="/karteikarten/:deckId" element={<DeckDetailPage />} />
+            <Route path="/social" element={<SocialPage />} />
             <Route path="/freunde" element={<FriendsPage />} />
             <Route path="/rechner" element={<RechnerPage />} />
             {/* Versteckt – nur über Geheim-Code 8549 im Rechner erreichbar. */}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Trophy, Settings, ChevronDown, Check, Calendar, CalendarClock, Timer, Users, MoreHorizontal, Plus, Layers, Calculator } from 'lucide-react';
+import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, GraduationCap, Trophy, Settings, ChevronDown, Check, Calendar, CalendarClock, Timer, MoreHorizontal, Plus, Layers, Calculator, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { Avatar } from '@/components/Avatar';
@@ -17,7 +17,7 @@ const NAV: NavItem[] = [
   { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus' },
   { to: '/karteikarten', icon: Layers, label: 'Karteikarten', short: 'Karten' },
   { to: '/rechner', icon: Calculator, label: 'Rechner', short: 'Rechner' },
-  { to: '/freunde', icon: Users, label: 'Freunde', short: 'Freunde' },
+  { to: '/social', icon: Sparkles, label: 'Social', short: 'Social' },
   { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr' },
 ];
 
