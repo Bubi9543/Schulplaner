@@ -3,17 +3,19 @@ import { Link } from 'react-router-dom';
 import {
   Sparkles, Camera, MoreHorizontal, Smile, MessageCircle, Send, X,
   Image as ImageIcon, Clock, Copy, Check, Inbox, Loader2, Users, Trash2, RefreshCw,
+  ChevronLeft, Globe2,
 } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { StreakFlame } from '@/components/StreakFlame';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
+import { SubjectIcon } from '@/components/SubjectIcon';
 import { AccountAuth } from '@/components/AccountAuth';
 import { useStore } from '@/store/useStore';
 import { startOfISOWeek, computeStreak } from '@/lib/studyShare';
 import { flashcardActivity } from '@/lib/flashcards';
-import { SUBJECTS, SUBJECT_NAMES, QUICK_EMOJI, fmtMin, timeAgo } from '@/lib/socialDemo';
+import { QUICK_EMOJI, fmtMin, timeAgo } from '@/lib/socialDemo';
 import {
   fetchFeed, createPost, deletePost, setReaction, addComment, deleteComment, uploadPostPhoto,
 } from '@/lib/social';
@@ -26,20 +28,22 @@ const ACCENT_BORDER = 'rgb(var(--theme-primary-rgb) / 0.4)';
 
 // ─── Kleine Bausteine ───────────────────────────────────────────────────────
 
-function SubjectChip({ subject, solid = false }: { subject: string; solid?: boolean }) {
-  const s = SUBJECTS[subject] ?? { color: 'var(--theme-primary)', icon: Sparkles };
-  const Icon = s.icon;
+function SubjectChip({ name, color, solid = false }: { name: string; color?: string; solid?: boolean }) {
   if (solid) {
+    const bg = color ?? 'rgb(var(--theme-primary-rgb))';
     return (
-      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-white" style={{ background: s.color }}>
-        <Icon className="size-3" strokeWidth={2.4} /> {subject}
+      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-white" style={{ background: bg }}>
+        <SubjectIcon subject={{ name }} className="size-3" strokeWidth={2.4} /> {name}
       </span>
     );
   }
+  const tint = color ? color + '1f' : 'rgb(var(--theme-primary-rgb) / 0.12)';
+  const fg = color ?? 'rgb(var(--theme-primary-rgb))';
+  const border = color ? color + '33' : 'rgb(var(--theme-primary-rgb) / 0.25)';
   return (
     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: s.color + '1f', color: s.color, border: `1px solid ${s.color}33` }}>
-      <Icon className="size-3" strokeWidth={2.4} /> {subject}
+      style={{ background: tint, color: fg, border: `1px solid ${border}` }}>
+      <SubjectIcon subject={{ name }} className="size-3" strokeWidth={2.4} /> {name}
     </span>
   );
 }
@@ -179,7 +183,7 @@ function PostCard({ post, meName, meAvatar, onToggle, onComment, onDeleteComment
           <div className="text-sm font-semibold text-ink-900 truncate">{post.authorName}{post.mine && <span className="text-ink-400 font-normal"> · du</span>}</div>
           <div className="text-xs text-ink-400">{timeAgo(post.createdAt)}</div>
         </div>
-        {post.subject && <SubjectChip subject={post.subject} />}
+        {post.subject && <SubjectChip name={post.subject} color={post.subjectColor} />}
         {post.mine && (
           <div className="relative">
             <button onClick={() => setMenu(v => !v)} className="text-ink-400 hover:text-ink-700"><MoreHorizontal className="size-5" /></button>
@@ -225,16 +229,27 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
   todayMin: number;
   streak: number;
 }) {
+  const subjects = useStore(s => s.subjects);
+  const friends = useStore(s => s.friends);
+
+  const [step, setStep] = useState<'compose' | 'audience'>('compose');
   const [text, setText] = useState('');
   const [subject, setSubject] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [attach, setAttach] = useState(todayMin > 0);
+  const [audience, setAudience] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  // Beim Öffnen: Schritt zurücksetzen und standardmäßig alle aktuellen Freunde auswählen.
+  useEffect(() => {
+    if (open) { setStep('compose'); setAudience(new Set(friends.map(f => f.userId))); setErr(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -249,6 +264,9 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
     if (preview) URL.revokeObjectURL(preview);
     setFile(null); setPreview(null);
   }
+  function reset() {
+    setText(''); clearPhoto(); setSubject(null); setStep('compose'); setOpen(false);
+  }
 
   async function submit() {
     if (!text.trim() && !file) return;
@@ -257,18 +275,25 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
       const photoUrl = file ? await uploadPostPhoto(file) : undefined;
       const post = await createPost({
         subject,
+        subjectColor: subject ? subjects.find(s => s.name === subject)?.color : undefined,
         caption: text.trim() || 'Neue Lernsession 📚',
         photoUrl,
         studyMin: attach ? Math.max(0, todayMin) : 0,
         streak: attach ? streak : 0,
-      });
+      }, [...audience]);
       onCreated(post);
-      setText(''); clearPhoto(); setSubject(null); setOpen(false);
+      reset();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  function next() {
+    if (!text.trim() && !file) return;
+    if (friends.length === 0) { void submit(); return; } // niemand auszuwählen → direkt posten
+    setStep('audience');
   }
 
   if (!open) {
@@ -286,12 +311,71 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
     );
   }
 
+  // ── Schritt 2: Wer darf das sehen? ──────────────────────────────────────────
+  if (step === 'audience') {
+    const allSelected = friends.length > 0 && audience.size === friends.length;
+    function toggle(id: string) {
+      setAudience(prev => {
+        const n = new Set(prev);
+        if (n.has(id)) n.delete(id); else n.add(id);
+        return n;
+      });
+    }
+    function toggleAll() {
+      setAudience(allSelected ? new Set() : new Set(friends.map(f => f.userId)));
+    }
+    return (
+      <div className="card !p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <button onClick={() => setStep('compose')} className="text-ink-400 hover:text-ink-700 -ml-1"><ChevronLeft className="size-5" /></button>
+          <h3 className="h3">Wer darf das sehen?</h3>
+          <button onClick={reset} className="ml-auto text-ink-400 hover:text-ink-700"><X className="size-5" /></button>
+        </div>
+        <p className="subtle mb-3">Nur ausgewählte Freunde sehen diesen Post. Wer später dazukommt, sieht ihn <span className="font-semibold">nicht</span>.</p>
+
+        <button onClick={toggleAll} className="w-full flex items-center gap-3 rounded-2xl p-2.5 mb-1 transition hover:bg-ink-50">
+          <span className="size-9 rounded-full theme-gradient grid place-items-center text-white flex-shrink-0"><Globe2 className="size-4.5" /></span>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="text-sm font-semibold text-ink-800">Alle Freunde</div>
+            <div className="text-[11px] text-ink-500">{friends.length} {friends.length === 1 ? 'Freund' : 'Freunde'}</div>
+          </div>
+          <Check className={`size-5 ${allSelected ? 'text-theme' : 'text-ink-300'}`} strokeWidth={3} />
+        </button>
+
+        <div className="max-h-[280px] overflow-auto -mx-1 px-1 space-y-1">
+          {friends.map(f => {
+            const on = audience.has(f.userId);
+            return (
+              <button key={f.userId} onClick={() => toggle(f.userId)} className="w-full flex items-center gap-3 rounded-2xl p-2 transition hover:bg-ink-50">
+                <Avatar name={f.displayName} avatarUrl={f.avatarUrl} className="size-9" textClassName="text-xs" />
+                <div className="flex-1 min-w-0 text-left text-sm font-semibold text-ink-800 truncate">{f.displayName}</div>
+                <span className={`size-5 rounded-md grid place-items-center flex-shrink-0 transition ${on ? 'theme-gradient' : 'border-2 border-ink-300'}`}>
+                  {on && <Check className="size-3.5 text-white" strokeWidth={3} />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
+
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-xs text-ink-500 flex-1">{audience.size === 0 ? 'Nur du siehst diesen Post' : `${audience.size} ausgewählt`}</span>
+          <button onClick={submit} disabled={busy} className="btn-primary disabled:opacity-50">
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}{busy ? 'Wird gepostet …' : 'Posten'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Schritt 1: Verfassen ────────────────────────────────────────────────────
   return (
     <div className="card !p-4">
       <div className="flex items-center gap-2.5 mb-3">
         <Avatar name={meName} avatarUrl={meAvatar} className="size-9" />
         <div className="text-sm font-semibold text-ink-800">{meName}</div>
-        <button onClick={() => { clearPhoto(); setOpen(false); }} className="ml-auto text-ink-400 hover:text-ink-700"><X className="size-5" /></button>
+        <button onClick={reset} className="ml-auto text-ink-400 hover:text-ink-700"><X className="size-5" /></button>
       </div>
       <textarea value={text} onChange={e => setText(e.target.value)} autoFocus rows={2}
         placeholder="Was lernst du gerade? Wie läuft's?"
@@ -316,13 +400,17 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
 
       <div className="mt-3">
         <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">Fach (optional)</div>
-        <div className="flex flex-wrap gap-1.5">
-          {SUBJECT_NAMES.map(s => (
-            <button key={s} onClick={() => setSubject(v => v === s ? null : s)} className="transition active:scale-95" style={{ opacity: subject === s ? 1 : 0.55 }}>
-              <SubjectChip subject={s} solid={subject === s} />
-            </button>
-          ))}
-        </div>
+        {subjects.length === 0 ? (
+          <p className="text-xs text-ink-400">Du hast noch keine Fächer angelegt.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {subjects.map(s => (
+              <button key={s.id} onClick={() => setSubject(v => v === s.name ? null : s.name)} className="transition active:scale-95" style={{ opacity: subject === s.name ? 1 : 0.55 }}>
+                <SubjectChip name={s.name} color={s.color} solid={subject === s.name} />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <button type="button" onClick={() => setAttach(v => !v)}
@@ -341,8 +429,10 @@ function Composer({ open, setOpen, onCreated, meName, meAvatar, todayMin, streak
       {err && <p className="mt-2 text-xs text-rose-600">{err}</p>}
 
       <div className="mt-3">
-        <button onClick={submit} disabled={busy || (!text.trim() && !file)} className="btn-primary w-full disabled:opacity-50">
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}{busy ? 'Wird gepostet …' : 'Posten'}
+        <button onClick={next} disabled={busy || (!text.trim() && !file)} className="btn-primary w-full disabled:opacity-50">
+          {friends.length === 0
+            ? (busy ? <><Loader2 className="size-4 animate-spin" />Wird gepostet …</> : <><Send className="size-4" />Posten</>)
+            : <>Weiter · Sichtbarkeit<ChevronLeft className="size-4 rotate-180" /></>}
         </button>
       </div>
     </div>
@@ -386,7 +476,7 @@ function ProfileCard() {
           </button>
         </div>
       )}
-      <Link to="/freunde" className="btn-soft w-full mt-3 text-sm"><Users className="size-4" />Freunde verwalten</Link>
+      <Link to="/einstellungen?section=friends" className="btn-soft w-full mt-3 text-sm"><Users className="size-4" />Freunde verwalten</Link>
     </Card>
   );
 }
@@ -428,24 +518,22 @@ function RequestsCard() {
 
 // ─── Feed-Hook ──────────────────────────────────────────────────────────────
 
-function useSocialFeed(authUserId: string | undefined, friendIds: string[]) {
+function useSocialFeed(authUserId: string | undefined) {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const idsKey = friendIds.join(',');
 
   const reload = useCallback(async () => {
     if (!authUserId) { setPosts([]); return; }
     setLoading(true); setError(null);
     try {
-      const ids = [authUserId, ...idsKey.split(',').filter(Boolean)];
-      setPosts(await fetchFeed(ids));
+      setPosts(await fetchFeed());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [authUserId, idsKey]);
+  }, [authUserId]);
 
   useEffect(() => { void reload(); }, [reload]);
 
@@ -483,8 +571,7 @@ export function SocialPage() {
     [focusSessions, flashcards],
   );
 
-  const friendIds = useMemo(() => friends.map(f => f.userId), [friends]);
-  const { posts, setPosts, loading, error, reload } = useSocialFeed(authUser?.id, friendIds);
+  const { posts, setPosts, loading, error, reload } = useSocialFeed(authUser?.id);
   const [composerOpen, setComposerOpen] = useState(false);
 
   function onCreated(p: FeedPost) {
@@ -570,7 +657,7 @@ export function SocialPage() {
                 <p className="subtle max-w-xs mx-auto">Teile deinen Lernfortschritt – ein Foto vom Schreibtisch, deine Notizen oder einfach, woran du gerade arbeitest.</p>
                 <button onClick={() => setComposerOpen(true)} className="btn-primary mt-4"><Camera className="size-4" />Ersten Post teilen</button>
                 {friends.length === 0 && (
-                  <p className="text-xs text-ink-400 mt-4">Tipp: <Link to="/freunde" className="text-theme-deep font-semibold">Füge Freunde hinzu</Link>, um auch ihre Posts zu sehen.</p>
+                  <p className="text-xs text-ink-400 mt-4">Tipp: <Link to="/einstellungen?section=friends" className="text-theme-deep font-semibold">Füge Freunde hinzu</Link>, um auch ihre Posts zu sehen.</p>
                 )}
               </div>
             ) : (

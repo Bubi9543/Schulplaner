@@ -14,7 +14,6 @@ import { SubjectDetailPage } from '@/pages/SubjectDetail';
 import { AbiturPage } from '@/pages/Abitur';
 import { FokusPage } from '@/pages/Fokus';
 import { KarteikartenPage, DeckDetailPage } from '@/pages/Karteikarten';
-import { FriendsPage } from '@/pages/Friends';
 import { SocialPage } from '@/pages/Social';
 import { RechnerPage } from '@/pages/Rechner';
 import { AnstupsenPage } from '@/pages/Anstupsen';
@@ -96,7 +95,8 @@ export default function App() {
             <Route path="/karteikarten" element={<KarteikartenPage />} />
             <Route path="/karteikarten/:deckId" element={<DeckDetailPage />} />
             <Route path="/social" element={<SocialPage />} />
-            <Route path="/freunde" element={<FriendsPage />} />
+            {/* Freunde-Verwaltung lebt jetzt in den Einstellungen. */}
+            <Route path="/freunde" element={<Navigate to="/einstellungen?section=friends" replace />} />
             <Route path="/rechner" element={<RechnerPage />} />
             {/* Versteckt – nur über Geheim-Code 8549 im Rechner erreichbar. */}
             <Route path="/anstupsen" element={<AnstupsenPage />} />

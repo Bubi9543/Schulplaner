@@ -80,7 +80,7 @@ export function AnstupsenPage() {
               </div>
               <p className="font-semibold text-ink-800">Noch keine Freunde</p>
               <p className="subtle mt-1">
-                Füge erst <Link to="/freunde" className="text-theme-deep font-semibold hover:underline">Freunde</Link> hinzu, dann kannst du sie hier anstupsen.
+                Füge erst <Link to="/einstellungen?section=friends" className="text-theme-deep font-semibold hover:underline">Freunde</Link> hinzu, dann kannst du sie hier anstupsen.
               </p>
             </div>
           ) : (

@@ -139,13 +139,13 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
         <div className="text-center py-5">
           <Users className="size-8 mx-auto text-ink-300 mb-2" />
           <p className="text-sm text-ink-500">Melde dich an und füge Freunde hinzu, um euch zu vergleichen.</p>
-          <Link to="/freunde" className="btn-soft mt-3 inline-flex text-sm">Zu den Freunden</Link>
+          <Link to="/einstellungen?section=friends" className="btn-soft mt-3 inline-flex text-sm">Zu den Freunden</Link>
         </div>
       ) : friends.length === 0 ? (
         <div className="text-center py-5">
           <Users className="size-8 mx-auto text-ink-300 mb-2" />
           <p className="text-sm text-ink-500">Du hast noch keine Freunde. Mit Freundescodes seht ihr, wer am meisten lernt.</p>
-          <Link to="/freunde" className="btn-soft mt-3 inline-flex text-sm">Freunde hinzufügen</Link>
+          <Link to="/einstellungen?section=friends" className="btn-soft mt-3 inline-flex text-sm">Freunde hinzufügen</Link>
         </div>
       ) : entries && entries.length > 0 ? (
         <>

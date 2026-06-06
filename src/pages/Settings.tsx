@@ -6,6 +6,7 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
+import { FriendsManager } from '@/pages/Friends';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { SchoolYearOnboardingDialog } from '@/components/dialogs/SchoolYearOnboardingDialog';
 import { AccountAuth } from '@/components/AccountAuth';
@@ -22,10 +23,11 @@ import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
+type SectionId = 'profile' | 'friends' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
+  { id: 'friends',       label: 'Freunde',           icon: Users },
   { id: 'appearance',    label: 'Erscheinung',       icon: Palette },
   { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
   { id: 'grading',       label: 'Noten & Aufgaben',  icon: GraduationCap },
@@ -38,7 +40,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'friends', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -92,6 +94,7 @@ export function SettingsPage() {
           <AnimatePresence mode="wait">
             <motion.div key={section} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>
               {section === 'profile' && <ProfileSection />}
+              {section === 'friends' && <FriendsManager />}
               {section === 'appearance' && <AppearanceSection />}
               {section === 'dashboard' && <DashboardSection />}
               {section === 'grading' && <GradingSection />}

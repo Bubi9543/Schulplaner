@@ -6,8 +6,10 @@ import { getOrCreateMyProfile } from './homeworkShare';
  *
  * - Posts liegen in `social_posts`, Reaktionen in `social_reactions`
  *   (genau eine pro Nutzer & Post), Kommentare in `social_comments`.
- * - Sichtbarkeit wird – wie bei `shared_schedules` – clientseitig über die
- *   Freundesliste gefiltert: der Feed lädt Posts von `[ich, ...freunde]`.
+ * - Sichtbarkeit pro Post: beim Posten wählt man die Empfänger (Freunde) aus;
+ *   diese werden als Snapshot in `social_post_audience` gespeichert. Wer später
+ *   Freund wird, sieht alte Posts NICHT. Die Filterung erzwingt RLS in Supabase
+ *   (eigene Posts + Posts, in deren Audience man steht).
  * - Fotos liegen im öffentlichen Bucket `social-photos` unter `<user_id>/<uuid>.jpg`.
  *
  * Setup (Tabellen, RLS, Bucket) → siehe SOCIAL_SETUP.md
@@ -29,6 +31,7 @@ export interface FeedPost {
   authorName: string;
   authorAvatar?: string;
   subject: string | null;
+  subjectColor?: string;
   caption: string;
   photoUrl?: string;
   studyMin: number;
@@ -104,23 +107,24 @@ export async function uploadPostPhoto(file: File): Promise<string> {
 
 // ─── Feed laden ──────────────────────────────────────────────────────────────
 
-interface PostRow { id: string; user_id: string; subject: string | null; caption: string; photo_url: string | null; study_min: number; streak: number; created_at: string; }
+interface PostRow { id: string; user_id: string; subject: string | null; subject_color: string | null; caption: string; photo_url: string | null; study_min: number; streak: number; created_at: string; }
 interface ReactionRow { post_id: string; user_id: string; emoji: string; }
 interface CommentRow { id: string; post_id: string; user_id: string; text: string; created_at: string; }
 interface ProfileRow { user_id: string; display_name: string; avatar_url: string | null; }
 
 /**
- * Lädt den Feed: Posts von `userIds` (= ich + Freunde), inklusive Reaktionen,
- * Kommentaren und Profilnamen/-bildern. Neueste zuerst.
+ * Lädt den sichtbaren Feed inkl. Reaktionen, Kommentaren und Profilnamen/-bildern.
+ * Welche Posts sichtbar sind, entscheidet die RLS-Policy (eigene Posts + Posts,
+ * in deren Audience man steht) – hier ist keine Freundes-Filterung nötig.
  */
-export async function fetchFeed(userIds: string[], limit = 100): Promise<FeedPost[]> {
-  if (!supabase || userIds.length === 0) return [];
+export async function fetchFeed(limit = 100): Promise<FeedPost[]> {
+  if (!supabase) return [];
   const me = await currentUserId();
+  if (!me) return [];
 
   const { data: postData, error: postErr } = await supabase
     .from('social_posts')
-    .select('id, user_id, subject, caption, photo_url, study_min, streak, created_at')
-    .in('user_id', userIds)
+    .select('id, user_id, subject, subject_color, caption, photo_url, study_min, streak, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (postErr) { console.warn('fetchFeed posts error:', postErr.message); return []; }
@@ -176,7 +180,7 @@ export async function fetchFeed(userIds: string[], limit = 100): Promise<FeedPos
     const r = reactByPost.get(p.id);
     return {
       id: p.id, userId: p.user_id, authorName: nameOf(p.user_id), authorAvatar: avatarOf(p.user_id),
-      subject: p.subject, caption: p.caption, photoUrl: p.photo_url ?? undefined,
+      subject: p.subject, subjectColor: p.subject_color ?? undefined, caption: p.caption, photoUrl: p.photo_url ?? undefined,
       studyMin: p.study_min, streak: p.streak, createdAt: new Date(p.created_at).getTime(),
       reactions: r?.counts ?? {}, myReaction: r?.mine ?? null,
       comments: commentsByPost.get(p.id) ?? [], mine: p.user_id === me,
@@ -188,14 +192,19 @@ export async function fetchFeed(userIds: string[], limit = 100): Promise<FeedPos
 
 export interface NewPost {
   subject: string | null;
+  subjectColor?: string;
   caption: string;
   photoUrl?: string;
   studyMin: number;
   streak: number;
 }
 
-/** Legt einen Post an und gibt ihn als FeedPost zurück (für optimistisches Einfügen). */
-export async function createPost(data: NewPost): Promise<FeedPost> {
+/**
+ * Legt einen Post an und speichert seine Audience (Snapshot der ausgewählten
+ * Freunde). `audienceUserIds` = wer den Post sehen darf (ohne mich selbst).
+ * Gibt den Post als FeedPost zurück (für optimistisches Einfügen).
+ */
+export async function createPost(data: NewPost, audienceUserIds: string[]): Promise<FeedPost> {
   if (!supabase) throw new SocialAuthError();
   const profile = await getOrCreateMyProfile();
   const me = profile.userId;
@@ -205,19 +214,34 @@ export async function createPost(data: NewPost): Promise<FeedPost> {
     .insert({
       user_id: me,
       subject: data.subject,
+      subject_color: data.subjectColor ?? null,
       caption: data.caption,
       photo_url: data.photoUrl ?? null,
       study_min: Math.round(data.studyMin),
       streak: Math.round(data.streak),
     })
-    .select('id, user_id, subject, caption, photo_url, study_min, streak, created_at')
+    .select('id, user_id, subject, subject_color, caption, photo_url, study_min, streak, created_at')
     .single();
   if (error) throw new Error('Post fehlgeschlagen: ' + error.message);
 
   const p = row as PostRow;
+
+  // Audience-Snapshot speichern (nur ausgewählte Freunde; ich sehe meinen Post via RLS).
+  const recipients = [...new Set(audienceUserIds)].filter(id => id && id !== me);
+  if (recipients.length > 0) {
+    const { error: audErr } = await supabase
+      .from('social_post_audience')
+      .insert(recipients.map(uid => ({ post_id: p.id, user_id: uid })));
+    if (audErr) {
+      // Audience fehlgeschlagen → Post wieder entfernen, damit nichts „für niemanden“ rumliegt.
+      await supabase.from('social_posts').delete().eq('id', p.id);
+      throw new Error('Sichtbarkeit konnte nicht gespeichert werden: ' + audErr.message);
+    }
+  }
+
   return {
     id: p.id, userId: p.user_id, authorName: profile.displayName, authorAvatar: profile.avatarUrl,
-    subject: p.subject, caption: p.caption, photoUrl: p.photo_url ?? undefined,
+    subject: p.subject, subjectColor: p.subject_color ?? undefined, caption: p.caption, photoUrl: p.photo_url ?? undefined,
     studyMin: p.study_min, streak: p.streak, createdAt: new Date(p.created_at).getTime(),
     reactions: {}, myReaction: null, comments: [], mine: true,
   };

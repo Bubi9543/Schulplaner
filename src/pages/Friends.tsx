@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Users, UserPlus, Search, Loader2, Check, X, Copy, Camera, Trash2,
   Share2, CalendarDays, Clock, Zap, Inbox, Send, AlertTriangle, Pencil,
 } from 'lucide-react';
-import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { AccountAuth } from '@/components/AccountAuth';
 import { SubjectIcon } from '@/components/SubjectIcon';
-import { StudyLeaderboard } from '@/components/StudyLeaderboard';
 import { useStore } from '@/store/useStore';
 import { normalizeFriendCode } from '@/lib/homeworkShare';
 import { uploadAvatar, removeAvatar } from '@/lib/avatar';
-import { startOfISOWeek } from '@/lib/studyShare';
 import type { Friend } from '@/lib/friends';
 import type { SharePayload } from '@/lib/scheduleShare';
 
@@ -42,37 +39,41 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-export function FriendsPage() {
+/**
+ * Freunde-Verwaltung (Profil, Anfragen, Freundesliste, Teilen-Einstellungen).
+ * Wird als Sektion „Freunde" in den Einstellungen gerendert. Die Lern-Rangliste
+ * lebt jetzt auf der Social-Seite, daher hier bewusst ohne Leaderboard.
+ */
+export function FriendsManager() {
   const authUser = useStore(s => s.authUser);
   const loadFriends = useStore(s => s.loadFriends);
 
   // Beim Öffnen (und nach Login) den Freundes-Graph frisch laden.
   useEffect(() => { if (authUser) void loadFriends(); }, [authUser, loadFriends]);
 
+  if (!authUser) {
+    return (
+      <div className="max-w-xl">
+        <div className="mb-3 rounded-2xl theme-gradient-soft border border-theme/20 p-4 text-sm text-ink-700">
+          Melde dich an, um Freunde hinzuzufügen sowie Hausaufgaben & Stundenplan zu teilen.
+        </div>
+        <AccountAuth />
+      </div>
+    );
+  }
+
   return (
-    <PageShell title="Freunde" subtitle="Profil, Freundschaftsanfragen, Hausaufgaben- & Stundenplan-Teilen und die Lern-Rangliste.">
-      {!authUser ? (
-        <div className="max-w-xl">
-          <div className="mb-3 rounded-2xl theme-gradient-soft border border-theme/20 p-4 text-sm text-ink-700">
-            Melde dich an, um Freunde hinzuzufügen, Hausaufgaben & Stundenplan zu teilen und euch in der Lern-Rangliste zu vergleichen.
-          </div>
-          <AccountAuth />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          <div className="space-y-4">
-            <MyProfileCard />
-            <AddFriendCard />
-            <RequestsCard />
-          </div>
-          <div className="space-y-4">
-            <FriendsListCard />
-            <SharingCard />
-            <LeaderboardSlot />
-          </div>
-        </div>
-      )}
-    </PageShell>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="space-y-4">
+        <MyProfileCard />
+        <AddFriendCard />
+        <RequestsCard />
+      </div>
+      <div className="space-y-4">
+        <FriendsListCard />
+        <SharingCard />
+      </div>
+    </div>
   );
 }
 
@@ -526,14 +527,3 @@ function SharingCard() {
   );
 }
 
-// ─── Rangliste (eigener Wochenwert aus Fokus-Sessions) ──────────────────────────
-
-function LeaderboardSlot() {
-  const focusSessions = useStore(s => s.focusSessions);
-  const weekStart = useMemo(() => startOfISOWeek(Date.now()), []);
-  const weekTotalMs = useMemo(
-    () => focusSessions.filter(f => f.startedAt >= weekStart).reduce((sum, f) => sum + f.focusedMs, 0),
-    [focusSessions, weekStart],
-  );
-  return <StudyLeaderboard weekTotalMs={weekTotalMs} weekStart={weekStart} delay={0} />;
-}
