@@ -530,7 +530,7 @@ function SubjectsWidget() {
  * Anstehende Klausuren/Tests-Countdown. Sammelt:
  * - pending Grades vom Typ schulaufgabe/klausur (= geplante große Leistungen)
  * - Tasks vom Typ test/schulaufgabe mit dueDate
- * Sortiert nach Datum, zeigt max 5 mit „in X Tagen"-Pille.
+ * Sortiert nach Datum, zeigt alle (scrollbar) mit „in X Tagen"-Pille.
  */
 function UpcomingExamsWidget({
   onSelectGrade, onSelectTask,
@@ -553,7 +553,7 @@ function UpcomingExamsWidget({
         out.push({ kind: 'task', date: t.dueDate, title: t.title, subjectId: t.subjectId, raw: t });
       }
     }
-    return out.sort((a, b) => a.date - b.date).slice(0, 5);
+    return out.sort((a, b) => a.date - b.date);
   }, [grades, tasks]);
 
   return (
