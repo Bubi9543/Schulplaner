@@ -9,14 +9,19 @@ import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
+import { GradeDialog } from '@/components/dialogs/GradeDialog';
+import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { useStore } from '@/store/useStore';
 import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
-import { getTaskKindLabel } from '@/lib/grading';
+import { getTaskKindLabel, getKindLabel } from '@/lib/grading';
 import { fetchUpcomingHolidays, isoLocal } from '@/lib/holidays';
-import type { AppTask, TaskKind, SchoolHoliday } from '@/types';
+import type { AppTask, TaskKind, SchoolHoliday, Grade } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
+
+/** Prefix für Kalender-Pseudo-Aufgaben, die aus anstehenden Tests/Klausuren (pending Grades) stammen. */
+const EXAM_ID_PREFIX = 'exam:';
 
 /* ───────────────────────────────────────────────────────────────────────────
    Kalender · „Studio" Redesign
@@ -44,10 +49,30 @@ function inGroup(kind: TaskKind, group: KindGroup) {
 
 export function CalendarPage() {
   const tasks = useStore(s => s.tasks);
+  const grades = useStore(s => s.grades);
   const subjects = useStore(s => s.subjects);
   const settings = useStore(s => s.settings);
   const region = settings?.region;
+  const gradingConfig = settings?.gradingConfig;
   const customKinds = settings?.gradingConfig.customKinds ?? [];
+
+  // ── Anstehende Tests/Klausuren = geplante (pending) Noten mit Datum ─────────
+  // In dieser App werden angekündigte Prüfungen als „ausstehende Note" angelegt.
+  // Sie leben in `grades` (nicht in `tasks`), darum hier als Kalender-Einträge
+  // einmischen, damit sie – wie vom User erwartet – im Kalender auftauchen.
+  const pendingExams = useMemo(() => grades.filter(g => g.isPending && !!g.date), [grades]);
+  const examById = useMemo(() => new Map(pendingExams.map(g => [EXAM_ID_PREFIX + g.id, g])), [pendingExams]);
+  const examItems = useMemo<AppTask[]>(() => pendingExams.map(g => ({
+    id: EXAM_ID_PREFIX + g.id,
+    title: g.title?.trim() || getKindLabel(g.kind, gradingConfig),
+    kind: g.kind,
+    subjectId: g.subjectId,
+    dueDate: g.date,
+    done: false,
+    priority: 3,
+    createdAt: g.date,
+    schoolYearId: g.schoolYearId,
+  })), [pendingExams, gradingConfig]);
 
   // ── Ferien laden (unverändert aus der bestehenden Seite) ──────────────────
   const [holidays, setHolidays] = useState<SchoolHoliday[]>([]);
@@ -64,8 +89,18 @@ export function CalendarPage() {
     ...BUILTIN_TASK_KINDS.map(id => ({ id, label: getTaskKindLabel(id) })),
     ...customKinds.map(c => ({ id: c.id, label: c.label })),
   ], [customKinds]);
-  // Sub-Filter unter „Tests": alle Arten, die als Prüfung gelten (Schulaufgabe, Test, …).
-  const examKinds = useMemo(() => allKinds.filter(k => isExamKind(k.id)), [allKinds]);
+  // Sub-Filter unter „Tests": alle Prüfungs-Arten – aus Aufgaben-Arten (Test,
+  // Schulaufgabe, Projekt + Custom) UND den tatsächlich vorhandenen Noten-Arten
+  // der anstehenden Tests (Schulaufgabe, Klausur, Stegreif, Referat, …).
+  const examKinds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const k of allKinds) if (isExamKind(k.id)) ids.add(k.id);
+    for (const g of pendingExams) ids.add(g.kind);
+    return [...ids].map(id => {
+      const taskLabel = getTaskKindLabel(id, gradingConfig);
+      return { id, label: taskLabel !== id ? taskLabel : getKindLabel(id, gradingConfig) };
+    });
+  }, [allKinds, pendingExams, gradingConfig]);
 
   // ── View / Navigation ─────────────────────────────────────────────────────
   const weekStartsOn = (settings?.weekStart ?? 1) as 0 | 1;
@@ -92,18 +127,27 @@ export function CalendarPage() {
   const activeFilters = (group !== 'all' ? 1 : 0) + (subKind ? 1 : 0) + subjectSel.size + (showDone ? 1 : 0);
   const resetFilter = () => { setGroup('all'); setSubKind(null); setSubjectSel(new Set()); setShowDone(false); };
 
-  const filtered = useMemo(() => tasks.filter(t => {
+  const filtered = useMemo(() => [...tasks, ...examItems].filter(t => {
     if (!showDone && t.done) return false;
     if (!inGroup(t.kind, group)) return false;
     if (group === 'exam' && subKind && t.kind !== subKind) return false;
     if (subjectSel.size && (!t.subjectId || !subjectSel.has(t.subjectId))) return false;
     return true;
-  }), [tasks, group, subKind, subjectSel, showDone]);
+  }), [tasks, examItems, group, subKind, subjectSel, showDone]);
 
   // ── Dialoge ────────────────────────────────────────────────────────────────
   const [detail, setDetail] = useState<{ open: boolean; task?: AppTask }>({ open: false });
   const [editor, setEditor] = useState<{ open: boolean; task?: Partial<AppTask>; defaultKind?: TaskKind }>({ open: false });
+  const [examDetail, setExamDetail] = useState<{ open: boolean; grade?: Grade }>({ open: false });
+  const [examEditor, setExamEditor] = useState<{ open: boolean; grade?: Grade }>({ open: false });
   const openNew = (d?: Date, kind?: TaskKind) => setEditor({ open: true, task: d ? { dueDate: d.getTime() } : undefined, defaultKind: kind });
+
+  // Klick auf einen Eintrag: anstehende Tests öffnen den Noten-Dialog, sonst den Aufgaben-Dialog.
+  const openItem = (t: AppTask) => {
+    const exam = examById.get(t.id);
+    if (exam) setExamDetail({ open: true, grade: exam });
+    else setDetail({ open: true, task: t });
+  };
 
   const subjMap = useMemo(() => Object.fromEntries(subjects.map(s => [s.id, s])), [subjects]);
 
@@ -176,11 +220,11 @@ export function CalendarPage() {
 
         <motion.div key={view} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
           {view === 'month' && <MonthView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={t => setDetail({ open: true, task: t })} onNew={openNew} />}
+            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} />}
           {view === 'week' && <WeekView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={t => setDetail({ open: true, task: t })} onNew={openNew} />}
+            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} />}
           {view === 'list' && <ListView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            onSelect={t => setDetail({ open: true, task: t })} onNew={openNew} />}
+            onSelect={openItem} onNew={openNew} />}
         </motion.div>
 
         <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-400">
@@ -191,6 +235,11 @@ export function CalendarPage() {
       <TaskDetailDialog open={detail.open} task={detail.task} onClose={() => setDetail({ open: false })}
         onEdit={t => { setDetail({ open: false }); setEditor({ open: true, task: t }); }} />
       <TaskDialog open={editor.open} initial={editor.task} defaultKind={editor.defaultKind} onClose={() => setEditor({ open: false })} />
+
+      {/* Anstehende Tests/Klausuren (pending Noten) öffnen den Noten-Dialog */}
+      <GradeDetailDialog open={examDetail.open} grade={examDetail.grade} onClose={() => setExamDetail({ open: false })}
+        onEdit={g => { setExamDetail({ open: false }); setExamEditor({ open: true, grade: g }); }} />
+      <GradeDialog open={examEditor.open} initial={examEditor.grade} onClose={() => setExamEditor({ open: false })} />
     </PageShell>
   );
 }

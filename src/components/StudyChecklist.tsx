@@ -60,9 +60,11 @@ interface Props {
   title?: string;
   /** Wenn true, hat die Komponente eine helle Karten-Umrandung. */
   framed?: boolean;
+  /** Kopfzeile (Titel + Zähler) anzeigen. Default: true. */
+  showHeader?: boolean;
 }
 
-export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, title = 'Lerncheckliste', framed = true }: Props) {
+export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, title = 'Lerncheckliste', framed = true, showHeader = true }: Props) {
   const [newLabel, setNewLabel] = useState('');
   const [showDeadlineInput, setShowDeadlineInput] = useState(false);
 
@@ -109,27 +111,29 @@ export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, ti
     : null;
 
   return (
-    <div className={framed ? 'rounded-2xl bg-white/60 p-4' : ''}>
-      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-4 text-theme" />
-          <h4 className="font-semibold text-sm text-ink-800">{title}</h4>
-          {total > 0 && (
-            <span className="text-xs text-ink-500">
-              {counts.green}/{total} bereit
-            </span>
+    <div className={framed ? 'rounded-2xl bg-white/60 p-4 border border-white/50' : ''}>
+      {showHeader && (
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <BookOpen className="size-[17px] text-theme" />
+            <h4 className="font-bold text-[15px] text-ink-800">{title}</h4>
+            {total > 0 && (
+              <span className="text-xs text-ink-500">
+                {counts.green}/{total} bereit
+              </span>
+            )}
+          </div>
+          {total > 0 && counts.green === total && (
+            <motion.span
+              initial={{ scale: 0 }} animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 18 }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold"
+            >
+              <CheckCircle2 className="size-3" />Alles bereit!
+            </motion.span>
           )}
         </div>
-        {total > 0 && counts.green === total && (
-          <motion.span
-            initial={{ scale: 0 }} animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 18 }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold"
-          >
-            <CheckCircle2 className="size-3" />Alles bereit!
-          </motion.span>
-        )}
-      </div>
+      )}
 
       {/* Stacked Progress Bar */}
       {total > 0 && (
@@ -268,16 +272,19 @@ export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, ti
                   placeholder="Thema beschreiben"
                 />
                 {/* Ampel-Buttons rechts */}
-                <div className="flex gap-1 flex-shrink-0">
+                <div className="flex gap-1.5 flex-shrink-0">
                   {STATUS_ORDER.map(s => (
                     <button
                       key={s}
                       onClick={() => updateItem(item.id, { status: s })}
-                      className={`size-5 rounded-full transition ${STATUS_META[s].bg} ${
-                        item.status === s ? 'ring-2 ring-offset-1 ring-offset-white ' + STATUS_META[s].ring : 'opacity-40 hover:opacity-80'
-                      }`}
+                      className="ampel-dot"
                       title={STATUS_META[s].label}
                       aria-label={STATUS_META[s].label}
+                      style={{
+                        background: STATUS_META[s].color,
+                        opacity: item.status === s ? 1 : 0.32,
+                        boxShadow: item.status === s ? `0 0 0 2px rgb(var(--surface-rgb)), 0 0 0 4px ${STATUS_META[s].color}` : 'none',
+                      }}
                     />
                   ))}
                 </div>

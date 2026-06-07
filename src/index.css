@@ -223,6 +223,122 @@
     border-color: var(--theme-primary);
   }
 
+  /* ── Dialog-Redesign: gemeinsame Bausteine ───────────────────────────── */
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: rgb(var(--ink-500));
+  }
+
+  /* Größere, tastbare Chips für Dialoge (Fächer, Arten, Termine). */
+  .dlg-chip {
+    display: inline-flex; align-items: center; gap: 7px; border-radius: 999px;
+    padding: 9px 15px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    background: rgb(var(--surface-rgb) / 0.72);
+    color: rgb(var(--ink-600));
+    border: 1px solid rgb(var(--surface-border-rgb) / 0.8);
+    transition: transform .16s cubic-bezier(.2,.7,.3,1), background .16s, color .16s, border-color .16s, box-shadow .16s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html[data-mode="dark"] .dlg-chip { background: rgb(var(--ink-100)); border-color: rgb(var(--surface-border-rgb)); }
+  .dlg-chip:hover { border-color: rgb(var(--ink-300)); }
+  .dlg-chip:active { transform: scale(.95); }
+  .dlg-chip.is-active {
+    background: var(--theme-primary); color: #fff; border-color: var(--theme-primary);
+    box-shadow: 0 8px 30px -10px rgb(var(--theme-primary-rgb) / 0.45);
+  }
+
+  /* Runder Icon-Button. */
+  .iconbtn {
+    display: grid; place-items: center; width: 38px; height: 38px; border-radius: 999px;
+    border: none; cursor: pointer; background: transparent; color: inherit;
+    transition: background .15s, color .15s, transform .15s;
+  }
+  .iconbtn:active { transform: scale(.92); }
+  .iconbtn.on-tint { background: rgb(255 255 255 / 0.2); color: #fff; }
+  .iconbtn.on-tint:hover { background: rgb(255 255 255 / 0.32); }
+  .iconbtn.on-tint.danger:hover { background: rgb(244 63 94 / 0.85); }
+  .iconbtn.ghost:hover { background: rgb(var(--ink-100)); }
+  .iconbtn.danger:hover { background: rgb(244 63 94 / 0.14); color: #e11d48; }
+
+  /* Segmentierte Auswahl mit animiertem Thumb. */
+  .seg {
+    position: relative; display: flex; padding: 4px; border-radius: 16px;
+    background: rgb(var(--ink-100));
+    border: 1px solid rgb(var(--surface-border-rgb) / 0.6);
+  }
+  html[data-mode="dark"] .seg { border-color: rgb(var(--surface-border-rgb)); }
+  .seg-thumb {
+    position: absolute; top: 4px; bottom: 4px; border-radius: 12px;
+    background: rgb(var(--surface-rgb)); box-shadow: 0 1px 3px rgba(15,18,32,.12), 0 2px 8px rgba(15,18,32,.08);
+    transition: transform .26s cubic-bezier(.34,1.4,.5,1), width .26s cubic-bezier(.34,1.4,.5,1), background .2s;
+    z-index: 0;
+  }
+  html[data-mode="dark"] .seg-thumb { background: rgb(var(--ink-300)); box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  .seg-thumb.tinted { background: var(--theme-primary); box-shadow: 0 8px 30px -10px rgb(var(--theme-primary-rgb) / 0.45); }
+  .seg-btn {
+    position: relative; z-index: 1; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    border: none; background: transparent; cursor: pointer; font-family: inherit;
+    padding: 11px 12px; font-size: 14.5px; font-weight: 600; border-radius: 12px;
+    color: rgb(var(--ink-500)); white-space: nowrap; transition: color .2s;
+  }
+  .seg-btn.is-active { color: rgb(var(--ink-900)); }
+  .seg-btn.is-active.on-tint { color: #fff; }
+
+  /* Toggle-Schalter (CSS). */
+  .switch {
+    position: relative; flex: 0 0 auto; width: 46px; height: 28px; border-radius: 999px;
+    background: rgb(var(--ink-300)); cursor: pointer; transition: background .25s; border: none; padding: 0;
+  }
+  .switch.on { background: var(--theme-primary); }
+  .switch-knob {
+    position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 999px;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    transition: transform .28s cubic-bezier(.34,1.4,.5,1);
+  }
+  .switch.on .switch-knob { transform: translateX(18px); }
+
+  /* Meta-Kachel. */
+  .meta-tile {
+    border-radius: 18px; padding: 13px 15px;
+    background: rgb(var(--surface-rgb) / 0.6); border: 1px solid rgb(var(--surface-border-rgb) / 0.5);
+  }
+  html[data-mode="dark"] .meta-tile { background: rgb(var(--ink-100)); border-color: rgb(var(--surface-border-rgb) / 0.7); }
+  .meta-tile .mt-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgb(var(--ink-500)); margin-bottom: 5px; }
+  .meta-tile .mt-value { font-size: 14px; font-weight: 600; color: rgb(var(--ink-800)); }
+
+  /* Noten-Keypad. */
+  .gradepad { display: grid; gap: 8px; }
+  .gradepad-btn {
+    position: relative; border: 1px solid rgb(var(--surface-border-rgb) / 0.7);
+    background: rgb(var(--surface-rgb) / 0.65); color: rgb(var(--ink-700));
+    border-radius: 15px; padding: 15px 0; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700;
+    font-size: 20px; cursor: pointer; text-align: center;
+    transition: transform .16s cubic-bezier(.2,.7,.3,1), box-shadow .18s, color .15s, border-color .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html[data-mode="dark"] .gradepad-btn { background: rgb(var(--ink-100)); border-color: rgb(var(--surface-border-rgb)); }
+  .gradepad-btn:hover { border-color: rgb(var(--ink-300)); }
+  .gradepad-btn:active { transform: scale(.92); }
+  .gradepad-btn.is-active { color: #fff; border-color: transparent; box-shadow: 0 8px 22px -8px rgba(15,18,32,.4); transform: translateY(-1px); }
+
+  /* Ampel-Punkt der Lerncheckliste. */
+  .ampel-dot { width: 22px; height: 22px; border-radius: 999px; border: none; cursor: pointer; padding: 0; transition: transform .15s, box-shadow .15s, opacity .15s; }
+  .ampel-dot:active { transform: scale(.85); }
+
+  /* Scroll-Bereich im Dialog (Scrollbar versteckt). */
+  .dlg-scroll { overflow-y: auto; }
+  .dlg-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+  /* Button-Größen + weicher Danger-Button. */
+  .btn-sm { @apply px-3 py-2 text-xs rounded-xl; }
+  .btn-lg { @apply px-6 py-3.5 text-base rounded-2xl; }
+  .btn-danger-soft {
+    @apply btn;
+    background: rgb(244 63 94 / 0.12); color: #e11d48;
+  }
+  .btn-danger-soft:hover { background: rgb(244 63 94 / 0.2); }
+  html[data-mode="dark"] .btn-danger-soft { color: #fb7185; }
+
   .widget-content {
     container-type: inline-size;
   }
@@ -356,3 +472,14 @@ html[data-mode="dark"] .cal-hol-faded {
 html[data-mode="dark"] .cal-hol-num   { color: rgb(252 211 77); }   /* amber-300 dark */
 html[data-mode="dark"] .cal-hol-icon  { color: rgb(251 191 36); }   /* amber-400 dark */
 html[data-mode="dark"] .cal-hol-name  { color: rgb(253 230 138 / 0.80); } /* amber-200/80 dark */
+
+/* ── Dialog-Redesign: Einblend-Animationen ───────────────────────────────── */
+@keyframes dlgPop { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+.dlg-pop { animation: dlgPop .42s cubic-bezier(.2,.8,.25,1) both; }
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+.sheet-pop { animation: sheetUp .5s cubic-bezier(.22,.9,.3,1) both; }
+@keyframes nowPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .55; } }
+.now-pulse { animation: nowPulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .dlg-pop, .sheet-pop, .now-pulse { animation: none; }
+}

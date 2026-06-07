@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal } from '@/components/Modal';
 import { useStore } from '@/store/useStore';
 import type { Grade, GradeKind } from '@/types';
 import { BUILTIN_GRADE_KINDS } from '@/types';
@@ -10,7 +9,11 @@ import { useIsHoliday } from '@/lib/useHolidays';
 import { Confetti } from '@/components/CountUp';
 import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
-import { Sparkles } from 'lucide-react';
+import { GraduationCap, Tag, Check, Sparkles } from 'lucide-react';
+import {
+  DialogShell, Field, GradePad, SubjectChips, KindChips, SegmentedControl,
+  type KindChipItem, type SegOption,
+} from './dialogParts';
 
 interface Props {
   open: boolean;
@@ -20,10 +23,9 @@ interface Props {
 }
 
 const BUILTIN_KIND_ORDER: GradeKind[] = ['schulaufgabe', 'klausur', 'stegreif', 'muendlich', 'referat', 'projekt', 'sonstige'];
-// Sanity-Check: BUILTIN_KIND_ORDER muss eine Permutation von BUILTIN_GRADE_KINDS sein
 void BUILTIN_GRADE_KINDS;
 
-const WEIGHT_PRESETS: Array<{ value: number; label: string }> = [
+const WEIGHT_OPTIONS: SegOption[] = [
   { value: 0.5, label: '×½' },
   { value: 1,   label: '×1' },
   { value: 1.5, label: '×1,5' },
@@ -31,7 +33,7 @@ const WEIGHT_PRESETS: Array<{ value: number; label: string }> = [
 ];
 
 function isPreset(v: number): boolean {
-  return WEIGHT_PRESETS.some(p => Math.abs(p.value - v) < 1e-6);
+  return WEIGHT_OPTIONS.some(p => Math.abs((p.value as number) - v) < 1e-6);
 }
 
 export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props) {
@@ -141,152 +143,92 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     setCustomWeightInput(raw);
     const cleaned = raw.replace(',', '.').trim();
     const parsed = parseFloat(cleaned);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      setWeightMultiplier(parsed);
-    }
+    if (Number.isFinite(parsed) && parsed > 0) setWeightMultiplier(parsed);
   }
 
   const color = gradeColor(value, system, config);
   const customActive = !isPreset(weightMultiplier);
   const isLargeKind = isLargeAssessmentKind(kind, config);
   const showCategoryHint = subject.system === 'bayern' && subject.category !== 'nebenfach';
-  const customKinds = config.customKinds ?? [];
+
+  const kindItems: KindChipItem[] = [
+    ...BUILTIN_KIND_ORDER.map(k => ({ id: k, label: getKindLabel(k, config) })),
+    ...(config.customKinds ?? []).map(c => ({ id: c.id, label: c.label, note: c.weighting === 'large' ? '· SA' : '· Mdl' })),
+  ];
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title={editing ? 'Note bearbeiten' : 'Note hinzufügen'}
+      <DialogShell
+        open={open} onClose={onClose} maxWidth="md:max-w-xl"
+        eyebrow="Note" eyebrowIcon={GraduationCap} title={editing ? 'Note bearbeiten' : 'Note hinzufügen'}
         footer={
           <>
-            {editing && <button onClick={remove} className="btn-soft text-rose-600">Löschen</button>}
+            {editing && <button onClick={remove} className="btn-danger-soft mr-auto">Löschen</button>}
             <button onClick={onClose} className="btn-ghost">Abbrechen</button>
-            <button onClick={save} className="btn-primary">Speichern</button>
+            <button onClick={save} className="btn-primary"><Check className="size-4" />Speichern</button>
           </>
         }
       >
-        <div className="space-y-4">
-          <div>
-            <label className="label">Fach</label>
-            <select className="input" value={subjectId} onChange={e => { setSubjectId(e.target.value); setAutoChosen(false); }}>
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            {autoChosen && (
-              <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-theme-deep">
-                <Sparkles className="size-3" /> Vorausgewählt: aktuelle Stunde
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-3xl p-5 text-center text-white" style={{ background: `linear-gradient(135deg, ${color}, ${hexToRgba(color, .85)})` }}>
-            <div className="text-xs uppercase tracking-wider opacity-90">Note</div>
-            <div className="font-display font-extrabold text-5xl mt-1">{isPending ? '?' : meta.formatValue(value)}</div>
-            <div className="text-xs opacity-80 mt-1">{subject.name}</div>
-          </div>
-
-          {!isPending && (
-            <div>
-              <label className="label">Wert</label>
-              {meta.valueOptions.length <= 16 ? (
-                <div className="grid grid-cols-6 gap-1.5">
-                  {meta.valueOptions.map(v => (
-                    <button key={v} type="button" onClick={() => setValue(v)}
-                      className={`py-2 rounded-xl font-display font-bold text-sm transition ${value === v ? 'text-white shadow-md' : 'bg-white/70 text-ink-700 hover:bg-white'}`}
-                      style={value === v ? { background: gradeColor(v, system, config) } : undefined}>
-                      {meta.formatValue(v).replace(' P', '')}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <input
-                  type="range" min={meta.min} max={meta.max} step={meta.step}
-                  value={value}
-                  onChange={e => setValue(parseFloat(e.target.value))}
-                  className="w-full accent-theme"
-                />
-              )}
-              <div className="flex justify-between text-xs text-ink-400 mt-1">
-                <span>{meta.formatValue(meta.min)}</span><span>{meta.formatValue(meta.max)}</span>
-              </div>
+        <Field label="Fach">
+          <SubjectChips subjects={subjects} value={subjectId} onChange={(id) => { setSubjectId(id); setAutoChosen(false); }} lessons={lessons} now={now} />
+          {autoChosen && (
+            <div className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-theme-deep">
+              <Sparkles className="size-3.5" /><span>Vorausgewählt: aktuelle Stunde ({subject.name})</span>
             </div>
           )}
+        </Field>
 
-          <div>
-            <label className="label">Art</label>
-            <div className="flex flex-wrap gap-2">
-              {BUILTIN_KIND_ORDER.map(k => (
-                <button key={k} type="button" onClick={() => setKind(k)} className={`chip ${kind === k ? 'chip-active' : ''}`}>
-                  {getKindLabel(k, config)}
-                </button>
-              ))}
-              {customKinds.map(c => (
-                <button key={c.id} type="button" onClick={() => setKind(c.id)}
-                  className={`chip ${kind === c.id ? 'chip-active' : ''}`}
-                  title={c.weighting === 'large' ? 'Eigene Kategorie · zählt wie Schulaufgabe' : 'Eigene Kategorie · zählt wie Mündlich'}
-                >
-                  {c.label}
-                  <span className="ml-1 opacity-60 text-[10px]">
-                    {c.weighting === 'large' ? '· SA' : '· Mdl'}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {showCategoryHint && (
-              <div className="subtle mt-1.5 text-xs">
-                {isLargeKind
-                  ? `Diese Note zählt ${subject.category === 'hauptfach' ? 'doppelt' : '1:1'} mit dem Rest (Schulaufgaben-Block).`
-                  : 'Wird zum Schnitt der kleinen Leistungen verrechnet.'}
-              </div>
-            )}
-          </div>
-
-          {!isPending && (
-            <div>
-              <label className="label">Gewichtung dieser Note</label>
-              <div className="grid grid-cols-4 gap-2">
-                {WEIGHT_PRESETS.map(p => (
-                  <button key={p.value} type="button"
-                    onClick={() => { setWeightMultiplier(p.value); setCustomWeightInput(''); }}
-                    className={`btn ${!customActive && Math.abs(weightMultiplier - p.value) < 1e-6 ? 'btn-primary' : 'btn-ghost'}`}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="Custom (z.B. 0,75)"
-                  className={`input ${customActive ? 'border-theme' : ''}`}
-                  value={customWeightInput}
-                  onChange={e => applyCustomWeight(e.target.value)}
-                />
-                <span className="text-xs text-ink-500 whitespace-nowrap">aktuell ×{weightMultiplier.toString().replace('.', ',')}</span>
-              </div>
-              <div className="subtle mt-1.5 text-xs">
-                Wirkt innerhalb der Gruppe (Schulaufgaben oder Rest). ×2 bedeutet, diese Note zählt doppelt.
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Datum</label>
-              <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Titel (optional)</label>
-            <input className="input" placeholder="z.B. 2. Schulaufgabe" value={title} onChange={e => setTitle(e.target.value)} />
-          </div>
-
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={isPending} onChange={e => setIsPending(e.target.checked)} className="size-5 accent-theme" />
-            <span className="text-sm text-ink-700">Note steht aus (Termin vormerken)</span>
-          </label>
-
-          <PhotoAttachment refId={gradeIdRef.current} refType="grade" />
+        {/* Farbige Live-Vorschau */}
+        <div className="rounded-3xl px-5 py-4 text-center text-white overflow-hidden"
+          style={{ background: isPending ? 'linear-gradient(135deg, #64748b, #475569)' : `linear-gradient(135deg, ${color}, ${hexToRgba(color, .8)})`, transition: 'background .3s' }}>
+          <div className="eyebrow" style={{ color: 'rgba(255,255,255,.9)' }}>{isPending ? 'Geplant' : getKindLabel(kind, config)}</div>
+          <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 56 }}>{isPending ? '?' : meta.formatValue(value)}</div>
+          <div className="text-[13px] mt-1" style={{ opacity: .9 }}>{subject.name}</div>
         </div>
-      </Modal>
+
+        {!isPending && (
+          <Field label="Wert">
+            <GradePad meta={meta} value={value} onChange={setValue} system={system} config={config} />
+          </Field>
+        )}
+
+        <Field label="Art" icon={Tag} hint={showCategoryHint
+          ? (isLargeKind
+            ? `Diese Note zählt ${subject.category === 'hauptfach' ? 'doppelt' : '1:1'} mit dem Rest (Schulaufgaben-Block).`
+            : 'Wird zum Schnitt der kleinen Leistungen verrechnet.')
+          : undefined}>
+          <KindChips items={kindItems} value={kind} onChange={setKind} />
+        </Field>
+
+        {!isPending && (
+          <Field label="Gewichtung dieser Note" hint="Wirkt innerhalb der Gruppe (Schulaufgaben oder Rest). ×2 bedeutet, diese Note zählt doppelt.">
+            <SegmentedControl options={WEIGHT_OPTIONS} value={customActive ? '' : weightMultiplier} tinted
+              onChange={(v) => { setWeightMultiplier(v as number); setCustomWeightInput(''); }} />
+            <div className="flex items-center gap-2 mt-2">
+              <input type="text" inputMode="decimal" placeholder="Custom (z. B. 0,75)"
+                className="input" style={customActive ? { borderColor: 'rgb(var(--theme-primary-rgb) / 0.5)' } : undefined}
+                value={customWeightInput} onChange={e => applyCustomWeight(e.target.value)} />
+              <span className="text-xs text-ink-500 whitespace-nowrap">aktuell ×{weightMultiplier.toString().replace('.', ',')}</span>
+            </div>
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Datum">
+            <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
+          </Field>
+          <Field label="Titel (optional)">
+            <input className="input" placeholder="z. B. 2. Schulaufgabe" value={title} onChange={e => setTitle(e.target.value)} />
+          </Field>
+        </div>
+
+        <button type="button" className="flex items-center gap-3 text-left" onClick={() => setIsPending(p => !p)}>
+          <span className={'switch shrink-0' + (isPending ? ' on' : '')}><span className="switch-knob" /></span>
+          <span className="text-sm" style={{ color: 'rgb(var(--ink-700))' }}>Note steht aus (Termin vormerken)</span>
+        </button>
+
+        <PhotoAttachment refId={gradeIdRef.current} refType="grade" />
+      </DialogShell>
       <Confetti trigger={confettiTrigger} />
     </>
   );
