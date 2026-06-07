@@ -1,10 +1,15 @@
-// Supabase Edge Function — liefert den Stundenplan eines Users als iCal-Feed.
+// Supabase Edge Function — liefert einen iCal-Feed eines Users.
 //
 // Aufruf:   GET https://<project>.supabase.co/functions/v1/calendar/<token>.ics
 //
-// Token → user_id-Lookup in calendar_tokens. Function läuft mit
-// Service-Role-Key, umgeht damit RLS und liest subjects/lessons/school_years
-// des Users. Bauplan für VEVENTs:
+// Token → (user_id, kind)-Lookup in calendar_tokens. Function läuft mit
+// Service-Role-Key, umgeht damit RLS. Die im Token gespeicherte Art (`kind`)
+// entscheidet den Inhalt:
+//   - 'schedule' → Stundenplan (subjects/lessons/school_years), siehe unten
+//   - 'exams'    → angekündigte Tests/Klausuren (pending grades) als
+//                  ganztägige VEVENTs, siehe buildExamICS
+//
+// Bauplan für die Stundenplan-VEVENTs:
 //   - aktives Schuljahr bestimmt Start- und Enddatum der Wiederholung
 //   - jede Lesson = ein wöchentlich wiederkehrendes VEVENT
 //   - weekParity 'A'/'B' → INTERVAL=2 + passender Start-Anker
@@ -46,6 +51,27 @@ interface SchoolYear {
   active: boolean;
   createdAt: number;
 }
+
+interface Grade {
+  id: string;
+  subjectId: string;
+  kind: string;
+  title?: string;
+  date: number; // ms timestamp
+  isPending?: boolean;
+  schoolYearId?: string;
+}
+
+/** Labels der eingebauten Noten-Arten (Spiegel von src/lib/grading.ts). */
+const GRADE_KIND_LABEL: Record<string, string> = {
+  schulaufgabe: 'Schulaufgabe',
+  stegreif: 'Stegreifaufgabe',
+  muendlich: 'Mündlich',
+  referat: 'Referat',
+  klausur: 'Klausur',
+  projekt: 'Projekt',
+  sonstige: 'Sonstige',
+};
 
 interface HolidayRange { start: string; end: string } // YYYY-MM-DD (inkl.)
 
@@ -100,6 +126,11 @@ function fmtLocal(y: number, m: number, d: number, hh: number, mm: number): stri
 /** UTC-Stempel YYYYMMDDTHHMMSSZ (für DTSTAMP, UID-frische, UNTIL). */
 function fmtUtc(d: Date): string {
   return `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}${pad2(d.getUTCSeconds())}Z`;
+}
+
+/** Reines Datum YYYYMMDD in lokaler Zeit (für ganztägige VEVENTs, VALUE=DATE). */
+function fmtDate(d: Date): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
 }
 
 /**
@@ -291,6 +322,83 @@ function buildICS(opts: {
   return joinLines(lines) + '\r\n';
 }
 
+/**
+ * Baut den Tests-/Klausuren-Feed: jede angekündigte Prüfung (pending Grade
+ * mit Datum) wird ein ganztägiges VEVENT am Prüfungstag. Keine Wiederholung,
+ * keine Ferien-Logik – das sind punktuelle Termine.
+ */
+function buildExamICS(opts: {
+  ownerName?: string;
+  ownerEmail?: string;
+  subjects: Subject[];
+  exams: Grade[];
+}): string {
+  const { ownerName, ownerEmail, subjects, exams } = opts;
+  const calName = ownerName
+    ? `Tests – ${ownerName}`
+    : ownerEmail
+    ? `Tests – ${ownerEmail}`
+    : 'Tests & Klausuren';
+  const dtstamp = fmtUtc(new Date());
+  const subjMap = new Map(subjects.map(s => [s.id, s]));
+
+  const header: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Notenapp//Tests//DE',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${escapeText(calName)}`,
+    'X-WR-TIMEZONE:Europe/Berlin',
+    'X-PUBLISHED-TTL:PT1H',
+  ];
+
+  const events: string[] = [];
+
+  for (const ex of exams) {
+    if (!ex.date) continue;
+    const subj = subjMap.get(ex.subjectId);
+    const start = new Date(ex.date);
+    if (isNaN(start.getTime())) continue;
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1); // DTEND ist bei VALUE=DATE exklusiv
+
+    const kindLabel = GRADE_KIND_LABEL[ex.kind] ?? ex.kind;
+    const subjName = subj?.name ?? 'Prüfung';
+    const summary = ex.title?.trim()
+      ? `${subjName}: ${ex.title.trim()}`
+      : `${kindLabel}: ${subjName}`;
+    const description = [
+      `Art: ${kindLabel}`,
+      subj?.teacher ? `Lehrer: ${subj.teacher}` : null,
+    ].filter(Boolean).join('\\n');
+
+    events.push(
+      'BEGIN:VEVENT',
+      `UID:exam-${ex.id}@notenapp`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART;VALUE=DATE:${fmtDate(start)}`,
+      `DTEND;VALUE=DATE:${fmtDate(end)}`,
+      `SUMMARY:${escapeText(summary)}`,
+      description ? `DESCRIPTION:${description}` : '',
+      subj?.color ? `COLOR:${subj.color}` : '',
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${escapeText(summary)}`,
+      'TRIGGER:-P1D',
+      'END:VALARM',
+      'END:VEVENT',
+    );
+  }
+
+  const lines = [
+    ...header,
+    ...events.filter(Boolean),
+    'END:VCALENDAR',
+  ];
+  return joinLines(lines) + '\r\n';
+}
+
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 const CORS_HEADERS = {
@@ -326,7 +434,7 @@ Deno.serve(async (req) => {
 
   const { data: tokenRow, error: tokenErr } = await supabase
     .from('calendar_tokens')
-    .select('user_id')
+    .select('user_id, kind')
     .eq('token', token)
     .maybeSingle();
 
@@ -338,6 +446,7 @@ Deno.serve(async (req) => {
   }
 
   const userId = tokenRow.user_id as string;
+  const feedKind = (tokenRow.kind as string) === 'exams' ? 'exams' : 'schedule';
 
   // last_accessed_at aktualisieren (fire & forget)
   supabase
@@ -346,16 +455,22 @@ Deno.serve(async (req) => {
     .eq('token', token)
     .then(() => {});
 
-  // Daten holen
-  const [subjectsRes, lessonsRes, schoolYearsRes, settingsRes] = await Promise.all([
+  // Gemeinsame Stammdaten: Fächer, Schuljahre, Settings. Lessons nur für den
+  // Stundenplan-Feed, Grades nur für den Tests-Feed – wir holen das jeweils
+  // Nötige, um keine unnötigen Reads zu machen.
+  const [subjectsRes, schoolYearsRes, settingsRes, lessonsRes, gradesRes] = await Promise.all([
     supabase.from('subjects').select('data').eq('user_id', userId),
-    supabase.from('lessons').select('data').eq('user_id', userId),
     supabase.from('school_years').select('data').eq('user_id', userId),
     supabase.from('user_settings').select('data').eq('user_id', userId).maybeSingle(),
+    feedKind === 'schedule'
+      ? supabase.from('lessons').select('data').eq('user_id', userId)
+      : Promise.resolve({ data: [] as { data: Lesson }[] }),
+    feedKind === 'exams'
+      ? supabase.from('grades').select('data').eq('user_id', userId)
+      : Promise.resolve({ data: [] as { data: Grade }[] }),
   ]);
 
   const subjectsAll = (subjectsRes.data ?? []).map((r: { data: Subject }) => r.data);
-  const lessonsAll = (lessonsRes.data ?? []).map((r: { data: Lesson }) => r.data);
   const schoolYears = (schoolYearsRes.data ?? []).map((r: { data: SchoolYear }) => r.data);
   const settings = (settingsRes.data?.data ?? null) as { name?: string; region?: { country: string; subdivision?: string } } | null;
 
@@ -363,35 +478,50 @@ Deno.serve(async (req) => {
   const subjects = activeYear
     ? subjectsAll.filter((s) => !s.schoolYearId || s.schoolYearId === activeYear.id)
     : subjectsAll;
-  const lessons = activeYear
-    ? lessonsAll.filter((l) => !l.schoolYearId || l.schoolYearId === activeYear.id)
-    : lessonsAll;
 
-  // Schulferien für die Region laden, um Stunden während der Ferien auszublenden.
-  let holidays: HolidayRange[] = [];
-  if (settings?.region && activeYear) {
-    const startYear = new Date(activeYear.startDate).getFullYear();
-    const endYear = (activeYear.endDate ? new Date(activeYear.endDate) : new Date(activeYear.startDate)).getFullYear() + (activeYear.endDate ? 0 : 1);
-    const years = new Set<number>();
-    for (let y = startYear; y <= endYear; y++) years.add(y);
-    const results = await Promise.all([...years].map(y => fetchHolidaysForYear(settings.region!, y)));
-    holidays = results.flat();
+  let body: string;
+  let fileName: string;
+
+  if (feedKind === 'exams') {
+    const gradesAll = (gradesRes.data ?? []).map((r: { data: Grade }) => r.data);
+    const exams = gradesAll
+      .filter((g) => g.isPending && !!g.date)
+      .filter((g) => !activeYear || !g.schoolYearId || g.schoolYearId === activeYear.id);
+    body = buildExamICS({ ownerName: settings?.name, subjects, exams });
+    fileName = 'tests';
+  } else {
+    const lessonsAll = (lessonsRes.data ?? []).map((r: { data: Lesson }) => r.data);
+    const lessons = activeYear
+      ? lessonsAll.filter((l) => !l.schoolYearId || l.schoolYearId === activeYear.id)
+      : lessonsAll;
+
+    // Schulferien für die Region laden, um Stunden während der Ferien auszublenden.
+    let holidays: HolidayRange[] = [];
+    if (settings?.region && activeYear) {
+      const startYear = new Date(activeYear.startDate).getFullYear();
+      const endYear = (activeYear.endDate ? new Date(activeYear.endDate) : new Date(activeYear.startDate)).getFullYear() + (activeYear.endDate ? 0 : 1);
+      const years = new Set<number>();
+      for (let y = startYear; y <= endYear; y++) years.add(y);
+      const results = await Promise.all([...years].map(y => fetchHolidaysForYear(settings.region!, y)));
+      holidays = results.flat();
+    }
+
+    body = buildICS({
+      ownerName: settings?.name,
+      schoolYear: activeYear,
+      subjects,
+      lessons,
+      holidays,
+    });
+    fileName = 'stundenplan';
   }
-
-  const body = buildICS({
-    ownerName: settings?.name,
-    schoolYear: activeYear,
-    subjects,
-    lessons,
-    holidays,
-  });
 
   return new Response(body, {
     status: 200,
     headers: {
       ...CORS_HEADERS,
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': 'inline; filename="stundenplan.ics"',
+      'Content-Disposition': `inline; filename="${fileName}.ics"`,
       'Cache-Control': 'public, max-age=300, s-maxage=300',
     },
   });

@@ -78,15 +78,20 @@ create table if not exists user_settings (
   updated_at timestamptz not null default now()
 );
 
--- Kalender-Abonnement: Tokens, mit denen Edge Function .ics-Feed ausliefert
+-- Kalender-Abonnement: Tokens, mit denen Edge Function .ics-Feed ausliefert.
+-- `kind` bestimmt, welcher Feed ausgeliefert wird ('schedule' = Stundenplan,
+-- 'exams' = Tests/Klausuren). Pro User und kind gibt es höchstens ein Token.
 create table if not exists calendar_tokens (
   token text primary key check (char_length(token) >= 24),
   user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null default 'schedule',
   label text,
   created_at timestamptz not null default now(),
   last_accessed_at timestamptz
 );
-create index if not exists calendar_tokens_user_idx on calendar_tokens(user_id);
+-- Migration für bestehende Installationen (Spalte nachrüsten):
+alter table calendar_tokens add column if not exists kind text not null default 'schedule';
+create index if not exists calendar_tokens_user_idx on calendar_tokens(user_id, kind);
 
 -- Shortcut-API: Tokens, mit denen Apple Shortcuts Aufgaben anlegen dürfen.
 create table if not exists shortcut_tokens (

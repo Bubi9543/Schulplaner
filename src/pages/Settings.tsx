@@ -974,9 +974,37 @@ function SyncCard() {
 
 /* ─── Kalender-Abonnement ─────────────────────────────────────────── */
 
-function CalendarSubscriptionCard() {
+type CalendarFeedKind = 'schedule' | 'exams';
+
+/** Texte & Dateiname je Feed-Art – hält die Karte selbst generisch. */
+const CAL_FEED_CFG: Record<CalendarFeedKind, {
+  fileName: string;
+  title: string;
+  intro: string;
+  loggedOut: string;
+  emptyWarning: string;
+}> = {
+  schedule: {
+    fileName: 'stundenplan',
+    title: 'Stundenplan abonnieren',
+    intro: 'Generiere einen Link, mit dem du deinen Stundenplan in Google Calendar, Apple Kalender oder Outlook abonnieren kannst. Der Kalender aktualisiert sich automatisch, wenn du deinen Stundenplan änderst.',
+    loggedOut: 'Logge dich ein, um deinen Stundenplan als Abo-Link für Google/Apple Kalender zu bekommen.',
+    emptyWarning: 'Dein Stundenplan ist leer – der Feed wird leer sein, bis du Stunden anlegst.',
+  },
+  exams: {
+    fileName: 'tests',
+    title: 'Tests abonnieren',
+    intro: 'Generiere einen Link, mit dem du deine angekündigten Tests & Klausuren in Google Calendar, Apple Kalender oder Outlook abonnieren kannst. Jede geplante Prüfung erscheint als ganztägiger Termin und aktualisiert sich automatisch.',
+    loggedOut: 'Logge dich ein, um deine Tests als Abo-Link für Google/Apple Kalender zu bekommen.',
+    emptyWarning: 'Du hast aktuell keine angekündigten Tests – der Feed bleibt leer, bis du eine Prüfung mit Datum planst.',
+  },
+};
+
+function CalendarSubscriptionCard({ kind = 'schedule' }: { kind?: CalendarFeedKind }) {
   const authUser = useStore(s => s.authUser);
   const lessons = useStore(s => s.lessons);
+  const grades = useStore(s => s.grades);
+  const cfg = CAL_FEED_CFG[kind];
   const [token, setToken] = useState<import('@/lib/calendarSubscription').CalendarToken | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -989,7 +1017,7 @@ function CalendarSubscriptionCard() {
     setLoading(true);
     import('@/lib/calendarSubscription').then(async (mod) => {
       try {
-        const t = await mod.getActiveCalendarToken();
+        const t = await mod.getActiveCalendarToken(kind);
         if (!cancelled) setToken(t);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -998,13 +1026,13 @@ function CalendarSubscriptionCard() {
       }
     });
     return () => { cancelled = true; };
-  }, [authUser]);
+  }, [authUser, kind]);
 
   async function generate() {
     setBusy(true); setError(null);
     try {
       const mod = await import('@/lib/calendarSubscription');
-      const t = await mod.createCalendarToken();
+      const t = await mod.createCalendarToken(kind);
       setToken(t);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1018,7 +1046,7 @@ function CalendarSubscriptionCard() {
     setBusy(true); setError(null);
     try {
       const mod = await import('@/lib/calendarSubscription');
-      await mod.revokeCalendarTokens();
+      await mod.revokeCalendarTokens(kind);
       setToken(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1027,10 +1055,10 @@ function CalendarSubscriptionCard() {
     }
   }
 
-  async function copy(value: string, kind: 'url' | 'webcal') {
+  async function copy(value: string, which: 'url' | 'webcal') {
     try {
       await navigator.clipboard.writeText(value);
-      setCopied(kind);
+      setCopied(which);
       setTimeout(() => setCopied(null), 1500);
     } catch { /* ignore */ }
   }
@@ -1042,36 +1070,35 @@ function CalendarSubscriptionCard() {
   if (!authUser) {
     return (
       <Card>
-        <h3 className="h3 mb-2 flex items-center gap-2"><Calendar className="size-5 text-theme" />Kalender abonnieren</h3>
-        <p className="text-sm text-ink-500">
-          Logge dich ein, um deinen Stundenplan als Abo-Link für Google/Apple Kalender zu bekommen.
-        </p>
+        <h3 className="h3 mb-2 flex items-center gap-2"><Calendar className="size-5 text-theme" />{cfg.title}</h3>
+        <p className="text-sm text-ink-500">{cfg.loggedOut}</p>
       </Card>
     );
   }
+
+  const isEmpty = kind === 'exams'
+    ? grades.filter(g => g.isPending && !!g.date).length === 0
+    : lessons.length === 0;
 
   return (
     <Card>
       <h3 className="h3 mb-1 flex items-center gap-2">
         <Calendar className="size-5 text-theme" />
-        Kalender abonnieren
+        {cfg.title}
       </h3>
-      <p className="subtle mb-3">
-        Generiere einen Link, mit dem du deinen Stundenplan in Google Calendar, Apple Kalender oder Outlook
-        abonnieren kannst. Der Kalender aktualisiert sich automatisch, wenn du deinen Stundenplan änderst.
-      </p>
+      <p className="subtle mb-3">{cfg.intro}</p>
 
       {loading ? (
         <div className="rounded-2xl bg-white/60 p-6 grid place-items-center">
           <Loader2 className="size-5 text-theme animate-spin" />
         </div>
       ) : token ? (
-        <CalendarTokenView token={token} onRevoke={revoke} onRegenerate={generate} busy={busy} copied={copied} onCopy={copy} />
+        <CalendarTokenView token={token} fileName={cfg.fileName} onRevoke={revoke} onRegenerate={generate} busy={busy} copied={copied} onCopy={copy} />
       ) : (
         <div className="space-y-3">
-          {lessons.length === 0 && (
+          {isEmpty && (
             <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
-              Dein Stundenplan ist leer – der Feed wird leer sein, bis du Stunden anlegst.
+              {cfg.emptyWarning}
             </div>
           )}
           <button onClick={generate} disabled={busy} className="btn-primary w-full">
@@ -1092,6 +1119,7 @@ function CalendarSubscriptionCard() {
 
 function CalendarTokenView({
   token,
+  fileName,
   onRevoke,
   onRegenerate,
   busy,
@@ -1099,6 +1127,7 @@ function CalendarTokenView({
   onCopy,
 }: {
   token: import('@/lib/calendarSubscription').CalendarToken;
+  fileName: string;
   onRevoke: () => void;
   onRegenerate: () => void;
   busy: boolean;
@@ -1112,13 +1141,13 @@ function CalendarTokenView({
     import('@/lib/calendarSubscription').then((mod) => {
       if (cancelled) return;
       setUrls({
-        https: mod.buildCalendarFeedUrl(token.token),
-        webcal: mod.buildCalendarWebcalUrl(token.token),
-        google: mod.buildGoogleCalendarAddUrl(token.token),
+        https: mod.buildCalendarFeedUrl(token.token, fileName),
+        webcal: mod.buildCalendarWebcalUrl(token.token, fileName),
+        google: mod.buildGoogleCalendarAddUrl(token.token, fileName),
       });
     });
     return () => { cancelled = true; };
-  }, [token.token]);
+  }, [token.token, fileName]);
 
   if (!urls) return <div className="rounded-2xl bg-white/60 p-6 grid place-items-center"><Loader2 className="size-5 text-theme animate-spin" /></div>;
 
@@ -1802,7 +1831,8 @@ function DataSection() {
   return (
     <div className="space-y-4">
       <SyncCard />
-      <CalendarSubscriptionCard />
+      <CalendarSubscriptionCard kind="schedule" />
+      <CalendarSubscriptionCard kind="exams" />
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Database className="size-5 text-theme" />Sicherung & Import</h3>
 
