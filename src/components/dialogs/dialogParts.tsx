@@ -10,10 +10,12 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { X, Pencil, Trash2, Calendar, Repeat, type LucideIcon } from 'lucide-react';
-import type { Lesson, Subject } from '@/types';
+import type { Lesson, Subject, SchoolHoliday } from '@/types';
 import type { SystemMeta } from '@/lib/grading';
 import { gradeColor } from '@/lib/grading';
 import { getCurrentLesson } from '@/lib/currentLesson';
+import { isHoliday } from '@/lib/holidays';
+import { useUpcomingHolidays } from '@/lib/useHolidays';
 import { SubjectIcon } from '@/components/SubjectIcon';
 
 /* ── kleine Helfer ─────────────────────────────────────────────────────── */
@@ -46,15 +48,23 @@ function hexA(hex: string, a: number): string {
  * Nächste `count` Termine eines Fachs laut Stundenplan, ab morgen.
  * Nutzt die wochentagbasierten Lessons der App (mehrere Stunden pro Tag
  * werden zu einem Tagestermin zusammengefasst).
+ *
+ * Ferientage werden übersprungen – an einem Ferientag findet kein Unterricht
+ * statt, also ist das nicht die „nächste Stunde". Ohne geladene Ferien
+ * (leeres Array) verhält sich die Funktion wie zuvor.
  */
-export function nextLessonsForSubject(lessons: Lesson[], subjectId: string, count = 2): Date[] {
+export function nextLessonsForSubject(lessons: Lesson[], subjectId: string, count = 2, holidays: SchoolHoliday[] = []): Date[] {
   const weekdays = new Set(lessons.filter(l => l.subjectId === subjectId).map(l => l.weekday));
   if (!weekdays.size) return [];
   const out: Date[] = [];
   const d = new Date(); d.setHours(0, 0, 0, 0);
-  for (let i = 1; i <= 21 && out.length < count; i++) {
+  // Bis zu ~1 Jahr vorausschauen, damit auch lange Ferien (z. B. Sommer)
+  // übersprungen werden können, ohne dass die Liste leer bleibt.
+  for (let i = 1; i <= 400 && out.length < count; i++) {
     d.setDate(d.getDate() + 1);
-    if (weekdays.has(d.getDay() as Lesson['weekday'])) out.push(new Date(d));
+    if (!weekdays.has(d.getDay() as Lesson['weekday'])) continue;
+    if (holidays.length && isHoliday(d, holidays)) continue;
+    out.push(new Date(d));
   }
   return out;
 }
@@ -285,7 +295,8 @@ export function SubjectChips({ subjects, value, onChange, lessons, now, allowNon
 export function LessonDateChips({ subjectId, lessons, value, onChange }: {
   subjectId: string; lessons: Lesson[]; value: string; onChange: (iso: string) => void;
 }) {
-  const lessonDates = subjectId ? nextLessonsForSubject(lessons, subjectId, 2) : [];
+  const holidays = useUpcomingHolidays();
+  const lessonDates = subjectId ? nextLessonsForSubject(lessons, subjectId, 2, holidays) : [];
   const list: Array<{ label: string; d: Date; sub?: string; lesson?: boolean }> = [
     { label: 'Heute', d: dayFromToday(0) },
     { label: 'Morgen', d: dayFromToday(1) },
