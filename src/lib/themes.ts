@@ -225,24 +225,93 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
 
 export const THEME_LIST: ThemePalette[] = Object.values(THEMES);
 
-export const ROUTE_THEME_MAP: Record<string, ThemeId> = {
-  '/': 'ocean',
-  '/aufgaben': 'crimson',
-  '/kalender': 'sunset',
-  '/stundenplan': 'indigo',
-  '/noten': 'forest',
-  '/rechner': 'sunshine',
-  '/social': 'indigo',
-  '/anstupsen': 'rose',
-  '/einstellungen': 'rose',
+/* ─────────────────────────────────────────────────────────────────────────
+ * "Bunt" (rainbow): jede Seite bekommt eine eigene Farbe.
+ *
+ * Statt die Seiten auf nur 8 feste Paletten zu mappen (wodurch sich Farben
+ * zwangsläufig wiederholen – früher waren z. B. mehrere Seiten gleich blau),
+ * leiten wir pro Route einen eigenen Farbton (Hue) ab und bauen daraus eine
+ * komplette Palette. Bekannte Seiten haben hand­gewählte, weit auseinander
+ * liegende Hues; unbekannte Routen bekommen einen aus dem Pfad gehashten Hue.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+function hslToHex(h: number, s: number, l: number): string {
+  const sn = s / 100;
+  const ln = l / 100;
+  const c = (1 - Math.abs(2 * ln - 1)) * sn;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = ln - c / 2;
+  let r = 0, g = 0, b = 0;
+  const hh = ((h % 360) + 360) % 360;
+  if (hh < 60) { r = c; g = x; }
+  else if (hh < 120) { r = x; g = c; }
+  else if (hh < 180) { g = c; b = x; }
+  else if (hh < 240) { g = x; b = c; }
+  else if (hh < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+/** Baut eine vollständige, kräftige Palette rund um einen Farbton. */
+function paletteFromHue(hue: number): ThemePalette {
+  return palette({
+    id: 'rainbow',
+    name: 'Bunt',
+    description: 'Pro Seite eine eigene Farbe',
+    primary: hslToHex(hue, 72, 58),
+    primarySoft: hslToHex(hue, 78, 93),
+    primaryDeep: hslToHex(hue, 68, 42),
+    secondary: hslToHex(hue + 24, 74, 62),
+    accent: hslToHex(hue, 70, 50),
+    bgStart: hslToHex(hue, 60, 98),
+    bgEnd: hslToHex(hue + 28, 56, 97),
+    aurora1: hslToHex(hue, 72, 60),
+    aurora2: hslToHex(hue + 30, 70, 62),
+    aurora3: hslToHex(hue - 30, 68, 64),
+    gradientFrom: hslToHex(hue, 68, 46),
+    gradientVia: hslToHex(hue, 72, 58),
+    gradientTo: hslToHex(hue + 24, 74, 64),
+    ring: hslToHex(hue, 78, 85),
+  });
+}
+
+/** Hand­gewählte, weit auseinander liegende Farbtöne pro bekannter Seite. */
+const ROUTE_HUE_MAP: Record<string, number> = {
+  '/': 205,            // Dashboard – Blau
+  '/aufgaben': 352,    // Rot
+  '/kalender': 28,     // Orange
+  '/stundenplan': 262, // Indigo/Violett
+  '/noten': 150,       // Grün
+  '/fokus': 322,       // Pink/Magenta
+  '/karteikarten': 48, // Gelb/Bernstein
+  '/rechner': 178,     // Türkis
+  '/social': 288,      // Lila
+  '/abitur': 128,      // Smaragd
+  '/anstupsen': 332,   // Rosa
+  '/einstellungen': 92, // Limette
 };
 
-export function themeForRoute(pathname: string): ThemeId {
-  if (ROUTE_THEME_MAP[pathname]) return ROUTE_THEME_MAP[pathname];
-  for (const prefix of Object.keys(ROUTE_THEME_MAP)) {
-    if (prefix !== '/' && pathname.startsWith(prefix)) return ROUTE_THEME_MAP[prefix];
+/** Deterministischer Hash eines Strings → 0..359 (für unbekannte Routen). */
+function hashHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return ((h % 360) + 360) % 360;
+}
+
+function hueForRoute(pathname: string): number {
+  if (pathname in ROUTE_HUE_MAP) return ROUTE_HUE_MAP[pathname];
+  for (const prefix of Object.keys(ROUTE_HUE_MAP)) {
+    if (prefix !== '/' && pathname.startsWith(prefix)) return ROUTE_HUE_MAP[prefix];
   }
-  return 'indigo';
+  // Unbekannte Route: aus dem ersten Pfadsegment einen stabilen Farbton ableiten.
+  const seg = pathname.split('/').filter(Boolean)[0] ?? pathname;
+  return hashHue(seg);
+}
+
+/** Volle "Bunt"-Palette für die aktuelle Route. */
+export function rainbowPaletteForRoute(pathname: string): ThemePalette {
+  return paletteFromHue(hueForRoute(pathname));
 }
 
 const LEGACY_MAP: Record<string, ThemeId> = {
@@ -265,10 +334,8 @@ export function resolveThemeId(input: string | undefined | null): ThemeId {
 }
 
 export function applyTheme(id: ThemeId, pathname?: string) {
-  const effectiveId: ThemeId = id === 'rainbow'
-    ? themeForRoute(pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/'))
-    : id;
-  const t = THEMES[effectiveId];
+  const path = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/');
+  const t: ThemePalette = id === 'rainbow' ? rainbowPaletteForRoute(path) : THEMES[id];
   const root = document.documentElement;
   root.style.setProperty('--theme-primary', t.primary);
   root.style.setProperty('--theme-primary-rgb', t.primaryRgb);
@@ -290,5 +357,5 @@ export function applyTheme(id: ThemeId, pathname?: string) {
   root.style.setProperty('--theme-gradient-to', t.gradientTo);
   root.style.setProperty('--theme-ring', t.ring);
   root.dataset.theme = id;
-  root.dataset.activeTheme = effectiveId;
+  root.dataset.activeTheme = t.id;
 }
