@@ -228,7 +228,7 @@ function AppearanceSection() {
             const active = settings.colorTheme === t.id;
             return (
               <button key={t.id} onClick={() => setSettings({ colorTheme: t.id })}
-                className={`group relative rounded-2xl overflow-hidden transition-all text-left ${active ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
+                className={`group relative h-28 rounded-2xl overflow-hidden transition-all text-left ${active ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
                 style={{
                   '--tw-ring-color': t.primary,
                   background: `linear-gradient(160deg, ${t.gradientFrom}, ${t.gradientVia} 55%, ${t.gradientTo})`,
@@ -237,15 +237,15 @@ function AppearanceSection() {
                 <div className="absolute inset-0" style={{
                   background: `radial-gradient(circle at 25% 20%, rgb(${t.aurora1Rgb} / 0.5) 0, transparent 50%), radial-gradient(circle at 80% 85%, rgb(${t.aurora2Rgb} / 0.45) 0, transparent 50%)`,
                 }} />
+                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 30%, transparent 60%)' }} />
                 {active && (
                   <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md z-10">
                     <Check className="size-3.5" style={{ color: t.primary }} />
                   </div>
                 )}
-                <div className="relative h-16" />
-                <div className="relative px-3 py-2.5" style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.38) 100%)' }}>
+                <div className="absolute inset-x-0 bottom-0 px-3 py-2.5">
                   <div className="font-display font-bold text-sm text-white drop-shadow-sm">{t.name}</div>
-                  <div className="text-[11px] text-white/75">{t.description}</div>
+                  <div className="text-[11px] text-white/80">{t.description}</div>
                 </div>
               </button>
             );
@@ -253,7 +253,7 @@ function AppearanceSection() {
 
           {/* Eigene Farbe – Farbton frei wählbar */}
           <button onClick={() => setSettings({ colorTheme: 'custom', customHue })}
-            className={`group relative rounded-2xl overflow-hidden transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
+            className={`group relative h-28 rounded-2xl overflow-hidden transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
             style={{
               '--tw-ring-color': customPal.primary,
               background: `linear-gradient(160deg, ${customPal.gradientFrom}, ${customPal.gradientVia} 55%, ${customPal.gradientTo})`,
@@ -262,15 +262,15 @@ function AppearanceSection() {
             <div className="absolute inset-0" style={{
               background: `radial-gradient(circle at 25% 20%, rgb(${customPal.aurora1Rgb} / 0.5) 0, transparent 50%), radial-gradient(circle at 80% 85%, rgb(${customPal.aurora2Rgb} / 0.45) 0, transparent 50%)`,
             }} />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 30%, transparent 60%)' }} />
             {customActive && (
               <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md z-10">
                 <Check className="size-3.5" style={{ color: customPal.primary }} />
               </div>
             )}
-            <div className="relative h-16" />
-            <div className="relative px-3 py-2.5" style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.38) 100%)' }}>
+            <div className="absolute inset-x-0 bottom-0 px-3 py-2.5">
               <div className="font-display font-bold text-sm text-white drop-shadow-sm">Eigene Farbe</div>
-              <div className="text-[11px] text-white/75">Farbton frei wählen</div>
+              <div className="text-[11px] text-white/80">Farbton frei wählen</div>
             </div>
           </button>
         </div>
