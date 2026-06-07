@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Copy, Check, RefreshCw, Share2, Trash2, Loader2, AlertCircle, KeyRound, CalendarDays, BookOpen } from 'lucide-react';
+import { X, Copy, Check, RefreshCw, Share2, Trash2, Loader2, AlertCircle, KeyRound, CalendarDays, BookOpen, Users, Download } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
+import { Avatar } from '@/components/Avatar';
+import { Toggle } from '@/components/dialogs/dialogParts';
 import { supabase } from '@/lib/supabase';
+import type { Friend } from '@/lib/friends';
 import {
   createOrRefreshShare,
   fetchScheduleShare,
@@ -104,6 +107,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 function ShareTab() {
   const authUser = useStore(s => s.authUser);
   const settings = useStore(s => s.settings);
+  const setShareScheduleWithFriends = useStore(s => s.setShareScheduleWithFriends);
   const subjects = useStore(s => s.subjects);
   const lessons = useStore(s => s.lessons);
   const schoolYears = useStore(s => s.schoolYears);
@@ -196,6 +200,27 @@ function ShareTab() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl bg-white/60 border border-white/70 p-3 flex items-center justify-between gap-3">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <div className="size-9 rounded-xl bg-theme-soft/50 grid place-items-center flex-shrink-0">
+            <Users className="size-[18px] text-theme" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-ink-800">Für Freunde sichtbar</div>
+            <div className="text-xs text-ink-500 leading-snug mt-0.5">
+              Deine Freunde können deinen aktuellen Stundenplan direkt laden – ganz ohne Code.
+            </div>
+          </div>
+        </div>
+        <Toggle on={!!settings?.shareScheduleWithFriends} onChange={v => void setShareScheduleWithFriends(v)} />
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <div className="h-px flex-1 bg-ink-200/60" />
+        <span className="text-[11px] uppercase tracking-wider font-semibold text-ink-400">Oder per Code</span>
+        <div className="h-px flex-1 bg-ink-200/60" />
+      </div>
+
       <p className="text-sm text-ink-600 leading-relaxed">
         Generiere einen 4-stelligen Code, den deine Freunde in ihrer App eingeben können,
         um deinen Stundenplan zu übernehmen. Noten und Aufgaben werden <strong>nicht</strong> geteilt.
@@ -285,14 +310,38 @@ function ImportTab({ onDone }: { onDone: () => void }) {
   const importSharedSchedule = useStore(s => s.importSharedSchedule);
   const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const lessons = useStore(s => s.lessons);
+  const friends = useStore(s => s.friends);
+  const getFriendSchedule = useStore(s => s.getFriendSchedule);
+  const loadFriends = useStore(s => s.loadFriends);
 
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loadingFetch, setLoadingFetch] = useState(false);
+  const [friendLoadingId, setFriendLoadingId] = useState<string | null>(null);
   const [preview, setPreview] = useState<ShareInfo | null>(null);
   const [mode, setMode] = useState<'replace' | 'append'>('replace');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ subjectsAdded: number; subjectsMatched: number; lessonsAdded: number; lessonsReplaced: number } | null>(null);
+
+  useEffect(() => { if (authUser) void loadFriends(); }, [authUser, loadFriends]);
+
+  async function loadFriend(friend: Friend) {
+    setError(null);
+    setResult(null);
+    setFriendLoadingId(friend.userId);
+    try {
+      const p = await getFriendSchedule(friend.userId);
+      if (!p || p.subjects.length === 0) {
+        setError(`${friend.displayName} teilt aktuell keinen Stundenplan.`);
+        return;
+      }
+      setPreview({ code: '', payload: p, ownerUserId: friend.userId, expiresAt: Number.MAX_SAFE_INTEGER });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFriendLoadingId(null);
+    }
+  }
 
   async function lookup() {
     setError(null);
@@ -431,14 +480,52 @@ function ImportTab({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-ink-600 leading-relaxed">
-        Frag deinen Freund nach dem 4-stelligen Code und gib ihn hier ein.
-      </p>
-      <CodeInput value={code} onChange={setCode} onSubmit={lookup} disabled={loadingFetch} />
-      <button onClick={lookup} disabled={loadingFetch || normalizeCode(code).length !== 4} className="btn-primary w-full">
-        {loadingFetch ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen</>}
-      </button>
+    <div className="space-y-5">
+      {friends.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500 flex items-center gap-1.5">
+            <Users className="size-3.5" />Von deinen Freunden
+          </div>
+          <ul className="space-y-1.5">
+            {friends.map(f => (
+              <li key={f.userId}>
+                <button
+                  onClick={() => loadFriend(f)}
+                  disabled={!!friendLoadingId}
+                  className="w-full flex items-center gap-3 rounded-2xl bg-white/60 border border-white/70 p-2.5 text-left transition hover:bg-white/80 disabled:opacity-60"
+                >
+                  <Avatar name={f.displayName} avatarUrl={f.avatarUrl} className="size-9" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-ink-800 truncate">{f.displayName}</div>
+                    <div className="text-[11px] text-ink-400">Stundenplan laden</div>
+                  </div>
+                  {friendLoadingId === f.userId
+                    ? <Loader2 className="size-4 text-theme animate-spin flex-shrink-0" />
+                    : <Download className="size-4 text-ink-400 flex-shrink-0" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-px flex-1 bg-ink-200/60" />
+          <span className="text-[11px] uppercase tracking-wider font-semibold text-ink-400">
+            {friends.length > 0 ? 'Oder per Code' : 'Per Code'}
+          </span>
+          <div className="h-px flex-1 bg-ink-200/60" />
+        </div>
+        <p className="text-sm text-ink-600 leading-relaxed">
+          Frag deinen Freund nach dem 4-stelligen Code und gib ihn hier ein.
+        </p>
+        <CodeInput value={code} onChange={setCode} onSubmit={lookup} disabled={loadingFetch} />
+        <button onClick={lookup} disabled={loadingFetch || normalizeCode(code).length !== 4} className="btn-primary w-full">
+          {loadingFetch ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen</>}
+        </button>
+      </div>
+
       {error && (
         <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 flex items-start gap-2">
           <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />
