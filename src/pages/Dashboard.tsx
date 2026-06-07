@@ -660,7 +660,12 @@ function SubjectLeaderboardWidget() {
           <SubjectIcon subject={item.subject} className="size-3.5" />
         </div>
         <div className="flex-1 min-w-0 text-sm font-medium text-ink-800 truncate">{item.subject.name}</div>
-        <GradeBadge value={item.avg} system={item.subject.system} size="sm" />
+        <div
+          className="px-2 py-1 rounded-xl text-sm font-display font-extrabold text-white shadow-sm flex-shrink-0 tabular-nums"
+          style={{ background: gradeColor(item.avg, item.subject.system, config) }}
+        >
+          {formatAverage(item.avg, item.subject.system, digits)}
+        </div>
       </Link>
     );
   }
@@ -687,9 +692,6 @@ function SubjectLeaderboardWidget() {
                 <div className="space-y-0.5">{ranked.flop.map((x, i) => row(x, i, 'flop'))}</div>
               </div>
             )}
-            <div className="text-[10px] text-ink-400 text-center pt-1">
-              Schnitt mit {digits} Nachkommastellen · Klick öffnet Fach-Detail
-            </div>
           </div>
         )}
       </div>
