@@ -8,9 +8,11 @@ interface Props {
   children: ReactNode;
   /** Optional, beibehalten für Backwards-Compat - wird ignoriert. Theme bestimmt die Farbe. */
   accent?: string;
+  /** Versteckt den Standard-Seitenkopf (Titel/Untertitel/Actions) – z. B. wenn die Seite ein eigenes Headerband rendert. */
+  hideHeader?: boolean;
 }
 
-export function PageShell({ title, subtitle, actions, children }: Props) {
+export function PageShell({ title, subtitle, actions, children, hideHeader }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -21,14 +23,16 @@ export function PageShell({ title, subtitle, actions, children }: Props) {
     >
       <div className="pointer-events-none fixed inset-0 -z-10 theme-aurora opacity-90 transition-opacity duration-500" />
       <div className="pointer-events-none fixed inset-0 -z-10 page-veil" />
-      <div className="px-5 md:px-8 pt-6 pb-2 flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="h1 text-balance">{title}</h1>
-          {subtitle && <p className="subtle mt-1">{subtitle}</p>}
+      {!hideHeader && (
+        <div className="px-5 md:px-8 pt-6 pb-2 flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="h1 text-balance">{title}</h1>
+            {subtitle && <p className="subtle mt-1">{subtitle}</p>}
+          </div>
+          {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
         </div>
-        {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
-      </div>
-      <div className="px-5 md:px-8 pb-32 pt-4">{children}</div>
+      )}
+      <div className={`px-5 md:px-8 pb-32 ${hideHeader ? 'pt-6' : 'pt-4'}`}>{children}</div>
     </motion.div>
   );
 }
