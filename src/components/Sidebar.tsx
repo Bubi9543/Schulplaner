@@ -6,7 +6,7 @@ import { useStore } from '@/store/useStore';
 import { Avatar } from '@/components/Avatar';
 import { oberstufeTermsFor, oberstufeTermLabelFor } from '@/types';
 
-interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; }
+export interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; }
 
 const NAV: NavItem[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', short: 'Start' },
@@ -23,14 +23,47 @@ const NAV: NavItem[] = [
 
 const ABITUR_ITEM: NavItem = { to: '/abitur', icon: Trophy, label: 'Abitur', short: 'Abi' };
 
-/** NAV-Liste, in der Oberstufe um den Abitur-Eintrag (direkt nach Noten) erweitert. */
-function useNavItems(): NavItem[] {
+/** Diese Einträge lassen sich nicht ausblenden (sonst kommt man nicht mehr zu den Einstellungen). */
+export const LOCKED_NAV_ROUTES = ['/einstellungen'];
+
+/** Basis-NAV-Liste, in der Oberstufe um den Abitur-Eintrag (direkt nach Noten) erweitert. */
+export function useBaseNavItems(): NavItem[] {
   const schoolYears = useStore(s => s.schoolYears);
   const activeId = useStore(s => s.activeSchoolYearId);
   const isOberstufe = !!schoolYears.find(y => y.id === activeId)?.oberstufe;
   if (!isOberstufe) return NAV;
   const i = NAV.findIndex(n => n.to === '/noten');
   return [...NAV.slice(0, i + 1), ABITUR_ITEM, ...NAV.slice(i + 1)];
+}
+
+/**
+ * Wendet die vom User gesetzte Reihenfolge (`navOrder`) und das Ausblenden
+ * (`navHidden`) auf die Basis-Liste an. Unbekannte Routen behalten ihre
+ * Basis-Reihenfolge und werden hinten angehängt; gesperrte Routen bleiben
+ * immer sichtbar.
+ */
+export function applyNavPrefs(base: NavItem[], order?: string[], hidden?: string[]): NavItem[] {
+  let items = base;
+  if (order && order.length) {
+    const rank = new Map(order.map((to, i) => [to, i]));
+    items = [...base].sort((a, b) => {
+      const ra = rank.has(a.to) ? rank.get(a.to)! : Infinity;
+      const rb = rank.has(b.to) ? rank.get(b.to)! : Infinity;
+      return ra !== rb ? ra - rb : base.indexOf(a) - base.indexOf(b);
+    });
+  }
+  if (hidden && hidden.length) {
+    items = items.filter(it => LOCKED_NAV_ROUTES.includes(it.to) || !hidden.includes(it.to));
+  }
+  return items;
+}
+
+/** NAV-Liste inkl. User-Präferenzen (Reihenfolge + Ausblenden). */
+function useNavItems(): NavItem[] {
+  const base = useBaseNavItems();
+  const order = useStore(s => s.settings?.navOrder);
+  const hidden = useStore(s => s.settings?.navHidden);
+  return applyNavPrefs(base, order, hidden);
 }
 
 const MOBILE_PRIMARY_ROUTES = ['/', '/aufgaben', '/stundenplan', '/noten'];

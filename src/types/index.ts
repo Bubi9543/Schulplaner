@@ -443,6 +443,14 @@ export interface AppSettings {
   notifications: NotificationSettings;
   /** Region für Schulferien-Lookup (z. B. DE-BY, DE-NW, AT-9). */
   region?: RegionCode;
+  /**
+   * Reihenfolge der Sidebar-/Navigations-Einträge als Liste von Routen-Pfaden
+   * (z. B. ['/', '/noten', …]). Unbekannte/neue Routen werden hinten angehängt.
+   * Fehlt das Feld, gilt die Standard-Reihenfolge.
+   */
+  navOrder?: string[];
+  /** Ausgeblendete Navigations-Einträge (Routen-Pfade). Einstellungen bleiben immer sichtbar. */
+  navHidden?: string[];
 }
 
 /** ISO 3166-2 Subdivision Code; null = nur Country, kein Bundesland (z. B. nur "DE"). */

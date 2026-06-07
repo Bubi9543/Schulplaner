@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy, NotebookPen, ClipboardCheck, Clock, Lightbulb, type LucideIcon } from 'lucide-react';
+import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy, NotebookPen, ClipboardCheck, Clock, Lightbulb, Eye, EyeOff, GripVertical, RotateCcw, PanelLeft, Lock, type LucideIcon } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -20,15 +20,17 @@ import { buildExport, downloadExport, importData, getExampleFile } from '@/lib/p
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, BUILTIN_KIND_LABEL } from '@/lib/grading';
 import { BUILTIN_GRADE_KINDS } from '@/types';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
+import { useBaseNavItems, applyNavPrefs, LOCKED_NAV_ROUTES, type NavItem } from '@/components/Sidebar';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
 import { THEME_LIST } from '@/lib/themes';
 
-type SectionId = 'profile' | 'friends' | 'appearance' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
+type SectionId = 'profile' | 'friends' | 'appearance' | 'navigation' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'profile',       label: 'Profil',            icon: User },
   { id: 'friends',       label: 'Freunde',           icon: Users },
   { id: 'appearance',    label: 'Erscheinung',       icon: Palette },
+  { id: 'navigation',    label: 'Ansichten & Menü',  icon: PanelLeft },
   { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
   { id: 'grading',       label: 'Noten & Aufgaben',  icon: GraduationCap },
   { id: 'subjects',      label: 'Fächer',            icon: BookOpen },
@@ -40,7 +42,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: React.ComponentType<
   { id: 'about',         label: 'Über',              icon: Info },
 ];
 
-const VALID_SECTIONS: SectionId[] = ['profile', 'friends', 'appearance', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
+const VALID_SECTIONS: SectionId[] = ['profile', 'friends', 'appearance', 'navigation', 'dashboard', 'grading', 'subjects', 'schoolyears', 'notifications', 'shortcut', 'feedback', 'data', 'about'];
 
 export function SettingsPage() {
   const settings = useStore(s => s.settings);
@@ -96,6 +98,7 @@ export function SettingsPage() {
               {section === 'profile' && <ProfileSection />}
               {section === 'friends' && <FriendsManager />}
               {section === 'appearance' && <AppearanceSection />}
+              {section === 'navigation' && <NavigationSection />}
               {section === 'dashboard' && <DashboardSection />}
               {section === 'grading' && <GradingSection />}
               {section === 'subjects' && <SubjectsSection />}
@@ -280,6 +283,124 @@ function AppearanceSection() {
           <Toggle checked={settings.confettiOnGood} onChange={v => setSettings({ confettiOnGood: v })} />
         </Row>
         <div className="text-xs text-ink-500 mt-2 flex gap-1.5"><Lightbulb className="size-3.5 shrink-0 mt-px" /><span>Wenn dein Gerät „Bewegung reduzieren" aktiviert hat, schalten wir automatisch auf Reduziert.</span></div>
+      </Card>
+    </div>
+  );
+}
+
+function NavigationSection() {
+  const settings = useStore(s => s.settings)!;
+  const setSettings = useStore(s => s.setSettings);
+  const base = useBaseNavItems();
+  // Alle Einträge in der aktuellen Reihenfolge – inkl. ausgeblendete, damit
+  // man sie hier wieder einschalten kann.
+  const items = applyNavPrefs(base, settings.navOrder, undefined);
+  const hidden = settings.navHidden ?? [];
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  const isDefault = !settings.navOrder?.length && !hidden.length;
+
+  function persistOrder(next: NavItem[]) {
+    setSettings({ navOrder: next.map(i => i.to) });
+  }
+  function move(from: number, to: number) {
+    if (to < 0 || to >= items.length || from === to) return;
+    const next = [...items];
+    const [it] = next.splice(from, 1);
+    next.splice(to, 0, it);
+    persistOrder(next);
+  }
+  function toggleHidden(to: string) {
+    const set = new Set(hidden);
+    if (set.has(to)) set.delete(to); else set.add(to);
+    setSettings({ navHidden: [...set] });
+  }
+  function reset() {
+    setSettings({ navOrder: undefined, navHidden: undefined });
+  }
+  function onDrop(target: number) {
+    if (dragIdx !== null) move(dragIdx, target);
+    setDragIdx(null);
+    setOverIdx(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="font-display font-bold text-ink-900">Ansichten & Menü</h3>
+            <p className="text-xs text-ink-500 max-w-md mt-0.5">
+              Ziehe Einträge zum Sortieren oder blende aus, was du nicht brauchst. Die Reihenfolge gilt für die Seitenleiste (Desktop) und die Tab-Leiste (Handy).
+            </p>
+          </div>
+          {!isDefault && (
+            <button onClick={reset} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-ink-600 hover:bg-white/70 transition">
+              <RotateCcw className="size-3.5" /> Zurücksetzen
+            </button>
+          )}
+        </div>
+
+        <ul className="flex flex-col gap-1.5">
+          {items.map((item, i) => {
+            const Icon = item.icon;
+            const isHidden = hidden.includes(item.to);
+            const locked = LOCKED_NAV_ROUTES.includes(item.to);
+            const isOver = overIdx === i && dragIdx !== null && dragIdx !== i;
+            return (
+              <li
+                key={item.to}
+                draggable
+                onDragStart={() => setDragIdx(i)}
+                onDragEnter={() => setOverIdx(i)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => onDrop(i)}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                className={`flex items-center gap-2 rounded-2xl border px-2.5 py-2 transition select-none
+                  ${dragIdx === i ? 'opacity-50' : ''}
+                  ${isOver ? 'border-theme-deep/60 bg-white/70' : 'border-white/50 bg-white/40'}
+                  ${isHidden ? 'opacity-60' : ''}`}
+              >
+                <span className="cursor-grab active:cursor-grabbing text-ink-400 touch-none" title="Zum Sortieren ziehen">
+                  <GripVertical className="size-4" />
+                </span>
+                <span className={`grid place-items-center size-8 rounded-xl shrink-0 ${isHidden ? 'bg-ink-200/60 text-ink-400' : 'theme-gradient text-white'}`}>
+                  <Icon className="size-[18px]" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="font-semibold text-ink-800 text-sm">{item.label}</span>
+                  {isHidden && <span className="ml-2 text-[11px] text-ink-400 font-medium">ausgeblendet</span>}
+                </span>
+
+                {/* Reihenfolge per Pfeil (Touch-Fallback zum Drag) */}
+                <div className="flex flex-col -my-1">
+                  <button onClick={() => move(i, i - 1)} disabled={i === 0}
+                    className="p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30 disabled:hover:text-ink-400 transition" aria-label="Nach oben">
+                    <ChevronUp className="size-4" />
+                  </button>
+                  <button onClick={() => move(i, i + 1)} disabled={i === items.length - 1}
+                    className="p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30 disabled:hover:text-ink-400 transition" aria-label="Nach unten">
+                    <ChevronDown className="size-4" />
+                  </button>
+                </div>
+
+                {locked ? (
+                  <span className="grid place-items-center size-8 text-ink-300" title="Immer sichtbar">
+                    <Lock className="size-4" />
+                  </span>
+                ) : (
+                  <button onClick={() => toggleHidden(item.to)}
+                    className={`grid place-items-center size-8 rounded-xl transition ${isHidden ? 'text-ink-400 hover:bg-white/70' : 'text-theme-deep hover:bg-white/70'}`}
+                    title={isHidden ? 'Einblenden' : 'Ausblenden'}>
+                    {isHidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="text-xs text-ink-500 mt-3 flex gap-1.5"><Lightbulb className="size-3.5 shrink-0 mt-px" /><span>Die Einstellungen bleiben immer sichtbar – damit du hierher zurückfindest.</span></div>
       </Card>
     </div>
   );
