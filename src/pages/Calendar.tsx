@@ -498,7 +498,6 @@ function AddMenu({ open, setOpen, date, onNew, anchor = 'right', className = '' 
   }, [open]);
 
   const items: Array<{ kind: TaskKind; label: string; Icon: typeof NotebookPen }> = [
-    { kind: 'test', label: 'Test', Icon: ClipboardCheck },
     { kind: 'hausaufgabe', label: 'Hausaufgabe', Icon: NotebookPen },
     { kind: 'todo', label: 'Todo', Icon: CheckCircle2 },
   ];

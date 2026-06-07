@@ -310,14 +310,14 @@ function DashboardSection() {
       </Row>
       <Row label="Quick-Buttons" hint="Welche Knöpfe oben im Dashboard erscheinen.">
         <div className="flex flex-wrap gap-1.5">
-          {(['todo', 'hausaufgabe', 'test', 'schulaufgabe', 'projekt'] as TaskKind[]).map(k => {
+          {(['todo', 'hausaufgabe', 'projekt'] as TaskKind[]).map(k => {
             const active = settings.quickButtons.includes(k);
             return (
               <button key={k} onClick={() => {
                 const next = active ? settings.quickButtons.filter(x => x !== k) : [...settings.quickButtons, k];
                 setSettings({ quickButtons: next });
               }} className={`chip ${active ? 'chip-active' : ''}`}>
-                {k === 'todo' ? 'Todo' : k === 'hausaufgabe' ? 'Hausaufgabe' : k === 'test' ? 'Test' : k === 'schulaufgabe' ? 'Schulaufgabe' : 'Projekt'}
+                {k === 'todo' ? 'Todo' : k === 'hausaufgabe' ? 'Hausaufgabe' : 'Projekt'}
               </button>
             );
           })}

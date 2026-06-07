@@ -107,8 +107,6 @@ const WIDGET_META: Record<WidgetType, {
 const QUICK_BUTTON_META: Record<string, { label: string; icon: React.ReactNode }> = {
   todo:         { label: 'Todo',         icon: <ListTodo className="size-4" /> },
   hausaufgabe:  { label: 'Hausaufgabe',  icon: <NotebookPen className="size-4" /> },
-  test:         { label: 'Test',         icon: <GraduationCap className="size-4" /> },
-  schulaufgabe: { label: 'Schulaufgabe', icon: <FileText className="size-4" /> },
   projekt:      { label: 'Projekt',      icon: <Briefcase className="size-4" /> },
 };
 
@@ -1273,7 +1271,7 @@ export function Dashboard() {
     return h < 11 ? 'Guten Morgen' : h < 18 ? 'Hallo' : 'Guten Abend';
   }, [settings?.dashboardGreetingStyle]);
 
-  const quickButtons = settings?.quickButtons ?? ['todo', 'hausaufgabe', 'test'];
+  const quickButtons = settings?.quickButtons ?? ['todo', 'hausaufgabe', 'projekt'];
   const activeTypes = new Set(widgets.map(w => w.type));
   const availableToAdd = (Object.keys(WIDGET_META) as WidgetType[]).filter(t => !activeTypes.has(t));
 

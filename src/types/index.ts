@@ -154,7 +154,11 @@ export interface StudyChecklistItem {
  */
 export type TaskKind = string;
 
-export const BUILTIN_TASK_KINDS = ['hausaufgabe', 'test', 'schulaufgabe', 'projekt', 'todo'] as const;
+// „test"/„schulaufgabe" sind bewusst NICHT mehr wählbar — anstehende Prüfungen
+// werden über „Note steht aus" im Noten-Dialog vorgemerkt. Die Labels/Icons
+// (BUILTIN_TASK_KIND_LABEL/ICON in lib/grading.ts) bleiben erhalten, damit
+// bereits vorhandene Aufgaben dieser Art weiterhin korrekt angezeigt werden.
+export const BUILTIN_TASK_KINDS = ['hausaufgabe', 'projekt', 'todo'] as const;
 export type BuiltinTaskKind = typeof BUILTIN_TASK_KINDS[number];
 
 export interface AppTask {
@@ -619,7 +623,7 @@ export const DEFAULT_GRADING_CONFIG: GradingSystemConfig = {
   customKinds: [],
 };
 
-export const DEFAULT_QUICK_BUTTONS: TaskKind[] = ['todo', 'hausaufgabe', 'test'];
+export const DEFAULT_QUICK_BUTTONS: TaskKind[] = ['todo', 'hausaufgabe', 'projekt'];
 
 export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   system: 'bayern',
