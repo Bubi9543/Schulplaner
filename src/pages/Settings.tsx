@@ -228,24 +228,24 @@ function AppearanceSection() {
             const active = settings.colorTheme === t.id;
             return (
               <button key={t.id} onClick={() => setSettings({ colorTheme: t.id })}
-                className={`group relative rounded-2xl overflow-hidden border transition-all text-left ${active ? 'ring-2 ring-offset-2 ring-offset-white scale-[1.02] border-transparent' : 'border-white/70 hover:scale-[1.01]'}`}
-                style={active ? { '--tw-ring-color': t.primary } as React.CSSProperties : undefined}
+                className={`group relative rounded-2xl overflow-hidden transition-all text-left ${active ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
+                style={{
+                  '--tw-ring-color': t.primary,
+                  background: `linear-gradient(160deg, ${t.gradientFrom}, ${t.gradientVia} 55%, ${t.gradientTo})`,
+                } as React.CSSProperties}
               >
-                <div className="h-20 relative" style={{
-                  background: `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientVia} 55%, ${t.gradientTo})`,
-                }}>
-                  <div className="absolute inset-0" style={{
-                    background: `radial-gradient(circle at 30% 25%, rgb(${t.aurora1Rgb} / 0.45) 0, transparent 55%), radial-gradient(circle at 75% 80%, rgb(${t.aurora2Rgb} / 0.4) 0, transparent 55%)`,
-                  }} />
-                  {active && (
-                    <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md">
-                      <Check className="size-3.5" style={{ color: t.primary }} />
-                    </div>
-                  )}
-                </div>
-                <div className="bg-white/90 px-3 py-2">
-                  <div className="font-display font-bold text-sm text-ink-900">{t.name}</div>
-                  <div className="text-[11px] text-ink-500">{t.description}</div>
+                <div className="absolute inset-0" style={{
+                  background: `radial-gradient(circle at 25% 20%, rgb(${t.aurora1Rgb} / 0.5) 0, transparent 50%), radial-gradient(circle at 80% 85%, rgb(${t.aurora2Rgb} / 0.45) 0, transparent 50%)`,
+                }} />
+                {active && (
+                  <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md z-10">
+                    <Check className="size-3.5" style={{ color: t.primary }} />
+                  </div>
+                )}
+                <div className="relative h-16" />
+                <div className="relative px-3 py-2.5" style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.38) 100%)' }}>
+                  <div className="font-display font-bold text-sm text-white drop-shadow-sm">{t.name}</div>
+                  <div className="text-[11px] text-white/75">{t.description}</div>
                 </div>
               </button>
             );
@@ -253,24 +253,24 @@ function AppearanceSection() {
 
           {/* Eigene Farbe – Farbton frei wählbar */}
           <button onClick={() => setSettings({ colorTheme: 'custom', customHue })}
-            className={`group relative rounded-2xl overflow-hidden border transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-white scale-[1.02] border-transparent' : 'border-white/70 hover:scale-[1.01]'}`}
-            style={customActive ? { '--tw-ring-color': customPal.primary } as React.CSSProperties : undefined}
+            className={`group relative rounded-2xl overflow-hidden transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
+            style={{
+              '--tw-ring-color': customPal.primary,
+              background: `linear-gradient(160deg, ${customPal.gradientFrom}, ${customPal.gradientVia} 55%, ${customPal.gradientTo})`,
+            } as React.CSSProperties}
           >
-            <div className="h-20 relative" style={{
-              background: `linear-gradient(135deg, ${customPal.gradientFrom}, ${customPal.gradientVia} 55%, ${customPal.gradientTo})`,
-            }}>
-              <div className="absolute inset-0" style={{
-                background: `radial-gradient(circle at 30% 25%, rgb(${customPal.aurora1Rgb} / 0.45) 0, transparent 55%), radial-gradient(circle at 75% 80%, rgb(${customPal.aurora2Rgb} / 0.4) 0, transparent 55%)`,
-              }} />
-              {customActive && (
-                <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md">
-                  <Check className="size-3.5" style={{ color: customPal.primary }} />
-                </div>
-              )}
-            </div>
-            <div className="bg-white/90 px-3 py-2">
-              <div className="font-display font-bold text-sm text-ink-900">Eigene Farbe</div>
-              <div className="text-[11px] text-ink-500">Farbton frei wählen</div>
+            <div className="absolute inset-0" style={{
+              background: `radial-gradient(circle at 25% 20%, rgb(${customPal.aurora1Rgb} / 0.5) 0, transparent 50%), radial-gradient(circle at 80% 85%, rgb(${customPal.aurora2Rgb} / 0.45) 0, transparent 50%)`,
+            }} />
+            {customActive && (
+              <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md z-10">
+                <Check className="size-3.5" style={{ color: customPal.primary }} />
+              </div>
+            )}
+            <div className="relative h-16" />
+            <div className="relative px-3 py-2.5" style={{ background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.38) 100%)' }}>
+              <div className="font-display font-bold text-sm text-white drop-shadow-sm">Eigene Farbe</div>
+              <div className="text-[11px] text-white/75">Farbton frei wählen</div>
             </div>
           </button>
         </div>
