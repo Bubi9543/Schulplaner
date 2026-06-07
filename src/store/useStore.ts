@@ -490,7 +490,7 @@ export const useStore = create<State>((set, get) => ({
     ]);
     const settings = storedSettings ? mergeSettings(storedSettings) : null;
     if (settings) {
-      applyTheme(settings.colorTheme);
+      applyTheme(settings.colorTheme, undefined, settings.customHue);
       applyVisualSettings(settings);
     } else {
       applyTheme('indigo');
@@ -585,7 +585,7 @@ export const useStore = create<State>((set, get) => ({
     const current = get().settings ?? mergeSettings(undefined);
     const next: AppSettings = mergeSettings({ ...current, ...patch });
     await db.settings.put(next);
-    applyTheme(next.colorTheme);
+    applyTheme(next.colorTheme, undefined, next.customHue);
     applyVisualSettings(next);
     set({ settings: next });
     const { authUser } = get();
@@ -1893,7 +1893,7 @@ async function applyRealtimeDelete(table: SyncTable, id: string, set: SetFn, get
 async function applyRealtimeSettings(data: AppSettings, set: SetFn): Promise<void> {
   const merged = mergeSettings({ ...data, id: 'app' });
   await db.settings.put(merged);
-  applyTheme(merged.colorTheme);
+  applyTheme(merged.colorTheme, undefined, merged.customHue);
   applyVisualSettings(merged);
   set({ settings: merged });
 }

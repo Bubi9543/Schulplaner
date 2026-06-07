@@ -223,7 +223,13 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
   }),
 };
 
-export const THEME_LIST: ThemePalette[] = Object.values(THEMES);
+/**
+ * Anzeige-Reihenfolge im Theme-Picker: „Bunt" zuerst, danach entlang des
+ * Farbkreises (Rot → Orange → Gelb → Grün → Blau → Violett → Pink), Mono als
+ * neutraler Abschluss.
+ */
+const THEME_ORDER: ThemeId[] = ['rainbow', 'crimson', 'sunset', 'sunshine', 'forest', 'ocean', 'indigo', 'rose', 'mono'];
+export const THEME_LIST: ThemePalette[] = THEME_ORDER.map(id => THEMES[id]);
 
 /* ─────────────────────────────────────────────────────────────────────────
  * "Bunt" (rainbow): jede Seite bekommt eine eigene Farbe.
@@ -253,8 +259,17 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${to(r)}${to(g)}${to(b)}`;
 }
 
-/** Baut eine vollständige, kräftige Palette rund um einen Farbton. */
-function paletteFromHue(hue: number): ThemePalette {
+/** Standard-Farbton für den „Eigene Farbe"-Modus (ein freundliches Violett). */
+export const DEFAULT_CUSTOM_HUE = 245;
+
+/**
+ * Baut eine vollständige, kräftige Palette rund um einen Farbton.
+ *
+ * Sättigung & Helligkeit sind fest gewählt, damit jede Farbe zum App-Look
+ * passt und genug Kontrast hat – der User stellt nur den Farbton (Hue) ein,
+ * nie blasse/kontrastarme Töne.
+ */
+export function paletteFromHue(hue: number): ThemePalette {
   return palette({
     id: 'rainbow',
     name: 'Bunt',
@@ -327,15 +342,19 @@ const LEGACY_MAP: Record<string, ThemeId> = {
   blue: 'ocean',
 };
 
-export function resolveThemeId(input: string | undefined | null): ThemeId {
+export function resolveThemeId(input: string | undefined | null): ThemeId | 'custom' {
   if (!input) return 'indigo';
+  if (input === 'custom') return 'custom';
   if (input in THEMES) return input as ThemeId;
   return LEGACY_MAP[input] ?? 'indigo';
 }
 
-export function applyTheme(id: ThemeId, pathname?: string) {
+export function applyTheme(id: ThemeId | 'custom', pathname?: string, customHue?: number) {
   const path = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/');
-  const t: ThemePalette = id === 'rainbow' ? rainbowPaletteForRoute(path) : THEMES[id];
+  const t: ThemePalette =
+    id === 'rainbow' ? rainbowPaletteForRoute(path)
+    : id === 'custom' ? paletteFromHue(customHue ?? DEFAULT_CUSTOM_HUE)
+    : THEMES[id];
   const root = document.documentElement;
   root.style.setProperty('--theme-primary', t.primary);
   root.style.setProperty('--theme-primary-rgb', t.primaryRgb);

@@ -375,7 +375,7 @@ export interface DeckExport {
   }>;
 }
 
-export type ColorThemeId = 'indigo' | 'ocean' | 'sunset' | 'forest' | 'rose' | 'crimson' | 'sunshine' | 'mono' | 'rainbow';
+export type ColorThemeId = 'indigo' | 'ocean' | 'sunset' | 'forest' | 'rose' | 'crimson' | 'sunshine' | 'mono' | 'rainbow' | 'custom';
 export type ThemeMode = 'light' | 'dark' | 'auto';
 export type DensityMode = 'comfortable' | 'compact';
 export type FontScale = 0.9 | 1 | 1.1;
@@ -421,6 +421,8 @@ export interface AppSettings {
   friendSubjectFilters: Record<string, string[] | null>;
   theme: ThemeMode;
   colorTheme: ColorThemeId;
+  /** Eigener Farbton (0–359) für colorTheme === 'custom'. */
+  customHue?: number;
   density: DensityMode;
   fontScale: FontScale;
   animationLevel: AnimationLevel;
@@ -644,6 +646,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   friendSubjectFilters: {},
   theme: 'auto',
   colorTheme: 'indigo',
+  customHue: 245,
   density: 'comfortable',
   fontScale: 1,
   animationLevel: 'rich',

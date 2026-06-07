@@ -22,7 +22,7 @@ import { BUILTIN_GRADE_KINDS } from '@/types';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import { useBaseNavItems, applyNavPrefs, LOCKED_NAV_ROUTES, type NavItem } from '@/components/Sidebar';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
-import { THEME_LIST } from '@/lib/themes';
+import { THEME_LIST, paletteFromHue, DEFAULT_CUSTOM_HUE } from '@/lib/themes';
 
 type SectionId = 'profile' | 'friends' | 'appearance' | 'navigation' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
 
@@ -215,6 +215,9 @@ function ProfileSection() {
 function AppearanceSection() {
   const settings = useStore(s => s.settings)!;
   const setSettings = useStore(s => s.setSettings);
+  const customHue = settings.customHue ?? DEFAULT_CUSTOM_HUE;
+  const customPal = paletteFromHue(customHue);
+  const customActive = settings.colorTheme === 'custom';
   return (
     <div className="space-y-4">
       <Card>
@@ -247,7 +250,55 @@ function AppearanceSection() {
               </button>
             );
           })}
+
+          {/* Eigene Farbe – Farbton frei wählbar */}
+          <button onClick={() => setSettings({ colorTheme: 'custom', customHue })}
+            className={`group relative rounded-2xl overflow-hidden border transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-white scale-[1.02] border-transparent' : 'border-white/70 hover:scale-[1.01]'}`}
+            style={customActive ? { '--tw-ring-color': customPal.primary } as React.CSSProperties : undefined}
+          >
+            <div className="h-20 relative" style={{
+              background: `linear-gradient(135deg, ${customPal.gradientFrom}, ${customPal.gradientVia} 55%, ${customPal.gradientTo})`,
+            }}>
+              <div className="absolute inset-0" style={{
+                background: `radial-gradient(circle at 30% 25%, rgb(${customPal.aurora1Rgb} / 0.45) 0, transparent 55%), radial-gradient(circle at 75% 80%, rgb(${customPal.aurora2Rgb} / 0.4) 0, transparent 55%)`,
+              }} />
+              {customActive && (
+                <div className="absolute top-2 right-2 size-6 rounded-full bg-white/95 grid place-items-center shadow-md">
+                  <Check className="size-3.5" style={{ color: customPal.primary }} />
+                </div>
+              )}
+            </div>
+            <div className="bg-white/90 px-3 py-2">
+              <div className="font-display font-bold text-sm text-ink-900">Eigene Farbe</div>
+              <div className="text-[11px] text-ink-500">Farbton frei wählen</div>
+            </div>
+          </button>
         </div>
+
+        {/* Farbton-Regler – erscheint, wenn „Eigene Farbe" aktiv ist */}
+        <AnimatePresence initial={false}>
+          {customActive && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.22 }} className="overflow-hidden"
+            >
+              <div className="mt-4 rounded-2xl border border-white/60 bg-white/50 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-semibold text-ink-800">Farbton</span>
+                  <span className="size-7 rounded-full border-2 border-white shadow-md" style={{ background: customPal.primary }} />
+                </div>
+                <input
+                  type="range" min={0} max={359} value={customHue}
+                  onChange={e => setSettings({ colorTheme: 'custom', customHue: Number(e.target.value) })}
+                  className="hue-slider w-full"
+                  style={{ background: 'linear-gradient(to right, hsl(0,75%,58%), hsl(60,75%,58%), hsl(120,75%,58%), hsl(180,75%,58%), hsl(240,75%,58%), hsl(300,75%,58%), hsl(360,75%,58%))' }}
+                  aria-label="Farbton wählen"
+                />
+                <p className="text-[11px] text-ink-500 mt-2.5 flex gap-1.5"><Lightbulb className="size-3.5 shrink-0 mt-px" /><span>Nur der Farbton ist wählbar – Sättigung und Helligkeit setzen wir passend, damit immer genug Kontrast bleibt.</span></p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Card>
 
       <Card>

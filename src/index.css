@@ -417,6 +417,34 @@ html[data-mode="dark"] .hover\:bg-white\/80:hover { background-color: rgb(var(--
   .shadow-theme { box-shadow: 0 8px 30px -10px rgb(var(--theme-primary-rgb) / 0.45); }
 }
 
+/* ── Farbton-Regler (Eigene Farbe) ───────────────────────────────────────── */
+.hue-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  outline: none;
+}
+.hue-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--theme-primary);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+.hue-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--theme-primary);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.25);
+}
+
 /* ── Kalender: aktueller Tag (Studio-Redesign) ───────────────────────────── */
 .cal-today {
   background-image: linear-gradient(135deg, rgb(var(--theme-primary-rgb) / 0.15), rgb(var(--theme-secondary-rgb) / 0.16));
