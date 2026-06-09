@@ -40,8 +40,8 @@ export function TasksPage() {
   const dismissedFriendTaskIds = useStore(s => s.dismissedFriendTaskIds);
   const refreshFriendTasks = useStore(s => s.refreshFriendTasks);
   const dismissFriendTask = useStore(s => s.dismissFriendTask);
+  const friends = useStore(s => s.friends);
 
-  const subs = settings?.homeworkSubscriptions ?? [];
   const customKinds = settings?.gradingConfig.customKinds ?? [];
 
   const allKinds = useMemo<Array<{ id: TaskKind; label: string }>>(() => [
@@ -62,22 +62,17 @@ export function TasksPage() {
     return true;
   }), [tasks, filterKind, filterSubject, showDone]);
 
+  // Freundes-Hausaufgaben sind im Store bereits nach Freundesliste + Fächerfilter
+  // (friendSubjectFilters) vorgefiltert – hier nur noch die UI-Filter anwenden.
   const filteredFriendTasks = useMemo(() => friendTasks.filter(ft => {
     if (dismissedFriendTaskIds.has(ft.id)) return false;
-    const sub = subs.find(s => s.userId === ft.ownerUserId);
-    if (!sub) return false;
-    if (sub.subjectFilter !== null && sub.subjectFilter.length === 0) return false;
-    if (sub.subjectFilter !== null && ft.subjectName) {
-      const norm = sub.subjectFilter.map(n => n.toLowerCase());
-      if (!norm.includes(ft.subjectName.toLowerCase())) return false;
-    }
     if (filterKind && ft.kind !== filterKind) return false;
     if (filterSubject) {
       const subj = subjects.find(s => s.id === filterSubject);
       if (subj && ft.subjectName?.toLowerCase() !== subj.name.toLowerCase()) return false;
     }
     return true;
-  }), [friendTasks, subs, filterKind, filterSubject, subjects, dismissedFriendTaskIds]);
+  }), [friendTasks, filterKind, filterSubject, subjects, dismissedFriendTaskIds]);
 
   const buckets = useMemo<Bucket[]>(() => {
     const today = startOfDay(Date.now());
@@ -141,7 +136,7 @@ export function TasksPage() {
       subtitle={`${openCount} offen · ${doneCount} erledigt`}
       actions={
         <div className="flex items-center gap-2">
-          {subs.length > 0 && (
+          {friends.length > 0 && (
             <button className="btn-ghost relative" onClick={() => refreshFriendTasks()}
               title="Hausaufgaben von Mitschülern aktualisieren">
               <RefreshCw className={`size-4 ${friendTasksLoading ? 'animate-spin' : ''}`} />
