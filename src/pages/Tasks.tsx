@@ -373,8 +373,8 @@ function FilterBar({ allKinds, subjects, filterKind, setFilterKind, subjectSel, 
   return (
     <div className="card !p-2.5 mb-4">
       <div className="flex items-start gap-2 flex-col lg:flex-row">
-        {/* ── Art (links) ── */}
-        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+        {/* ── Art (links) – darf auf 2 Zeilen umbrechen, damit die Fächer mehr Platz haben ── */}
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0 lg:max-w-[280px]">
           <div className="flex items-center gap-1.5 pl-1 pr-0.5"><Filter className="size-4 text-theme" /><GroupLabel>Art</GroupLabel></div>
           <FChip active={!filterKind} dark onClick={() => setFilterKind(null)} icon={SlidersHorizontal}>Alle</FChip>
           {allKinds.map(k => (
