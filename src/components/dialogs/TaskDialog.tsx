@@ -24,6 +24,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const subjects = useStore(s => s.subjects);
   const lessons = useStore(s => s.lessons);
   const settings = useStore(s => s.settings);
+  const friends = useStore(s => s.friends);
   const addTask = useStore(s => s.addTask);
   const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
@@ -97,7 +98,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
 
   const config = settings?.gradingConfig;
   const isHomework = kind === 'hausaufgabe';
-  const hasSubscriptions = (settings?.homeworkSubscriptions?.length ?? 0) > 0;
+  const hasFriends = friends.length > 0;
   const subject = subjects.find(s => s.id === subjectId);
   const rel = relDaysFromIso(dueDate);
 
@@ -171,7 +172,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
           <span className="min-w-0">
             <span className="block text-sm font-semibold" style={{ color: 'rgb(var(--ink-800))' }}>Mit Mitschülern teilen</span>
             <span className="subtle block text-xs">
-              {shared ? 'Sichtbar für deine Abonnenten' : hasSubscriptions ? 'Nur für dich (nicht geteilt)' : 'Aktiviere Freunde in den Einstellungen'}
+              {shared ? 'Sichtbar für deine Freunde' : hasFriends ? 'Nur für dich (nicht geteilt)' : 'Füge erst Freunde in den Einstellungen hinzu'}
             </span>
           </span>
           <span className={'switch ml-auto shrink-0' + (shared ? ' on' : '')}><span className="switch-knob" /></span>
