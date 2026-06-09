@@ -240,8 +240,49 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     .filter(b => b.items.length || b.friendItems.length);
 }
 
-// Pro Bucket: Map<eigeneTaskId → FriendTask[]> (gleiches Fach + gleicher Tag) +
-// eigenständige Fremdaufgaben (kein eigenes Pendant).
+// ── Inhaltlicher Abgleich zweier Aufgaben-Titel ─────────────────────────────
+// Zieht Zahlen-Tokens (mit optionalem Buchstaben-Suffix) aus einem Titel.
+//   "165/5,7a"                 → ["165","5","7a"]
+//   "Seite 165 Aufgabe 5 und 7a" → ["165","5","7a"]
+function numberTokens(s: string): string[] {
+  return s.toLowerCase().match(/\d+[a-z]?/g) ?? [];
+}
+const tokenBase = (tok: string) => parseInt(tok, 10);
+
+// Wörter (länger als 2 Zeichen, ohne Satzzeichen) – Fallback wenn keine Zahlen.
+function titleWords(s: string): Set<string> {
+  return new Set(
+    s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w.length > 2),
+  );
+}
+
+// Beschreiben zwei Titel wahrscheinlich dieselbe Aufgabe?
+// Mit Seiten-/Aufgabennummern wird tolerant über die Zahlen verglichen:
+// gleiche (größte) Seitenzahl + Überschneidung bei den Aufgabennummern.
+// Dadurch passen "165/5,7a" ↔ "Seite 165 Aufgabe 5 und 7b" zusammen, aber
+// zwei verschiedene Aufgaben am selben Tag/Fach werden NICHT mehr gruppiert.
+function tasksLikelySame(a: string, b: string): boolean {
+  const ta = numberTokens(a), tb = numberTokens(b);
+  if (ta.length && tb.length) {
+    const basesA = ta.map(tokenBase), basesB = tb.map(tokenBase);
+    const pageA = Math.max(...basesA), pageB = Math.max(...basesB);
+    if (pageA !== pageB) return false;                       // andere Seite → andere Aufgabe
+    const restA = new Set(basesA.filter(n => n !== pageA));
+    const restB = new Set(basesB.filter(n => n !== pageB));
+    if (restA.size === 0 && restB.size === 0) return true;    // nur eine Seitenangabe, gleich
+    for (const n of restA) if (restB.has(n)) return true;     // mind. eine gemeinsame Aufgabe
+    return false;
+  }
+  // Kein Zahlenbezug → über Wort-Überschneidung (Jaccard ≥ 0,5).
+  const wa = titleWords(a), wb = titleWords(b);
+  if (!wa.size || !wb.size) return false;
+  let inter = 0; for (const w of wa) if (wb.has(w)) inter++;
+  const union = new Set([...wa, ...wb]).size;
+  return inter / union >= 0.5;
+}
+
+// Pro Bucket: Map<eigeneTaskId → FriendTask[]> (gleiches Fach + gleicher Tag
+// + inhaltlich passend) + eigenständige Fremdaufgaben (kein eigenes Pendant).
 function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
   const byOwn = new Map<string, FriendTask[]>();
   for (const ft of bucket.friendItems) {
@@ -249,7 +290,11 @@ function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
     for (const t of bucket.items) {
       const subj = t.subjectId ? subjById[t.subjectId] : null;
       if (!subj || !t.dueDate) continue;
-      if (subj.name.toLowerCase() === ft.subjectName.toLowerCase() && startOfDay(t.dueDate) === startOfDay(ft.dueDate)) {
+      if (
+        subj.name.toLowerCase() === ft.subjectName.toLowerCase() &&
+        startOfDay(t.dueDate) === startOfDay(ft.dueDate) &&
+        tasksLikelySame(t.title, ft.title)
+      ) {
         const arr = byOwn.get(t.id) ?? []; arr.push(ft); byOwn.set(t.id, arr);
       }
     }
