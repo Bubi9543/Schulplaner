@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Plus, Filter, SlidersHorizontal, CheckCircle2, Circle, AlertTriangle, Inbox,
   RefreshCw, Users, Trash2, Pencil, Share2, Flame, ArrowRight, CalendarDays, Clock,
-  Flag, AlarmClock, List, LayoutGrid, X,
+  Flag, AlarmClock, List, LayoutGrid, X, Check,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
@@ -71,6 +71,7 @@ export function TasksPage() {
   const dismissedFriendTaskIds = useStore(s => s.dismissedFriendTaskIds);
   const refreshFriendTasks = useStore(s => s.refreshFriendTasks);
   const dismissFriendTask = useStore(s => s.dismissFriendTask);
+  const acceptFriendTask = useStore(s => s.acceptFriendTask);
   const friends = useStore(s => s.friends);
 
   const config = settings?.gradingConfig;
@@ -164,7 +165,7 @@ export function TasksPage() {
         <div className="flex flex-col gap-4">
           {buckets.map((b, idx) => (
             <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-              <ListBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} />
+              <ListBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} onAccept={acceptFriendTask} />
             </motion.div>
           ))}
         </div>
@@ -172,7 +173,7 @@ export function TasksPage() {
         <div className="flex flex-col gap-5">
           {buckets.map((b, idx) => (
             <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-              <TileBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} />
+              <TileBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} onAccept={acceptFriendTask} />
             </motion.div>
           ))}
         </div>
@@ -483,11 +484,12 @@ interface BucketProps {
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onDismiss: (id: string) => void;
+  onAccept: (ft: FriendTask) => void;
 }
 
 // ════════════════════════════ A · LISTE ═════════════════════════════════════
 
-function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss }: BucketProps) {
+function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
   const { byOwn, standalone } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -529,13 +531,13 @@ function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
             </div>
           );
         })}
-        {standalone.map(ft => <FriendRowInline key={ft.id} ft={ft} onDismiss={onDismiss} />)}
+        {standalone.map(ft => <FriendRowInline key={ft.id} ft={ft} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
     </div>
   );
 }
 
-function FriendRowInline({ ft, onDismiss, indent }: { ft: FriendTask; onDismiss: (id: string) => void; indent?: boolean }) {
+function FriendRowInline({ ft, onDismiss, onAccept, indent }: { ft: FriendTask; onDismiss: (id: string) => void; onAccept?: (ft: FriendTask) => void; indent?: boolean }) {
   return (
     <div className={`group flex items-center gap-3 py-2.5 ${indent ? 'pl-10 bg-theme-soft/20 -mx-1 px-3 rounded-xl' : ''}`}>
       <OwnerAvatar ft={ft} size={28} />
@@ -548,14 +550,25 @@ function FriendRowInline({ ft, onDismiss, indent }: { ft: FriendTask; onDismiss:
         </div>
       </div>
       <HeroDue ts={ft.dueDate} small />
-      <button onClick={() => onDismiss(ft.id)} className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 opacity-0 group-hover:opacity-100 transition flex-shrink-0"><X className="size-4" /></button>
+      {onAccept ? (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => onAccept(ft)} title="Als eigene Aufgabe übernehmen"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold bg-theme-soft/70 text-theme-deep border border-theme/25 hover:bg-theme-soft transition">
+            <Check className="size-3.5" strokeWidth={2.6} />Annehmen
+          </button>
+          <button onClick={() => onDismiss(ft.id)} title="Ablehnen"
+            className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 transition"><X className="size-4" /></button>
+        </div>
+      ) : (
+        <button onClick={() => onDismiss(ft.id)} className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 opacity-0 group-hover:opacity-100 transition flex-shrink-0"><X className="size-4" /></button>
+      )}
     </div>
   );
 }
 
 // ════════════════════════════ B · KACHELN ═══════════════════════════════════
 
-function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss }: BucketProps) {
+function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
   const { byOwn, standalone } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
   const total = bucketTotal(bucket, byOwn, standalone);
   return (
@@ -563,7 +576,7 @@ function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
       <BucketHead bucket={bucket} count={total} />
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(282px, 1fr))' }}>
         {bucket.items.map(task => <TaskTile key={task.id} task={task} friends={byOwn.get(task.id) ?? []} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} />)}
-        {standalone.map(ft => <FriendTile key={ft.id} ft={ft} onDismiss={onDismiss} />)}
+        {standalone.map(ft => <FriendTile key={ft.id} ft={ft} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
     </div>
   );
@@ -622,7 +635,7 @@ function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelet
   );
 }
 
-function FriendTile({ ft, onDismiss }: { ft: FriendTask; onDismiss: (id: string) => void }) {
+function FriendTile({ ft, onDismiss, onAccept }: { ft: FriendTask; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
   return (
     <div className="group relative rounded-3xl border border-dashed border-theme/30 bg-theme-soft/25 p-3.5 hover:bg-theme-soft/40 transition">
       <div className="flex items-start gap-2.5">
@@ -631,11 +644,20 @@ function FriendTile({ ft, onDismiss }: { ft: FriendTask; onDismiss: (id: string)
           <div className="text-[14px] font-bold text-ink-800 leading-snug" style={{ textWrap: 'pretty' } as React.CSSProperties}>{ft.title}</div>
           <div className="text-[12px] text-theme-deep font-semibold mt-0.5">{ft.ownerName}{ft.subjectName ? ` · ${ft.subjectName}` : ''}</div>
         </div>
-        <button onClick={() => onDismiss(ft.id)} className="size-7 grid place-items-center rounded-full hover:bg-white/70 text-ink-300 hover:text-ink-600 opacity-0 group-hover:opacity-100 transition flex-shrink-0"><X className="size-4" /></button>
       </div>
       <div className="flex items-center gap-2 mt-3">
         <CountdownPill ts={ft.dueDate} size="sm" />
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400"><Users className="size-3" />Von Mitschüler geteilt</span>
+      </div>
+      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-theme/15">
+        <button onClick={() => onAccept(ft)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
+          <Check className="size-4" strokeWidth={2.6} />Annehmen
+        </button>
+        <button onClick={() => onDismiss(ft.id)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
+          <X className="size-4" />Ablehnen
+        </button>
       </div>
     </div>
   );

@@ -56,6 +56,9 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
   if (!merged.friendSubjectFilters || typeof merged.friendSubjectFilters !== 'object' || Array.isArray(merged.friendSubjectFilters)) {
     merged.friendSubjectFilters = {};
   }
+  if (!Array.isArray(merged.dismissedFriendTaskIds)) {
+    merged.dismissedFriendTaskIds = [];
+  }
 
   // Notifications: alte Settings ohne das Feld bekommen Default; bestehende
   // werden mit Defaults „aufgefüllt" für fehlende Unter-Keys.
@@ -379,8 +382,10 @@ interface State {
   publishTask: (task: AppTask) => Promise<void>;
   /** Zieht eine Aufgabe aus shared_tasks zurück. */
   unpublishTask: (taskId: string) => Promise<void>;
-  /** Blendet eine Fremdaufgabe für diese Session aus. */
+  /** Blendet eine Fremdaufgabe dauerhaft aus (abgelehnt, geräteübergreifend gemerkt). */
   dismissFriendTask: (id: string) => void;
+  /** Übernimmt eine Fremdaufgabe als eigene Aufgabe und blendet die geteilte Version aus. */
+  acceptFriendTask: (ft: FriendTask) => Promise<void>;
 }
 
 // ─── Modul-Singletons für Auth-Listener / Visibility-Listener ─────────────
@@ -541,6 +546,7 @@ export const useStore = create<State>((set, get) => ({
       cardTopics: allCardTopics.filter(t => deckIds.has(t.deckId)),
       flashcards: allFlashcards.filter(c => deckIds.has(c.deckId)),
       friendTasks: allFriendTasks,
+      dismissedFriendTaskIds: new Set(settings?.dismissedFriendTaskIds ?? []),
     });
 
     // ─── Auth-Init nur einmal ────────────────────────────────────────────
@@ -1655,6 +1661,32 @@ export const useStore = create<State>((set, get) => ({
 
   dismissFriendTask(id) {
     set(state => ({ dismissedFriendTaskIds: new Set([...state.dismissedFriendTaskIds, id]) }));
+    // Dauerhaft + geräteübergreifend merken (über die synchronisierten Settings).
+    const current = get().settings;
+    if (current) {
+      const nextIds = Array.from(new Set([...(current.dismissedFriendTaskIds ?? []), id]));
+      void get().setSettings({ dismissedFriendTaskIds: nextIds });
+    }
+  },
+
+  async acceptFriendTask(ft) {
+    // Aus einer Freundes-Hausaufgabe eine eigene Aufgabe machen. Fach über den
+    // Namen auf ein eigenes Fach mappen (sonst „Allgemein"/ohne Fach).
+    const subj = ft.subjectName
+      ? get().subjects.find(s => s.name.toLowerCase() === ft.subjectName!.toLowerCase())
+      : undefined;
+    await get().addTask({
+      title: ft.title,
+      description: ft.description,
+      kind: ft.kind,
+      subjectId: subj?.id,
+      dueDate: ft.dueDate,
+      done: false,
+      priority: get().settings?.defaultTaskPriority ?? 2,
+      shared: false,
+    });
+    // Die Freundes-Version dauerhaft ausblenden, damit sie nicht doppelt steht.
+    get().dismissFriendTask(ft.id);
   },
 }));
 

@@ -419,6 +419,12 @@ export interface AppSettings {
    * - `string[]` = nur diese Fachnamen (kann leer sein = keine)
    */
   friendSubjectFilters: Record<string, string[] | null>;
+  /**
+   * IDs von Freundes-Hausaufgaben, die dauerhaft ausgeblendet wurden
+   * (abgelehnt oder bereits als eigene Aufgabe angenommen). Wird mit der
+   * Cloud synchronisiert, damit die Entscheidung auf allen Geräten gilt.
+   */
+  dismissedFriendTaskIds: string[];
   theme: ThemeMode;
   colorTheme: ColorThemeId;
   /** Eigener Farbton (0–359) für colorTheme === 'custom'. */
@@ -670,6 +676,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   homeworkShareViaShortcut: false,
   shareScheduleWithFriends: false,
   friendSubjectFilters: {},
+  dismissedFriendTaskIds: [],
   theme: 'auto',
   colorTheme: 'indigo',
   customHue: 245,
