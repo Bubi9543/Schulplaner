@@ -41,8 +41,13 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
   const [priority, setPriority] = useState<1 | 2 | 3>((initial?.priority ?? settings?.defaultTaskPriority ?? 2) as 1 | 2 | 3);
   const [shared, setShared] = useState<boolean>(initial?.shared ?? settings?.homeworkShareByDefault ?? false);
 
+  // Felder nur EINMAL beim Öffnen zurücksetzen – nicht bei jedem Uhrentick (now),
+  // sonst wird der getippte Titel zwischendurch wieder geleert.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) { wasOpen.current = false; return; }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     let sid = initial?.subjectId ?? '';
     let auto = false;
     if (!sid && !editing && settings?.autoSelectActiveSubject && !isHolidayToday) {
