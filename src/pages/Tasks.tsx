@@ -290,7 +290,7 @@ function FChip({ active, color, onClick, icon: Ic, children, dark }: {
 }) {
   const base = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-semibold border transition select-none';
   const cls = active
-    ? (color ? 'text-white border-transparent shadow-sm' : dark ? 'bg-ink-900 text-white border-ink-900' : 'theme-gradient text-white border-transparent shadow-glow')
+    ? (color ? 'text-white border-transparent shadow-sm' : dark ? 'bg-ink-900 text-ink-50 border-ink-900' : 'theme-gradient text-white border-transparent shadow-glow')
     : 'bg-white/65 border-white/70 text-ink-600 hover:bg-white';
   return (
     <button onClick={onClick} className={`${base} ${cls}`} style={active && color ? { background: color } : undefined}>
