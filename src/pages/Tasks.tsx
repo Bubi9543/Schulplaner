@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Plus, Filter, SlidersHorizontal, CheckCircle2, Circle, AlertTriangle, Inbox,
   RefreshCw, Users, Trash2, Pencil, Share2, Flame, ArrowRight, CalendarDays, Clock,
-  Flag, AlarmClock, List, LayoutGrid, X, Check,
+  Flag, AlarmClock, List, LayoutGrid, X, Check, ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
@@ -620,20 +620,21 @@ function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
     <div>
       <BucketHead bucket={bucket} count={total} />
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(282px, 1fr))' }}>
-        {bucket.items.map(task => <TaskTile key={task.id} task={task} friends={byOwn.get(task.id) ?? []} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} />)}
+        {bucket.items.map(task => <TaskTile key={task.id} task={task} friends={byOwn.get(task.id) ?? []} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} onDismiss={onDismiss} />)}
         {standalone.map(ft => <FriendTile key={ft.id} ft={ft} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
     </div>
   );
 }
 
-function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelete }: {
+function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelete, onDismiss }: {
   task: AppTask; friends: FriendTask[]; subjById: SubjMap; config?: GradingSystemConfig;
-  onSelect: (t: AppTask) => void; onToggle: (id: string) => void; onDelete: (id: string) => void;
+  onSelect: (t: AppTask) => void; onToggle: (id: string) => void; onDelete: (id: string) => void; onDismiss: (id: string) => void;
 }) {
   const s = task.subjectId ? subjById[task.subjectId] : null;
   const color = s ? s.color : '#64748b';
   const [confirm, setConfirm] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   return (
     <div className="group relative card !p-0 overflow-hidden hover:shadow-glow transition cursor-pointer" onClick={() => onSelect(task)}>
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: color }} />
@@ -652,12 +653,35 @@ function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelet
           <PriorityChip p={task.priority} />
         </div>
         {(friends.length > 0 || task.shared) && (
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/55">
+          <div className="mt-3 pt-3 border-t border-white/55">
             {friends.length > 0 ? (
-              <div className="flex items-center gap-2">
-                <div className="flex -space-x-2">{friends.slice(0, 4).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={24} /></span>)}</div>
-                <span className="text-[11.5px] font-semibold text-theme-deep">{friends.length} {friends.length === 1 ? 'Freund hat das auch' : 'Freunde haben das auch'}</span>
-              </div>
+              <>
+                <button onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                  className="w-full flex items-center gap-2 text-left hover:opacity-80 transition">
+                  <div className="flex -space-x-2">{friends.slice(0, 4).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={24} /></span>)}</div>
+                  <span className="text-[11.5px] font-semibold text-theme-deep flex-1 min-w-0">{friends.length} {friends.length === 1 ? 'Freund hat das auch' : 'Freunde haben das auch'}</span>
+                  <ChevronDown className={`size-4 text-theme-deep flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+                {expanded && (
+                  <div className="mt-2.5 flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    {friends.map(ft => {
+                      const u = urgency(ft.dueDate);
+                      return (
+                        <div key={ft.id} className="group/f flex items-center gap-2 rounded-xl bg-theme-soft/25 px-2 py-1.5">
+                          <OwnerAvatar ft={ft} size={26} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
+                            <div className="text-[11px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
+                          </div>
+                          {ft.dueDate != null && <span className="text-[11px] font-bold flex-shrink-0" style={{ color: u.text }}>{relativeDate(ft.dueDate)}</span>}
+                          <button onClick={() => onDismiss(ft.id)} title="Ausblenden"
+                            className="size-6 grid place-items-center rounded-full hover:bg-white/70 text-ink-300 hover:text-ink-600 opacity-0 group-hover/f:opacity-100 transition flex-shrink-0"><X className="size-3.5" /></button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             ) : <span className="text-[11.5px] font-semibold text-theme-deep inline-flex items-center gap-1"><Share2 className="size-3.5" />Von dir geteilt</span>}
           </div>
         )}
