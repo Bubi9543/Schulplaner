@@ -125,15 +125,19 @@ function WidgetShell({
       {editMode && (
         <div className="drag-handle flex-shrink-0 bg-black/5 cursor-grab active:cursor-grabbing flex items-center px-3 h-8 gap-2 select-none border-b border-black/[.06] z-10">
           <GripHorizontal className="size-3.5 text-ink-400" />
-          <span className="text-xs text-ink-500 flex-1 truncate">{title}</span>
-          <button
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onRemove(); }}
-            className="size-5 rounded-full bg-rose-500 text-white grid place-items-center hover:bg-rose-600 flex-shrink-0"
-          >
-            <X className="size-3" />
-          </button>
+          <span className="text-xs text-ink-500 flex-1 truncate pr-7">{title}</span>
         </div>
+      )}
+      {editMode && (
+        <button
+          onMouseDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          aria-label="Widget entfernen"
+          className="absolute top-1.5 right-2 z-20 size-5 rounded-full bg-rose-500 text-white grid place-items-center hover:bg-rose-600 active:bg-rose-700 flex-shrink-0"
+        >
+          <X className="size-3" />
+        </button>
       )}
       <div className="flex-1 overflow-hidden widget-content">
         {children}
