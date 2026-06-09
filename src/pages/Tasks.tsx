@@ -348,7 +348,6 @@ function FChip({ active, color, onClick, icon: Ic, children, dark }: {
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400 mr-0.5">{children}</span>;
 }
-function VDiv() { return <div className="w-px self-stretch bg-ink-200/70 mx-1" />; }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -373,21 +372,35 @@ function FilterBar({ allKinds, subjects, filterKind, setFilterKind, subjectSel, 
 }) {
   return (
     <div className="card !p-2.5 mb-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 pl-1 pr-0.5"><Filter className="size-4 text-theme" /><GroupLabel>Art</GroupLabel></div>
-        <FChip active={!filterKind} dark onClick={() => setFilterKind(null)} icon={SlidersHorizontal}>Alle</FChip>
-        {allKinds.map(k => (
-          <FChip key={k.id} active={filterKind === k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}>
-            <TaskKindIcon kind={k.id} className="size-3.5" />{k.label}
-          </FChip>
-        ))}
-        {subjects.length > 0 && <><VDiv /><GroupLabel>Fächer</GroupLabel></>}
-        {subjects.map(s => (
-          <FChip key={s.id} color={s.color} active={subjectSel.has(s.id)} onClick={() => toggleSubject(s.id)}>
-            <span className="size-2 rounded-full" style={{ background: subjectSel.has(s.id) ? '#fff' : s.color }} />{s.name}
-          </FChip>
-        ))}
-        <div className="flex items-center gap-3 ml-auto pl-2">
+      <div className="flex items-start gap-2 flex-col lg:flex-row">
+        {/* ── Art (links) ── */}
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+          <div className="flex items-center gap-1.5 pl-1 pr-0.5"><Filter className="size-4 text-theme" /><GroupLabel>Art</GroupLabel></div>
+          <FChip active={!filterKind} dark onClick={() => setFilterKind(null)} icon={SlidersHorizontal}>Alle</FChip>
+          {allKinds.map(k => (
+            <FChip key={k.id} active={filterKind === k.id} onClick={() => setFilterKind(filterKind === k.id ? null : k.id)}>
+              <TaskKindIcon kind={k.id} className="size-3.5" />{k.label}
+            </FChip>
+          ))}
+        </div>
+
+        {/* Trennlinie zwischen Art und Fächer */}
+        <div className="hidden lg:block w-px self-stretch bg-ink-200/70 mx-1 flex-shrink-0" />
+
+        {/* ── Fächer (rechts) ── */}
+        {subjects.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+            <GroupLabel>Fächer</GroupLabel>
+            {subjects.map(s => (
+              <FChip key={s.id} color={s.color} active={subjectSel.has(s.id)} onClick={() => toggleSubject(s.id)}>
+                <span className="size-2 rounded-full" style={{ background: subjectSel.has(s.id) ? '#fff' : s.color }} />{s.name}
+              </FChip>
+            ))}
+          </div>
+        )}
+
+        {/* ── Erledigte + Zurücksetzen (ganz rechts) ── */}
+        <div className="flex items-center gap-3 flex-shrink-0 lg:pl-2 ml-auto lg:ml-0">
           <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-600 select-none cursor-pointer">
             <span>Erledigte</span><Toggle checked={showDone} onChange={setShowDone} />
           </label>
