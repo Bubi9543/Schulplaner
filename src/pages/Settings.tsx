@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Palette, Sparkles, LayoutDashboard, GraduationCap, BookOpen, Database, Info, Pencil, Plus, RefreshCw, Trash2, Wand2, Upload, Cloud, CloudOff, LogIn, LogOut, Smartphone, Calendar, CalendarRange, Check, Zap, Loader2, AlertTriangle, Copy, KeyRound, ExternalLink, Share2, ChevronUp, ChevronDown, Bell, BellOff, Send, Volume2, Moon, MessageSquare, Users, UserPlus, X, Timer, Trophy, NotebookPen, ClipboardCheck, Clock, Lightbulb, Eye, EyeOff, GripVertical, RotateCcw, PanelLeft, Lock, type LucideIcon } from 'lucide-react';
@@ -22,7 +22,7 @@ import { BUILTIN_GRADE_KINDS } from '@/types';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import { useBaseNavItems, applyNavPrefs, LOCKED_NAV_ROUTES, type NavItem } from '@/components/Sidebar';
 import type { Subject, GradingSystem, GradeKind, ThemeMode, DensityMode, FontScale, AnimationLevel, GreetingStyle, TaskKind, SchoolYear } from '@/types';
-import { THEME_LIST, paletteFromHue, DEFAULT_CUSTOM_HUE } from '@/lib/themes';
+import { THEME_LIST, paletteFromHue, applyTheme, DEFAULT_CUSTOM_HUE } from '@/lib/themes';
 
 type SectionId = 'profile' | 'friends' | 'appearance' | 'navigation' | 'dashboard' | 'grading' | 'subjects' | 'schoolyears' | 'notifications' | 'shortcut' | 'feedback' | 'data' | 'about';
 
@@ -215,9 +215,22 @@ function ProfileSection() {
 function AppearanceSection() {
   const settings = useStore(s => s.settings)!;
   const setSettings = useStore(s => s.setSettings);
-  const customHue = settings.customHue ?? DEFAULT_CUSTOM_HUE;
-  const customPal = paletteFromHue(customHue);
+  const storedHue = settings.customHue ?? DEFAULT_CUSTOM_HUE;
   const customActive = settings.colorTheme === 'custom';
+
+  // Lokaler Slider-Wert: das Schreiben in die DB und der Cloud-Sync sind asynchron.
+  // Würde der Slider direkt am Speicher hängen, würde der angezeigte Wert beim
+  // Schieben (besonders auf dem iPad) hinterherhinken und zurückspringen.
+  const [hue, setHue] = useState(storedHue);
+  const draggingRef = useRef(false);
+  // Externe Änderungen (Sync, Theme-Wechsel) übernehmen – aber nie mitten im Schieben.
+  useEffect(() => { if (!draggingRef.current) setHue(storedHue); }, [storedHue]);
+  const customPal = paletteFromHue(hue);
+
+  // Während des Schiebens nur lokal + Live-Vorschau (günstige CSS-Variablen).
+  const previewHue = (val: number) => { setHue(val); applyTheme('custom', undefined, val); };
+  // Erst beim Loslassen speichern und syncen.
+  const commitHue = (val: number) => { draggingRef.current = false; setSettings({ colorTheme: 'custom', customHue: val }); };
   return (
     <div className="space-y-4">
       <Card>
@@ -252,7 +265,7 @@ function AppearanceSection() {
           })}
 
           {/* Eigene Farbe – Farbton frei wählbar */}
-          <button onClick={() => setSettings({ colorTheme: 'custom', customHue })}
+          <button onClick={() => setSettings({ colorTheme: 'custom', customHue: hue })}
             className={`group relative h-28 rounded-2xl overflow-hidden transition-all text-left ${customActive ? 'ring-2 ring-offset-2 ring-offset-transparent scale-[1.02]' : 'hover:scale-[1.01]'}`}
             style={{
               '--tw-ring-color': customPal.primary,
@@ -288,8 +301,12 @@ function AppearanceSection() {
                   <span className="size-7 rounded-full border-2 border-white shadow-md" style={{ background: customPal.primary }} />
                 </div>
                 <input
-                  type="range" min={0} max={359} value={customHue}
-                  onChange={e => setSettings({ colorTheme: 'custom', customHue: Number(e.target.value) })}
+                  type="range" min={0} max={359} value={hue}
+                  onChange={e => previewHue(Number(e.target.value))}
+                  onPointerDown={() => { draggingRef.current = true; }}
+                  onPointerUp={e => commitHue(Number((e.target as HTMLInputElement).value))}
+                  onPointerCancel={e => commitHue(Number((e.target as HTMLInputElement).value))}
+                  onKeyUp={e => commitHue(Number((e.target as HTMLInputElement).value))}
                   className="hue-slider w-full"
                   style={{ background: 'linear-gradient(to right, hsl(0,75%,58%), hsl(60,75%,58%), hsl(120,75%,58%), hsl(180,75%,58%), hsl(240,75%,58%), hsl(300,75%,58%), hsl(360,75%,58%))' }}
                   aria-label="Farbton wählen"
