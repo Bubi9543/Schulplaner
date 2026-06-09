@@ -527,31 +527,39 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   quietHours: { enabled: true, from: '22:00', to: '07:00' },
 };
 
+// Farb-Matrix: 8 Spalten = Farbfamilien (Regenbogen von Rot bis Pink),
+// Zeilen = Helligkeitsstufen (oben hell, nach unten dunkler).
+// SUBJECT_COLORS = kräftige Mittelzone (Stufe 500/600/700), die immer sichtbar ist.
 export const SUBJECT_COLORS = [
-  '#dc2626', '#ea580c', '#f97316', '#f59e0b',
-  '#ca8a04', '#84cc16', '#16a34a', '#10b981',
-  '#059669', '#14b8a6', '#06b6d4', '#0891b2',
-  '#0284c7', '#3b82f6', '#6366f1', '#4f46e5',
-  '#8b5cf6', '#7c3aed', '#a855f7', '#9333ea',
-  '#d946ef', '#ec4899', '#e11d48', '#f43f5e',
+  // Stufe 500 – kräftig
+  '#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899',
+  // Stufe 600 – satt
+  '#dc2626', '#ea580c', '#d97706', '#16a34a', '#0d9488', '#2563eb', '#7c3aed', '#db2777',
+  // Stufe 700 – tief
+  '#b91c1c', '#c2410c', '#b45309', '#15803d', '#0f766e', '#1d4ed8', '#6d28d9', '#be185d',
 ] as const;
 
-// Zusätzliche Farben, die im Dialog erst beim Aufklappen erscheinen.
-// Geordnet in drei Blöcken à 16 (je 2 Reihen mit 8 Farben, nach Farbverlauf):
-// helle Pastelltöne, dunkle/kräftige Töne, neutrale & erdige Töne.
-export const SUBJECT_COLORS_EXTENDED = [
-  // Pastell – Reihe 1
-  '#fca5a5', '#fdba74', '#fcd34d', '#fde047', '#bef264', '#86efac', '#6ee7b7', '#5eead4',
-  // Pastell – Reihe 2
-  '#67e8f9', '#7dd3fc', '#93c5fd', '#a5b4fc', '#c4b5fd', '#d8b4fe', '#f0abfc', '#f9a8d4',
-  // Dunkel – Reihe 1
-  '#991b1b', '#9a3412', '#92400e', '#854d0e', '#3f6212', '#166534', '#065f46', '#115e59',
-  // Dunkel – Reihe 2
-  '#155e75', '#075985', '#1e40af', '#3730a3', '#5b21b6', '#6b21a8', '#86198f', '#9d174d',
-  // Neutral & erdig – Reihe 1
-  '#94a3b8', '#64748b', '#475569', '#334155', '#a8a29e', '#78716c', '#57534e', '#44403c',
-  // Neutral & erdig – Reihe 2
-  '#0f172a', '#1c1917', '#7c2d12', '#422006', '#365314', '#064e3b', '#0c4a6e', '#312e81',
+// Volles Raster (72): dieselben 8 Farbfamilien über alle Helligkeitsstufen,
+// von ganz hell (oben) bis ganz dunkel (unten), plus eine Neutral-Reihe zum Schluss.
+export const SUBJECT_COLORS_ALL = [
+  // Stufe 200 – sehr hell / pastell
+  '#fecaca', '#fed7aa', '#fde68a', '#bbf7d0', '#99f6e4', '#bfdbfe', '#ddd6fe', '#fbcfe8',
+  // Stufe 300
+  '#fca5a5', '#fdba74', '#fcd34d', '#86efac', '#5eead4', '#93c5fd', '#c4b5fd', '#f9a8d4',
+  // Stufe 400
+  '#f87171', '#fb923c', '#fbbf24', '#4ade80', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6',
+  // Stufe 500 – kräftig
+  '#ef4444', '#f97316', '#f59e0b', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899',
+  // Stufe 600 – satt
+  '#dc2626', '#ea580c', '#d97706', '#16a34a', '#0d9488', '#2563eb', '#7c3aed', '#db2777',
+  // Stufe 700 – tief
+  '#b91c1c', '#c2410c', '#b45309', '#15803d', '#0f766e', '#1d4ed8', '#6d28d9', '#be185d',
+  // Stufe 800 – dunkel
+  '#991b1b', '#9a3412', '#92400e', '#166534', '#115e59', '#1e40af', '#5b21b6', '#9d174d',
+  // Stufe 900 – sehr dunkel
+  '#7f1d1d', '#7c2d12', '#78350f', '#14532d', '#134e4a', '#1e3a8a', '#4c1d95', '#831843',
+  // Neutral – hell bis dunkel
+  '#e2e8f0', '#cbd5e1', '#94a3b8', '#64748b', '#475569', '#334155', '#1e293b', '#0f172a',
 ] as const;
 
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {

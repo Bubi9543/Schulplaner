@@ -3,7 +3,7 @@ import { Modal } from '@/components/Modal';
 import { IconPicker } from '@/components/IconPicker';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
-import { SUBJECT_COLORS, SUBJECT_COLORS_EXTENDED, DEFAULT_GRADING_CONFIG } from '@/types';
+import { SUBJECT_COLORS, SUBJECT_COLORS_ALL, DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject, SubjectCategory, GradingSystem } from '@/types';
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, getSystemMeta } from '@/lib/grading';
 import { detectSubjectIcon } from '@/lib/subjectIcons';
@@ -53,8 +53,12 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
       setTargetAverage(initial?.targetAverage?.toString() ?? '');
-      // Panel aufklappen, falls die aktuelle Farbe aus dem erweiterten Set stammt.
-      setShowAllColors((SUBJECT_COLORS_EXTENDED as readonly string[]).includes(initial?.color ?? ''));
+      // Panel aufklappen, falls die aktuelle Farbe nur im vollen Raster vorkommt.
+      const c = initial?.color ?? '';
+      setShowAllColors(
+        !(SUBJECT_COLORS as readonly string[]).includes(c)
+        && (SUBJECT_COLORS_ALL as readonly string[]).includes(c)
+      );
     }
   }, [open, initial]);
 
@@ -122,23 +126,13 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
         <div>
           <label className="label">Farbe</label>
           <div className="grid grid-cols-8 gap-2 justify-items-center">
-            {SUBJECT_COLORS.map(c => (
+            {(showAllColors ? SUBJECT_COLORS_ALL : SUBJECT_COLORS).map(c => (
               <button key={c} type="button" onClick={() => setColor(c)}
                 className={`size-9 rounded-2xl transition ${color === c ? 'ring-4 ring-white scale-110 shadow-soft' : ''}`}
                 style={{ background: c }}
               />
             ))}
           </div>
-          {showAllColors && (
-            <div className="grid grid-cols-8 gap-2 justify-items-center mt-2 pt-2 border-t border-ink-100">
-              {SUBJECT_COLORS_EXTENDED.map(c => (
-                <button key={c} type="button" onClick={() => setColor(c)}
-                  className={`size-9 rounded-2xl transition ${color === c ? 'ring-4 ring-white scale-110 shadow-soft' : ''}`}
-                  style={{ background: c }}
-                />
-              ))}
-            </div>
-          )}
           <button type="button" onClick={() => setShowAllColors(v => !v)}
             className="mt-2 text-xs font-semibold text-ink-500 hover:text-ink-700 transition">
             {showAllColors ? 'Weniger Farben ▲' : 'Mehr Farben ▼'}
