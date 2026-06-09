@@ -13,8 +13,8 @@ import { getOrCreateMyProfile } from './homeworkShare';
  */
 
 const BUCKET = 'avatars';
-const SIZE = 256;
-const QUALITY = 0.82;
+export const SIZE = 256;
+export const QUALITY = 0.82;
 
 export class AvatarAuthError extends Error {
   constructor() { super('Profilbild braucht einen Cloud-Account. Logge dich erst an.'); }
@@ -51,12 +51,8 @@ async function compressToSquare(file: File): Promise<Blob> {
   });
 }
 
-/**
- * Komprimiert ein gewähltes Bild center-cropped auf SIZE×SIZE und gibt es als
- * Data-URL zurück – funktioniert ohne Cloud-Account (lokales Profilbild).
- */
-export async function fileToAvatarDataUrl(file: File): Promise<string> {
-  const blob = await compressToSquare(file);
+/** Liest einen Blob als Data-URL (für die sofortige lokale Anzeige). */
+export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -66,10 +62,22 @@ export async function fileToAvatarDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Lädt ein neues Profilbild hoch und gibt die öffentliche (cache-busted) URL zurück.
- * Aktualisiert außerdem `user_profiles.avatar_url`.
+ * Komprimiert ein gewähltes Bild center-cropped auf SIZE×SIZE und gibt es als
+ * Data-URL zurück – funktioniert ohne Cloud-Account (lokales Profilbild).
  */
-export async function uploadAvatar(file: File): Promise<string> {
+export async function fileToAvatarDataUrl(file: File): Promise<string> {
+  return blobToDataUrl(await compressToSquare(file));
+}
+
+/**
+ * Lädt einen bereits fertig zugeschnittenen JPEG-Blob (SIZE×SIZE) als
+ * Profilbild hoch und gibt die öffentliche (cache-busted) URL zurück.
+ * Aktualisiert außerdem `user_profiles.avatar_url`.
+ *
+ * Wird vom Zuschneide-Dialog genutzt: der vom Nutzer gewählte Ausschnitt darf
+ * hier NICHT erneut zentriert werden – deshalb kein `compressToSquare`.
+ */
+export async function uploadAvatarBlob(blob: Blob): Promise<string> {
   if (!supabase) throw new AvatarAuthError();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new AvatarAuthError();
@@ -77,7 +85,6 @@ export async function uploadAvatar(file: File): Promise<string> {
   // Profil sicherstellen (legt es bei Bedarf an).
   await getOrCreateMyProfile();
 
-  const blob = await compressToSquare(file);
   const path = `${user.id}/avatar.jpg`;
 
   const { error: upErr } = await supabase.storage
@@ -96,6 +103,15 @@ export async function uploadAvatar(file: File): Promise<string> {
   if (updErr) throw new Error('Profil konnte nicht aktualisiert werden: ' + updErr.message);
 
   return url;
+}
+
+/**
+ * Lädt ein neues Profilbild hoch und gibt die öffentliche (cache-busted) URL zurück.
+ * Schneidet das Bild zentriert quadratisch zu (für Aufrufer ohne eigenen
+ * Ausschnitt). Aktualisiert `user_profiles.avatar_url`.
+ */
+export async function uploadAvatar(file: File): Promise<string> {
+  return uploadAvatarBlob(await compressToSquare(file));
 }
 
 /** Entfernt das Profilbild (Storage-Datei + avatar_url). */
