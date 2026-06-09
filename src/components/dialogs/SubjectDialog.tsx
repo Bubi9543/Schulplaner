@@ -3,7 +3,7 @@ import { Modal } from '@/components/Modal';
 import { IconPicker } from '@/components/IconPicker';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { useStore } from '@/store/useStore';
-import { SUBJECT_COLORS, DEFAULT_GRADING_CONFIG } from '@/types';
+import { SUBJECT_COLORS, SUBJECT_COLORS_EXTENDED, DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject, SubjectCategory, GradingSystem } from '@/types';
 import { CATEGORY_LABEL, CATEGORY_DESCRIPTION, getSystemMeta } from '@/lib/grading';
 import { detectSubjectIcon } from '@/lib/subjectIcons';
@@ -40,6 +40,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
   const [teacher, setTeacher] = useState(initial?.teacher ?? '');
   const [room, setRoom] = useState(initial?.room ?? '');
   const [targetAverage, setTargetAverage] = useState<string>(initial?.targetAverage?.toString() ?? '');
+  const [showAllColors, setShowAllColors] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -52,6 +53,8 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
       setTeacher(initial?.teacher ?? '');
       setRoom(initial?.room ?? '');
       setTargetAverage(initial?.targetAverage?.toString() ?? '');
+      // Panel aufklappen, falls die aktuelle Farbe aus dem erweiterten Set stammt.
+      setShowAllColors((SUBJECT_COLORS_EXTENDED as readonly string[]).includes(initial?.color ?? ''));
     }
   }, [open, initial]);
 
@@ -118,7 +121,7 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
 
         <div>
           <label className="label">Farbe</label>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-8 gap-2 justify-items-center">
             {SUBJECT_COLORS.map(c => (
               <button key={c} type="button" onClick={() => setColor(c)}
                 className={`size-9 rounded-2xl transition ${color === c ? 'ring-4 ring-white scale-110 shadow-soft' : ''}`}
@@ -126,6 +129,20 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
               />
             ))}
           </div>
+          {showAllColors && (
+            <div className="grid grid-cols-8 gap-2 justify-items-center mt-2 pt-2 border-t border-ink-100">
+              {SUBJECT_COLORS_EXTENDED.map(c => (
+                <button key={c} type="button" onClick={() => setColor(c)}
+                  className={`size-9 rounded-2xl transition ${color === c ? 'ring-4 ring-white scale-110 shadow-soft' : ''}`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={() => setShowAllColors(v => !v)}
+            className="mt-2 text-xs font-semibold text-ink-500 hover:text-ink-700 transition">
+            {showAllColors ? 'Weniger Farben ▲' : 'Mehr Farben ▼'}
+          </button>
         </div>
 
         <div>

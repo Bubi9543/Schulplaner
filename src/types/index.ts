@@ -536,6 +536,24 @@ export const SUBJECT_COLORS = [
   '#d946ef', '#ec4899', '#e11d48', '#f43f5e',
 ] as const;
 
+// Zusätzliche Farben, die im Dialog erst beim Aufklappen erscheinen.
+// Geordnet in drei Blöcken à 16 (je 2 Reihen mit 8 Farben, nach Farbverlauf):
+// helle Pastelltöne, dunkle/kräftige Töne, neutrale & erdige Töne.
+export const SUBJECT_COLORS_EXTENDED = [
+  // Pastell – Reihe 1
+  '#fca5a5', '#fdba74', '#fcd34d', '#fde047', '#bef264', '#86efac', '#6ee7b7', '#5eead4',
+  // Pastell – Reihe 2
+  '#67e8f9', '#7dd3fc', '#93c5fd', '#a5b4fc', '#c4b5fd', '#d8b4fe', '#f0abfc', '#f9a8d4',
+  // Dunkel – Reihe 1
+  '#991b1b', '#9a3412', '#92400e', '#854d0e', '#3f6212', '#166534', '#065f46', '#115e59',
+  // Dunkel – Reihe 2
+  '#155e75', '#075985', '#1e40af', '#3730a3', '#5b21b6', '#6b21a8', '#86198f', '#9d174d',
+  // Neutral & erdig – Reihe 1
+  '#94a3b8', '#64748b', '#475569', '#334155', '#a8a29e', '#78716c', '#57534e', '#44403c',
+  // Neutral & erdig – Reihe 2
+  '#0f172a', '#1c1917', '#7c2d12', '#422006', '#365314', '#064e3b', '#0c4a6e', '#312e81',
+] as const;
+
 export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
   schulaufgabe: { haupt: 2, neben: 1 },
   stegreif:     { haupt: 1, neben: 1 },
