@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, BookOpen, CheckCircle2, Calendar, X, Lightbulb } from 'lucide-react';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
+import { Plus, Trash2, BookOpen, CheckCircle2, Calendar, X, Lightbulb, GripVertical } from 'lucide-react';
 import type { StudyChecklistItem, StudyStatus } from '@/types';
 
 /**
@@ -62,6 +62,79 @@ interface Props {
   framed?: boolean;
   /** Kopfzeile (Titel + Zähler) anzeigen. Default: true. */
   showHeader?: boolean;
+}
+
+/**
+ * Eine einzelne, per Drag-and-drop verschiebbare Checklisten-Zeile.
+ * Der Anfasser (Griff-Symbol) startet das Ziehen – so bleibt das Textfeld
+ * normal bedienbar und nur am Griff wird sortiert (auch per Touch/iPad).
+ */
+function ChecklistRow({
+  item,
+  onUpdate,
+  onRemove,
+  onCycle,
+}: {
+  item: StudyChecklistItem;
+  onUpdate: (id: string, patch: Partial<StudyChecklistItem>) => void;
+  onRemove: (id: string) => void;
+  onCycle: (id: string, current: StudyStatus) => void;
+}) {
+  const dragControls = useDragControls();
+
+  return (
+    <Reorder.Item
+      value={item}
+      dragListener={false}
+      dragControls={dragControls}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: -10 }}
+      className="flex items-center gap-1.5 rounded-xl bg-white/70 px-2.5 py-2"
+    >
+      {/* Drag-Griff links */}
+      <button
+        onPointerDown={e => dragControls.start(e)}
+        className="size-7 -ml-1 grid place-items-center rounded-lg text-ink-300 hover:text-ink-600 hover:bg-ink-100/60 cursor-grab active:cursor-grabbing transition flex-shrink-0 touch-none"
+        title="Zum Verschieben ziehen"
+        aria-label="Zum Verschieben ziehen"
+      >
+        <GripVertical className="size-4" />
+      </button>
+      {/* Label */}
+      <input
+        value={item.label}
+        onChange={e => onUpdate(item.id, { label: e.target.value })}
+        onDoubleClick={() => onCycle(item.id, item.status)}
+        className="flex-1 min-w-0 bg-transparent text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition py-0.5"
+        placeholder="Thema beschreiben"
+      />
+      {/* Ampel-Buttons rechts */}
+      <div className="flex gap-1.5 flex-shrink-0">
+        {STATUS_ORDER.map(s => (
+          <button
+            key={s}
+            onClick={() => onUpdate(item.id, { status: s })}
+            className="ampel-dot"
+            title={STATUS_META[s].label}
+            aria-label={STATUS_META[s].label}
+            style={{
+              background: STATUS_META[s].color,
+              opacity: item.status === s ? 1 : 0.32,
+              boxShadow: item.status === s ? `0 0 0 2px rgb(var(--surface-rgb)), 0 0 0 4px ${STATUS_META[s].color}` : 'none',
+            }}
+          />
+        ))}
+      </div>
+      <button
+        onClick={() => onRemove(item.id)}
+        className="size-7 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition flex-shrink-0"
+        title="Punkt entfernen"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </Reorder.Item>
+  );
 }
 
 export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, title = 'Lerncheckliste', framed = true, showHeader = true }: Props) {
@@ -247,59 +320,27 @@ export function StudyChecklist({ items, onChange, deadline, onDeadlineChange, ti
         </div>
       )}
 
-      {/* Items */}
-      <AnimatePresence initial={false}>
-        {items.length > 0 && (
-          <motion.ul
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="space-y-1.5 mb-3"
-          >
+      {/* Items – per Drag-Griff verschiebbar */}
+      {items.length > 0 && (
+        <Reorder.Group
+          axis="y"
+          values={items}
+          onReorder={onChange}
+          className="space-y-1.5 mb-3 list-none"
+        >
+          <AnimatePresence initial={false}>
             {items.map(item => (
-              <motion.li
+              <ChecklistRow
                 key={item.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                layout
-                className="flex items-center gap-2 rounded-xl bg-white/70 px-2.5 py-2"
-              >
-                {/* Label links */}
-                <input
-                  value={item.label}
-                  onChange={e => updateItem(item.id, { label: e.target.value })}
-                  onDoubleClick={() => cycleStatus(item.id, item.status)}
-                  className="flex-1 min-w-0 bg-transparent text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition py-0.5"
-                  placeholder="Thema beschreiben"
-                />
-                {/* Ampel-Buttons rechts */}
-                <div className="flex gap-1.5 flex-shrink-0">
-                  {STATUS_ORDER.map(s => (
-                    <button
-                      key={s}
-                      onClick={() => updateItem(item.id, { status: s })}
-                      className="ampel-dot"
-                      title={STATUS_META[s].label}
-                      aria-label={STATUS_META[s].label}
-                      style={{
-                        background: STATUS_META[s].color,
-                        opacity: item.status === s ? 1 : 0.32,
-                        boxShadow: item.status === s ? `0 0 0 2px rgb(var(--surface-rgb)), 0 0 0 4px ${STATUS_META[s].color}` : 'none',
-                      }}
-                    />
-                  ))}
-                </div>
-                <button
-                  onClick={() => removeItem(item.id)}
-                  className="size-7 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition flex-shrink-0"
-                  title="Punkt entfernen"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </motion.li>
+                item={item}
+                onUpdate={updateItem}
+                onRemove={removeItem}
+                onCycle={cycleStatus}
+              />
             ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
+          </AnimatePresence>
+        </Reorder.Group>
+      )}
 
       {/* Eingabe für neuen Punkt */}
       <div className="flex gap-2">
