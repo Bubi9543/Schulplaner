@@ -30,7 +30,7 @@ import {
   activeSystem, effectiveWeight, formatAverage, gradeTrend, overallAverage,
   subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel, getKindLabel,
 } from '@/lib/grading';
-import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
+import { cn, daysUntil, relativeDate, startOfToday, WEEKDAYS_DE } from '@/lib/utils';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Grade, TaskKind, AppTask } from '@/types';
@@ -358,9 +358,11 @@ function TasksTodayWidget({ onSelectTask }: { onSelectTask: (t: AppTask) => void
 
 function RecentGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => void }) {
   const { subjects, grades } = useStore();
-  const recentGrades = useMemo(() =>
-    [...grades].filter(g => !g.isPending).sort((a, b) => b.date - a.date).slice(0, 6),
-    [grades]);
+  const recentGrades = useMemo(() => {
+    // Letzte: Datum in der Vergangenheit UND Note eingetragen.
+    const t0 = startOfToday();
+    return [...grades].filter(g => !g.isPending && g.date < t0).sort((a, b) => b.date - a.date).slice(0, 6);
+  }, [grades]);
 
   return (
     <div className="h-full flex flex-col widget-pad">
@@ -400,9 +402,11 @@ function RecentGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => vo
 
 function PendingGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => void }) {
   const { subjects, grades } = useStore();
-  const pendingGrades = useMemo(() =>
-    grades.filter(g => g.isPending).sort((a, b) => a.date - b.date).slice(0, 5),
-    [grades]);
+  const pendingGrades = useMemo(() => {
+    // Ausstehend: Datum in der Vergangenheit UND noch keine Note eingetragen.
+    const t0 = startOfToday();
+    return grades.filter(g => g.isPending && g.date < t0).sort((a, b) => b.date - a.date).slice(0, 5);
+  }, [grades]);
 
   return (
     <div className="h-full flex flex-col widget-pad">
@@ -560,16 +564,16 @@ function UpcomingExamsWidget({
 
   const items = useMemo(() => {
     const out: Array<{ kind: 'grade' | 'task'; date: number; title: string; subjectId?: string; raw: Grade | AppTask }> = [];
-    const now = Date.now();
+    const t0 = startOfToday();
     for (const g of grades) {
-      // Jede geplante (ausstehende) Note ist eine anstehende Prüfung – egal ob
+      // Anstehend: jede Prüfung mit Datum heute oder in der Zukunft – egal ob
       // Schulaufgabe, Klausur, Stegreif/Test oder eigene Notenart.
-      if (g.isPending && g.date >= now - 86400000) {
+      if (g.date >= t0) {
         out.push({ kind: 'grade', date: g.date, title: g.title ?? getKindLabel(g.kind, config), subjectId: g.subjectId, raw: g });
       }
     }
     for (const t of tasks) {
-      if (!t.done && (t.kind === 'test' || t.kind === 'schulaufgabe') && t.dueDate && t.dueDate >= now - 86400000) {
+      if (!t.done && (t.kind === 'test' || t.kind === 'schulaufgabe') && t.dueDate && t.dueDate >= t0) {
         out.push({ kind: 'task', date: t.dueDate, title: t.title, subjectId: t.subjectId, raw: t });
       }
     }

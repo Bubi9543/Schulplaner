@@ -16,6 +16,13 @@ export function formatShortDate(ts: number) {
   return new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
 }
 
+/** Zeitstempel für heute 0 Uhr – Stichtag, um Zukunft von Vergangenheit zu trennen. */
+export function startOfToday(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 export function daysUntil(ts: number): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
