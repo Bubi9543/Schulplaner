@@ -42,6 +42,9 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
   const [targetAverage, setTargetAverage] = useState<string>(initial?.targetAverage?.toString() ?? '');
   const [showAllColors, setShowAllColors] = useState(false);
 
+  // Eigene Farbe = ein Farbcode, der in keinem der Voreinstellungs-Raster vorkommt.
+  const isCustomColor = !(SUBJECT_COLORS_ALL as readonly string[]).includes(color);
+
   useEffect(() => {
     if (open) {
       setName(initial?.name ?? '');
@@ -125,6 +128,30 @@ export function SubjectDialog({ open, onClose, initial }: Props) {
 
         <div>
           <label className="label">Farbe</label>
+          {/* Eigene Farbe: auffällige Zeile ganz oben, öffnet den nativen Farbwähler */}
+          <label
+            title="Eigene Farbe wählen"
+            className={`mb-3 flex items-center gap-3 rounded-2xl border-2 border-dashed px-3 py-2.5 cursor-pointer transition ${isCustomColor ? 'border-transparent ring-4 ring-white shadow-soft' : 'border-ink-200 hover:border-ink-300'}`}
+            style={isCustomColor ? { background: `linear-gradient(135deg, ${color}, ${color}cc)` } : undefined}
+          >
+            <span
+              className="size-9 shrink-0 rounded-xl grid place-items-center"
+              style={{ background: isCustomColor ? 'rgba(255,255,255,0.3)' : 'conic-gradient(#ef4444,#f59e0b,#22c55e,#3b82f6,#8b5cf6,#ec4899,#ef4444)' }}
+            >
+              <svg viewBox="0 0 24 24" className="size-4 text-white drop-shadow" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </span>
+            <span className={`flex flex-col ${isCustomColor ? 'text-white' : ''}`}>
+              <span className="font-semibold text-sm">Eigene Farbe</span>
+              <span className={`text-[11px] leading-tight ${isCustomColor ? 'text-white/85' : 'text-ink-500'}`}>
+                {isCustomColor ? color.toUpperCase() : 'Beliebige Farbe frei wählen'}
+              </span>
+            </span>
+            <input type="color" value={color} onChange={e => setColor(e.target.value)}
+              className="sr-only" />
+          </label>
+
           <div className="grid grid-cols-8 gap-2 justify-items-center">
             {(showAllColors ? SUBJECT_COLORS_ALL : SUBJECT_COLORS).map(c => (
               <button key={c} type="button" onClick={() => setColor(c)}
