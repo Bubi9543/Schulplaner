@@ -11,7 +11,7 @@ import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
 import { GraduationCap, Tag, Check, Sparkles } from 'lucide-react';
 import {
-  DialogShell, Field, GradePad, SubjectChips, KindChips, SegmentedControl,
+  DialogShell, Field, GradePad, TendencyPicker, SubjectChips, KindChips, SegmentedControl,
   type KindChipItem, type SegOption,
 } from './dialogParts';
 
@@ -31,6 +31,7 @@ const WEIGHT_OPTIONS: SegOption[] = [
   { value: 1.5, label: '×1,5' },
   { value: 2,   label: '×2' },
 ];
+const WEIGHT_OPTIONS_WITH_CUSTOM: SegOption[] = [...WEIGHT_OPTIONS, { value: 'custom', label: 'Custom' }];
 
 function isPreset(v: number): boolean {
   return WEIGHT_OPTIONS.some(p => Math.abs((p.value as number) - v) < 1e-6);
@@ -66,6 +67,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const meta = config ? getSystemMeta(system, config) : null;
 
   const [value, setValue] = useState<number>(initial?.value ?? meta?.defaultValue ?? 2);
+  const [tendency, setTendency] = useState<'+' | '-' | undefined>(initial?.tendency);
   const [kind, setKind] = useState<GradeKind>(initial?.kind ?? 'schulaufgabe');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [date, setDate] = useState<string>(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
@@ -74,6 +76,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : ''
   );
   const [isPending, setIsPending] = useState<boolean>(!!initial?.isPending);
+  const [customMode, setCustomMode] = useState<boolean>(!!initial?.weightMultiplier && !isPreset(initial.weightMultiplier));
   const [confettiTrigger, setConfettiTrigger] = useState(0);
   const gradeIdRef = useRef<string>(initial?.id ?? uid());
 
@@ -94,11 +97,13 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     setSubjectId(sid);
     setAutoChosen(!initial?.subjectId && !defaultSubjectId && sid !== (subjects[0]?.id ?? ''));
     setValue(initial?.value ?? m?.defaultValue ?? 2);
+    setTendency(initial?.tendency);
     setKind(initial?.kind ?? 'schulaufgabe');
     setTitle(initial?.title ?? '');
     setDate(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
     setWeightMultiplier(initial?.weightMultiplier ?? 1);
     setCustomWeightInput(initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : '');
+    setCustomMode(!!initial?.weightMultiplier && !isPreset(initial.weightMultiplier));
     setIsPending(!!initial?.isPending);
     gradeIdRef.current = initial?.id ?? uid();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -118,6 +123,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
       weight: 1,
       weightMultiplier: weightMultiplier !== 1 ? weightMultiplier : undefined,
       isPending,
+      tendency: isPending ? undefined : tendency,
     };
     if (editing && initial?.id) {
       await updateGrade(initial.id, payload);
@@ -147,7 +153,6 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   }
 
   const color = gradeColor(value, system, config);
-  const customActive = !isPreset(weightMultiplier);
   const isLargeKind = isLargeAssessmentKind(kind, config);
   const showCategoryHint = subject.system === 'bayern' && subject.category !== 'nebenfach';
 
@@ -179,16 +184,22 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
         </Field>
 
         {/* Farbige Live-Vorschau */}
-        <div className="rounded-3xl px-5 py-4 text-center text-white overflow-hidden"
+        <div className="rounded-3xl px-5 py-4 text-center text-white overflow-hidden shrink-0"
           style={{ background: isPending ? 'linear-gradient(135deg, #64748b, #475569)' : `linear-gradient(135deg, ${color}, ${hexToRgba(color, .8)})`, transition: 'background .3s' }}>
           <div className="eyebrow" style={{ color: 'rgba(255,255,255,.9)' }}>{isPending ? 'Geplant' : getKindLabel(kind, config)}</div>
-          <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 56 }}>{isPending ? '?' : meta.formatValue(value)}</div>
+          <div className="font-display font-extrabold leading-none mt-1" style={{ fontSize: 56 }}>
+            {isPending ? '?' : meta.formatValue(value)}
+            {!isPending && tendency && <sup style={{ fontSize: 30, marginLeft: 1, verticalAlign: 'super' }}>{tendency === '+' ? '+' : '−'}</sup>}
+          </div>
           <div className="text-[13px] mt-1" style={{ opacity: .9 }}>{subject.name}</div>
         </div>
 
         {!isPending && (
           <Field label="Wert">
             <GradePad meta={meta} value={value} onChange={setValue} system={system} config={config} />
+            {system !== 'oberstufe' && (
+              <TendencyPicker value={tendency} onChange={setTendency} color={color} />
+            )}
           </Field>
         )}
 
@@ -202,14 +213,19 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
 
         {!isPending && (
           <Field label="Gewichtung dieser Note" hint="Wirkt innerhalb der Gruppe (Schulaufgaben oder Rest). ×2 bedeutet, diese Note zählt doppelt.">
-            <SegmentedControl options={WEIGHT_OPTIONS} value={customActive ? '' : weightMultiplier} tinted
-              onChange={(v) => { setWeightMultiplier(v as number); setCustomWeightInput(''); }} />
-            <div className="flex items-center gap-2 mt-2">
-              <input type="text" inputMode="decimal" placeholder="Custom (z. B. 0,75)"
-                className="input" style={customActive ? { borderColor: 'rgb(var(--theme-primary-rgb) / 0.5)' } : undefined}
-                value={customWeightInput} onChange={e => applyCustomWeight(e.target.value)} />
-              <span className="text-xs text-ink-500 whitespace-nowrap">aktuell ×{weightMultiplier.toString().replace('.', ',')}</span>
-            </div>
+            <SegmentedControl options={WEIGHT_OPTIONS_WITH_CUSTOM} value={customMode ? 'custom' : weightMultiplier} tinted
+              onChange={(v: string | number) => {
+                if (v === 'custom') { setCustomMode(true); }
+                else { setCustomMode(false); setWeightMultiplier(v as number); setCustomWeightInput(''); }
+              }} />
+            {customMode && (
+              <div className="flex items-center gap-2 mt-2">
+                <input type="text" inputMode="decimal" placeholder="z. B. 0,75" autoFocus
+                  className="input" style={{ borderColor: 'rgb(var(--theme-primary-rgb) / 0.5)' }}
+                  value={customWeightInput} onChange={e => applyCustomWeight(e.target.value)} />
+                <span className="text-xs text-ink-500 whitespace-nowrap">aktuell ×{weightMultiplier.toString().replace('.', ',')}</span>
+              </div>
+            )}
           </Field>
         )}
 

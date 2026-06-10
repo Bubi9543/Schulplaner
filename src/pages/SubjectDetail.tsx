@@ -265,7 +265,7 @@ export function SubjectDetailPage() {
                 <button key={g.id} onClick={() => setGradeDetail({ open: true, grade: g })}
                   className="rounded-2xl bg-white/70 hover:bg-white p-3 text-left transition shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <GradeBadge value={g.value} system={subject.system} size="sm" />
+                    <GradeBadge value={g.value} system={subject.system} size="sm" tendency={g.tendency} />
                     <span className="chip">{getKindLabel(g.kind, config)}</span>
                   </div>
                   <div className="font-semibold text-sm text-ink-800 truncate">{g.title ?? 'Note'}</div>

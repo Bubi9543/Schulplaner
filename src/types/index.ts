@@ -125,6 +125,11 @@ export interface Grade {
   /** Per-Note Gewichts-Multiplikator. Default 1. Erlaubt 0.5/1/1.5/2 oder beliebige Zahl. */
   weightMultiplier?: number;
   isPending?: boolean;
+  /**
+   * Optionale Notentendenz ('+' oder '-'). Reine Anzeige-Information –
+   * der Schnitt rechnet weiterhin nur mit `value`. Ermöglicht z. B. „2+".
+   */
+  tendency?: '+' | '-';
   /** Zugehöriges Schuljahr. Wird vom Subject geerbt beim Anlegen. */
   schoolYearId?: string;
   /**

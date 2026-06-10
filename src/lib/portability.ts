@@ -172,6 +172,7 @@ function parseGrade(raw: unknown, subjectMap: Map<string, Subject>): Grade | nul
     weight: asNumber(r.weight, 1),
     weightMultiplier: typeof wm === 'number' && Number.isFinite(wm) && wm > 0 ? wm : undefined,
     isPending: asBool(r.isPending, false),
+    tendency: r.tendency === '+' || r.tendency === '-' ? r.tendency : undefined,
     schoolYearId: asString(r.schoolYearId, subj.schoolYearId ?? '') || undefined,
   };
 }

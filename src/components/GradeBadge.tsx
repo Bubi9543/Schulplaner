@@ -7,9 +7,11 @@ interface Props {
   system: GradingSystem;
   size?: 'sm' | 'md' | 'lg';
   pending?: boolean;
+  /** Optionale Notentendenz – wird klein hochgestellt angezeigt (rein visuell). */
+  tendency?: '+' | '-';
 }
 
-export function GradeBadge({ value, system, size = 'md', pending }: Props) {
+export function GradeBadge({ value, system, size = 'md', pending, tendency }: Props) {
   const color = gradeColor(value, system);
   const sizeClass = size === 'lg' ? 'size-14 text-xl' : size === 'sm' ? 'size-8 text-xs' : 'size-11 text-base';
   if (pending) {
@@ -24,7 +26,10 @@ export function GradeBadge({ value, system, size = 'md', pending }: Props) {
       className={`${sizeClass} rounded-2xl grid place-items-center font-display font-extrabold text-white shadow-sm`}
       style={{ background: `linear-gradient(135deg, ${color}, ${hexToRgba(color, .85)})` }}
     >
-      {gradeLabel(value, system)}
+      <span className="inline-flex items-start leading-none">
+        {gradeLabel(value, system)}
+        {tendency && <span className="ml-px font-bold" style={{ fontSize: '0.6em', lineHeight: 1 }}>{tendency === '+' ? '+' : '−'}</span>}
+      </span>
     </div>
   );
 }

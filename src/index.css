@@ -321,6 +321,21 @@
   .gradepad-btn:active { transform: scale(.92); }
   .gradepad-btn.is-active { color: #fff; border-color: transparent; box-shadow: 0 8px 22px -8px rgba(15,18,32,.4); transform: translateY(-1px); }
 
+  /* Tendenz-Knöpfe (+ / −) unter dem Werte-Raster. */
+  .tend-row { display: flex; gap: 8px; margin-top: 8px; }
+  .tend-btn {
+    flex: 0 0 auto; min-width: 58px; border: 1px solid rgb(var(--surface-border-rgb) / 0.7);
+    background: rgb(var(--surface-rgb) / 0.65); color: rgb(var(--ink-600));
+    border-radius: 14px; padding: 10px 0; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800;
+    font-size: 22px; line-height: 1; cursor: pointer; text-align: center;
+    transition: transform .16s cubic-bezier(.2,.7,.3,1), box-shadow .18s, color .15s, border-color .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html[data-mode="dark"] .tend-btn { background: rgb(var(--ink-100)); border-color: rgb(var(--surface-border-rgb)); }
+  .tend-btn:hover { border-color: rgb(var(--ink-300)); }
+  .tend-btn:active { transform: scale(.92); }
+  .tend-btn.is-active { color: #fff; border-color: transparent; transform: translateY(-1px); }
+
   /* Ampel-Punkt der Lerncheckliste. */
   .ampel-dot { width: 22px; height: 22px; border-radius: 999px; border: none; cursor: pointer; padding: 0; transition: transform .15s, box-shadow .15s, opacity .15s; }
   .ampel-dot:active { transform: scale(.85); }

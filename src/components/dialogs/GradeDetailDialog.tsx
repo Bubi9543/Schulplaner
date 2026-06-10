@@ -92,7 +92,7 @@ export function GradeDetailDialog({ open, grade: gradeProp, onClose, onEdit }: P
             </div>
 
             <GradeHeader
-              gradeText={isPending ? '?' : meta.formatValue(grade.value)} color={color}
+              gradeText={isPending ? '?' : meta.formatValue(grade.value)} tendency={isPending ? undefined : grade.tendency} color={color}
               kindLabel={isPending ? 'Geplant' : kindLabel} subject={subject} title={grade.title}
               onEdit={() => onEdit(grade)} onDelete={handleDelete} onClose={onClose}
             />

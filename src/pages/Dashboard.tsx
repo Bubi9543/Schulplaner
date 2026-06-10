@@ -382,7 +382,7 @@ function RecentGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => vo
                     onClick={() => onSelectGrade(g)}
                     className="w-full flex items-center gap-3 px-1 py-2.5 hover:bg-white/40 rounded-xl transition text-left"
                   >
-                    <GradeBadge value={g.value} system={subj.system} size="sm" />
+                    <GradeBadge value={g.value} system={subj.system} size="sm" tendency={g.tendency} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-ink-800 truncate">{subj.name}</div>
                       <div className="text-xs text-ink-500 truncate">{g.title ?? g.kind} · {relativeDate(g.date)}</div>

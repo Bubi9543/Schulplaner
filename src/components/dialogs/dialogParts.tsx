@@ -356,6 +356,29 @@ export function GradePad({ meta, value, onChange, system, config }: {
   );
 }
 
+/* ── TendencyPicker (+ / − unter dem Werte-Raster) ─────────────────────── */
+export function TendencyPicker({ value, onChange, color }: {
+  value?: '+' | '-'; onChange: (v: '+' | '-' | undefined) => void; color: string;
+}) {
+  const opts: Array<'+' | '-'> = ['+', '-'];
+  return (
+    <div className="tend-row">
+      {opts.map(o => {
+        const active = value === o;
+        return (
+          <button key={o} type="button"
+            className={'tend-btn' + (active ? ' is-active' : '')}
+            style={active ? { background: color, boxShadow: `0 8px 20px -8px ${color}` } : undefined}
+            onClick={() => onChange(active ? undefined : o)}
+            aria-label={o === '+' ? 'Tendenz plus' : 'Tendenz minus'} aria-pressed={active}>
+            {o === '+' ? '+' : '−'}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── HeaderActions (Edit/Delete/Close) ─────────────────────────────────── */
 function HeaderActions({ onEdit, onDelete, onClose }: { onEdit?: () => void; onDelete?: () => void; onClose: () => void }) {
   return (
@@ -411,8 +434,8 @@ export function DetailHeader({ kindLabel, kindIcon: KindIcon, subject, title, st
 }
 
 /* ── GradeHeader (helle Note im farbigen Ring) ─────────────────────────── */
-export function GradeHeader({ gradeText, color, kindLabel, subject, title, onEdit, onDelete, onClose }: {
-  gradeText: string; color: string; kindLabel: string; subject: Subject; title?: string;
+export function GradeHeader({ gradeText, tendency, color, kindLabel, subject, title, onEdit, onDelete, onClose }: {
+  gradeText: string; tendency?: '+' | '-'; color: string; kindLabel: string; subject: Subject; title?: string;
   onEdit?: () => void; onDelete?: () => void; onClose: () => void;
 }) {
   return (
@@ -422,7 +445,10 @@ export function GradeHeader({ gradeText, color, kindLabel, subject, title, onEdi
       </div>
       <div className="flex gap-4 items-center pr-24">
         <div className="grid place-items-center shrink-0" style={{ width: 88, height: 88, borderRadius: 999, border: `3px solid ${color}`, background: hexA(color, .1) }}>
-          <span className="font-display font-extrabold leading-none" style={{ fontSize: 42, color }}>{gradeText}</span>
+          <span className="font-display font-extrabold leading-none inline-flex items-start" style={{ fontSize: 42, color }}>
+            {gradeText}
+            {tendency && <span style={{ fontSize: 24, lineHeight: 1, marginLeft: 1 }}>{tendency === '+' ? '+' : '−'}</span>}
+          </span>
         </div>
         <div className="min-w-0">
           <span className="eyebrow" style={{ color }}>{kindLabel}</span>
