@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, ChevronLeft, ChevronRight, Palmtree, Check, X,
   NotebookPen, ClipboardCheck, CheckCircle2, SlidersHorizontal,
-  LayoutGrid, Columns3, List,
+  LayoutGrid, Columns3, List, GraduationCap,
 } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -139,8 +139,12 @@ export function CalendarPage() {
   const [detail, setDetail] = useState<{ open: boolean; task?: AppTask }>({ open: false });
   const [editor, setEditor] = useState<{ open: boolean; task?: Partial<AppTask>; defaultKind?: TaskKind }>({ open: false });
   const [examDetail, setExamDetail] = useState<{ open: boolean; grade?: Grade }>({ open: false });
-  const [examEditor, setExamEditor] = useState<{ open: boolean; grade?: Grade }>({ open: false });
+  const [examEditor, setExamEditor] = useState<{ open: boolean; grade?: Partial<Grade> }>({ open: false });
   const openNew = (d?: Date, kind?: TaskKind) => setEditor({ open: true, task: d ? { dueDate: d.getTime() } : undefined, defaultKind: kind });
+  // Neue Note über den Kopf-Button (normale Note) bzw. neuer „Test" über das Tages-Menü
+  // (angekündigte Note = isPending, mit dem Datum des angeklickten Tages).
+  const openNewGrade = () => setExamEditor({ open: true });
+  const openNewExam = (d: Date) => setExamEditor({ open: true, grade: { isPending: true, date: d.getTime() } });
 
   // Klick auf einen Eintrag: anstehende Tests öffnen den Noten-Dialog, sonst den Aufgaben-Dialog.
   const openItem = (t: AppTask) => {
@@ -161,9 +165,14 @@ export function CalendarPage() {
             <div className="text-white/70 text-[11px] font-bold uppercase tracking-widest mb-1">Schulplaner</div>
             <h1 className="font-display text-3xl font-extrabold text-white tracking-tight">Kalender</h1>
           </div>
-          <button className="btn bg-white/95 text-theme-deep hover:bg-white" onClick={() => openNew()}>
-            <Plus className="size-4" strokeWidth={2.6} />Neu
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="btn bg-white/20 text-white hover:bg-white/30 border border-white/40" onClick={openNewGrade}>
+              <GraduationCap className="size-4" strokeWidth={2.4} />Note
+            </button>
+            <button className="btn bg-white/95 text-theme-deep hover:bg-white" onClick={() => openNew()}>
+              <Plus className="size-4" strokeWidth={2.6} />Neu
+            </button>
+          </div>
         </div>
       </div>
 
@@ -220,11 +229,11 @@ export function CalendarPage() {
 
         <motion.div key={view} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
           {view === 'month' && <MonthView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} />}
+            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} onNewExam={openNewExam} />}
           {view === 'week' && <WeekView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} />}
+            showWeekends={showWeekends} weekStartsOn={weekStartsOn} onSelect={openItem} onNew={openNew} onNewExam={openNewExam} />}
           {view === 'list' && <ListView anchor={anchor} tasks={filtered} holidays={holidays} subjMap={subjMap}
-            onSelect={openItem} onNew={openNew} />}
+            onSelect={openItem} onNew={openNew} onNewExam={openNewExam} />}
         </motion.div>
 
         <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-400">
@@ -317,10 +326,11 @@ function useHolidayMap(holidays: SchoolHoliday[]) {
 type ViewProps = {
   anchor: Date; tasks: AppTask[]; holidays: SchoolHoliday[]; subjMap: Record<string, any>;
   showWeekends?: boolean; weekStartsOn?: 0 | 1; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void;
+  onNewExam: (d: Date) => void;
 };
 
 /* ── MONAT ──────────────────────────────────────────────────────────────────── */
-function MonthView({ anchor, tasks, holidays, subjMap, showWeekends = true, weekStartsOn = 1, onSelect, onNew }: ViewProps) {
+function MonthView({ anchor, tasks, holidays, subjMap, showWeekends = true, weekStartsOn = 1, onSelect, onNew, onNewExam }: ViewProps) {
   const byDay = useTasksByDay(tasks); const holMap = useHolidayMap(holidays);
   const monthStart = new Date(anchor); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
   const gridStart = startOfWeek(monthStart, weekStartsOn);
@@ -338,16 +348,16 @@ function MonthView({ anchor, tasks, holidays, subjMap, showWeekends = true, week
       <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols},1fr)`, gridAutoRows: `minmax(${rows > 5 ? 88 : 104}px,1fr)` }}>
         {visible.map((d, i) => (
           <DayCell key={i} date={d} inMonth={d.getMonth() === monthStart.getMonth()}
-            tasks={byDay.get(isoLocal(d)) ?? []} holiday={holMap.get(isoLocal(d))} subjMap={subjMap} onSelect={onSelect} onNew={onNew} max={3} />
+            tasks={byDay.get(isoLocal(d)) ?? []} holiday={holMap.get(isoLocal(d))} subjMap={subjMap} onSelect={onSelect} onNew={onNew} onNewExam={onNewExam} max={3} />
         ))}
       </div>
     </div>
   );
 }
 
-function DayCell({ date, inMonth, tasks, holiday, subjMap, onSelect, onNew, max }: {
+function DayCell({ date, inMonth, tasks, holiday, subjMap, onSelect, onNew, onNewExam, max }: {
   date: Date; inMonth: boolean; tasks: AppTask[]; holiday?: { holiday: SchoolHoliday; isStart: boolean };
-  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void; max: number;
+  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void; onNewExam: (d: Date) => void; max: number;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isToday = isSameDay(date, new Date());
@@ -363,7 +373,7 @@ function DayCell({ date, inMonth, tasks, holiday, subjMap, onSelect, onNew, max 
         <div className={`grid place-items-center text-[11.5px] font-bold ${isToday ? 'size-[22px] rounded-full theme-gradient text-white shadow-glow' : holiday && inMonth ? 'cal-hol-num' : inMonth ? 'text-ink-700' : 'text-ink-300'}`}>{date.getDate()}</div>
         <div className="flex items-center gap-0.5">
           {holiday && inMonth && <Palmtree className="size-3 cal-hol-icon" />}
-          {inMonth && <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} anchor={weekend ? 'left' : 'right'} />}
+          {inMonth && <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} onNewExam={onNewExam} anchor={weekend ? 'left' : 'right'} />}
         </div>
       </div>
       {holiday?.isStart && inMonth && <div className="mt-0.5 text-[8.5px] font-bold cal-hol-name uppercase tracking-wide truncate">{holiday.holiday.name}</div>}
@@ -376,7 +386,7 @@ function DayCell({ date, inMonth, tasks, holiday, subjMap, onSelect, onNew, max 
 }
 
 /* ── WOCHE ──────────────────────────────────────────────────────────────────── */
-function WeekView({ anchor, tasks, holidays, subjMap, showWeekends = true, weekStartsOn = 1, onSelect, onNew }: ViewProps) {
+function WeekView({ anchor, tasks, holidays, subjMap, showWeekends = true, weekStartsOn = 1, onSelect, onNew, onNewExam }: ViewProps) {
   const byDay = useTasksByDay(tasks); const holMap = useHolidayMap(holidays);
   const ws = startOfWeek(anchor, weekStartsOn);
   const n = showWeekends ? 7 : 5;
@@ -385,15 +395,15 @@ function WeekView({ anchor, tasks, holidays, subjMap, showWeekends = true, weekS
     <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${n},1fr)` }}>
       {days.map((d, i) => (
         <WeekDayColumn key={i} date={d} weekdayIdx={i} cols={n}
-          tasks={byDay.get(isoLocal(d)) ?? []} holiday={holMap.get(isoLocal(d))} subjMap={subjMap} onSelect={onSelect} onNew={onNew} />
+          tasks={byDay.get(isoLocal(d)) ?? []} holiday={holMap.get(isoLocal(d))} subjMap={subjMap} onSelect={onSelect} onNew={onNew} onNewExam={onNewExam} />
       ))}
     </div>
   );
 }
 
-function WeekDayColumn({ date, weekdayIdx, cols, tasks, holiday, subjMap, onSelect, onNew }: {
+function WeekDayColumn({ date, weekdayIdx, cols, tasks, holiday, subjMap, onSelect, onNew, onNewExam }: {
   date: Date; weekdayIdx: number; cols: number; tasks: AppTask[]; holiday?: { holiday: SchoolHoliday; isStart: boolean };
-  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void;
+  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void; onNewExam: (d: Date) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isToday = isSameDay(date, new Date());
@@ -404,7 +414,7 @@ function WeekDayColumn({ date, weekdayIdx, cols, tasks, holiday, subjMap, onSele
           <div className={`text-[10px] font-bold uppercase tracking-wide ${weekdayIdx >= 5 ? 'text-theme/70' : 'text-ink-400'}`}>{WD_SHORT[weekdayIdx]}</div>
           <div className={`font-display font-extrabold leading-none text-[22px] ${isToday ? 'text-theme-deep' : 'text-ink-800'}`}>{date.getDate()}</div>
         </div>
-        <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} anchor={weekdayIdx >= cols - 2 ? 'left' : 'right'} />
+        <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} onNewExam={onNewExam} anchor={weekdayIdx >= cols - 2 ? 'left' : 'right'} />
       </div>
       {holiday && <div className="mb-1 flex items-center gap-1 text-[10px] font-bold cal-hol-name uppercase tracking-wide"><Palmtree className="size-3 cal-hol-icon" />{holiday.holiday.name}</div>}
       <div className="flex flex-col gap-1">
@@ -416,7 +426,7 @@ function WeekDayColumn({ date, weekdayIdx, cols, tasks, holiday, subjMap, onSele
 }
 
 /* ── LISTE / Agenda ───────────────────────────────────────────────────────────── */
-function ListView({ anchor, tasks, holidays, subjMap, onSelect, onNew }: ViewProps) {
+function ListView({ anchor, tasks, holidays, subjMap, onSelect, onNew, onNewExam }: ViewProps) {
   const byDay = useTasksByDay(tasks); const holMap = useHolidayMap(holidays);
   const y = anchor.getFullYear(), mo = anchor.getMonth();
   const rows = useMemo(() => {
@@ -434,15 +444,15 @@ function ListView({ anchor, tasks, holidays, subjMap, onSelect, onNew }: ViewPro
   return (
     <div className="flex flex-col gap-1.5">
       {rows.map(({ key, date, tasks }) => (
-        <ListDayRow key={key} date={date} tasks={tasks} holiday={holMap.get(key)} subjMap={subjMap} onSelect={onSelect} onNew={onNew} />
+        <ListDayRow key={key} date={date} tasks={tasks} holiday={holMap.get(key)} subjMap={subjMap} onSelect={onSelect} onNew={onNew} onNewExam={onNewExam} />
       ))}
     </div>
   );
 }
 
-function ListDayRow({ date, tasks, holiday, subjMap, onSelect, onNew }: {
+function ListDayRow({ date, tasks, holiday, subjMap, onSelect, onNew, onNewExam }: {
   date: Date; tasks: AppTask[]; holiday?: { holiday: SchoolHoliday; isStart: boolean };
-  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void;
+  subjMap: Record<string, any>; onSelect: (t: AppTask) => void; onNew: (d: Date, kind?: TaskKind) => void; onNewExam: (d: Date) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isToday = isSameDay(date, new Date());
@@ -468,7 +478,7 @@ function ListDayRow({ date, tasks, holiday, subjMap, onSelect, onNew }: {
           );
         })}
       </div>
-      <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} anchor="left" className="self-start" />
+      <AddMenu open={menuOpen} setOpen={setMenuOpen} date={date} onNew={onNew} onNewExam={onNewExam} anchor="left" className="self-start" />
     </div>
   );
 }
@@ -488,7 +498,7 @@ function TaskPill({ task, subject, onClick, size = 'sm' }: { task: AppTask; subj
 }
 
 /* ── Hover-Plus → kleines Menü (Test / Hausaufgabe / Todo) → TaskDialog ────────── */
-function AddMenu({ open, setOpen, date, onNew, anchor = 'right', className = '' }: { open: boolean; setOpen: (b: boolean) => void; date: Date; onNew: (d: Date, kind?: TaskKind) => void; anchor?: 'left' | 'right'; className?: string }) {
+function AddMenu({ open, setOpen, date, onNew, onNewExam, anchor = 'right', className = '' }: { open: boolean; setOpen: (b: boolean) => void; date: Date; onNew: (d: Date, kind?: TaskKind) => void; onNewExam: (d: Date) => void; anchor?: 'left' | 'right'; className?: string }) {
   useEffect(() => {
     if (!open) return;
     let added = false;
@@ -512,6 +522,10 @@ function AddMenu({ open, setOpen, date, onNew, anchor = 'right', className = '' 
           <motion.div initial={{ opacity: 0, scale: .96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .96 }}
             className={`absolute z-50 top-7 ${anchor === 'right' ? 'right-0' : 'left-0'} w-[150px] rounded-xl p-1 cal-pop`}>
             <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink-400">Hinzufügen</div>
+            <button onClick={() => { setOpen(false); onNewExam(date); }}
+              className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-[12.5px] font-semibold text-ink-700 hover:bg-theme-soft/60 hover:text-theme-deep transition text-left">
+              <ClipboardCheck className="size-4 text-theme" />Test
+            </button>
             {items.map(({ kind, label, Icon }) => (
               <button key={kind} onClick={() => { setOpen(false); onNew(date, kind); }}
                 className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-[12.5px] font-semibold text-ink-700 hover:bg-theme-soft/60 hover:text-theme-deep transition text-left">
