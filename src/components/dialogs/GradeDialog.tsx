@@ -11,7 +11,7 @@ import { PhotoAttachment } from '@/components/PhotoAttachment';
 import { uid } from '@/lib/db';
 import { GraduationCap, Tag, Check, Sparkles } from 'lucide-react';
 import {
-  DialogShell, Field, GradePad, TendencyPicker, SubjectChips, KindChips, SegmentedControl,
+  DialogShell, Field, GradePad, SubjectChips, KindChips, SegmentedControl,
   type KindChipItem, type SegOption,
 } from './dialogParts';
 
@@ -196,10 +196,9 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
 
         {!isPending && (
           <Field label="Wert">
-            <GradePad meta={meta} value={value} onChange={setValue} system={system} config={config} />
-            {system !== 'oberstufe' && (
-              <TendencyPicker value={tendency} onChange={setTendency} color={color} />
-            )}
+            <GradePad meta={meta} value={value} onChange={setValue} system={system} config={config}
+              tendency={system !== 'oberstufe' ? tendency : undefined}
+              onTendencyChange={system !== 'oberstufe' ? setTendency : undefined} />
           </Field>
         )}
 

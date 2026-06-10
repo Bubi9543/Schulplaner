@@ -321,13 +321,30 @@ export function LessonDateChips({ subjectId, lessons, value, onChange }: {
   );
 }
 
-/* ── GradePad ──────────────────────────────────────────────────────────── */
-export function GradePad({ meta, value, onChange, system, config }: {
-  meta: SystemMeta; value: number; onChange: (v: number) => void; system: Subject['system']; config?: Parameters<typeof gradeColor>[2];
+/* ── GradePad (mit optionaler Inline-Tendenz +/−) ──────────────────────── */
+export function GradePad({ meta, value, onChange, system, config, tendency, onTendencyChange }: {
+  meta: SystemMeta; value: number; onChange: (v: number) => void; system: Subject['system'];
+  config?: Parameters<typeof gradeColor>[2];
+  tendency?: '+' | '-'; onTendencyChange?: (v: '+' | '-' | undefined) => void;
 }) {
   const opts = meta.valueOptions;
   // Spaltenzahl: 6 für Bayern/kleine Skalen, sonst 4 (z. B. Oberstufe 0–15).
   const cols = opts.length <= 6 ? opts.length : opts.length <= 12 ? 4 : opts.length <= 16 ? 4 : 5;
+  const showTend = !!onTendencyChange;
+  // Beste / schlechteste Note – dort ist kein „besser/schlechter" mehr möglich.
+  const bestVal = meta.goodIsLow ? meta.min : meta.max;
+  const worstVal = meta.goodIsLow ? meta.max : meta.min;
+  const allowPlus = (v: number) => v !== bestVal;   // „+" = besser
+  const allowMinus = (v: number) => v !== worstVal; // „−" = schlechter
+  const activeColor = gradeColor(value, system, config);
+
+  // Wert ändern; ungültig gewordene Tendenz (z. B. „+" auf der 1) zurücksetzen.
+  const pick = (v: number) => {
+    onChange(v);
+    if (tendency === '+' && !allowPlus(v)) onTendencyChange?.(undefined);
+    else if (tendency === '-' && !allowMinus(v)) onTendencyChange?.(undefined);
+  };
+
   if (opts.length > 24) {
     // Sehr große Skalen: Slider beibehalten.
     return (
@@ -337,45 +354,59 @@ export function GradePad({ meta, value, onChange, system, config }: {
         <div className="flex justify-between text-xs text-ink-400 mt-1">
           <span>{meta.formatValue(meta.min)}</span><span>{meta.formatValue(meta.max)}</span>
         </div>
+        {showTend && (allowPlus(value) || allowMinus(value)) && (
+          <div className="tend-row">
+            {allowPlus(value) && <button type="button" className={'tend-btn' + (tendency === '+' ? ' is-active' : '')} style={tendency === '+' ? { background: activeColor } : undefined} onClick={() => onTendencyChange?.(tendency === '+' ? undefined : '+')} aria-label="Tendenz plus">+</button>}
+            {allowMinus(value) && <button type="button" className={'tend-btn' + (tendency === '-' ? ' is-active' : '')} style={tendency === '-' ? { background: activeColor } : undefined} onClick={() => onTendencyChange?.(tendency === '-' ? undefined : '-')} aria-label="Tendenz minus">−</button>}
+          </div>
+        )}
       </div>
     );
   }
-  return (
-    <div className="gradepad" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-      {opts.map(v => {
-        const active = value === v; const col = gradeColor(v, system, config);
-        return (
-          <button key={v} type="button" className={'gradepad-btn' + (active ? ' is-active' : '')}
-            style={active ? { background: col, boxShadow: `0 10px 24px -8px ${col}` } : undefined}
-            onClick={() => onChange(v)}>
-            {meta.formatValue(v).replace(' P', '')}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
-/* ── TendencyPicker (+ / − unter dem Werte-Raster) ─────────────────────── */
-export function TendencyPicker({ value, onChange, color }: {
-  value?: '+' | '-'; onChange: (v: '+' | '-' | undefined) => void; color: string;
-}) {
-  const opts: Array<'+' | '-'> = ['+', '-'];
+  const tmpl = `repeat(${cols}, 1fr)`;
   return (
-    <div className="tend-row">
-      {opts.map(o => {
-        const active = value === o;
-        return (
-          <button key={o} type="button"
-            className={'tend-btn' + (active ? ' is-active' : '')}
-            style={active ? { background: color, boxShadow: `0 8px 20px -8px ${color}` } : undefined}
-            onClick={() => onChange(active ? undefined : o)}
-            aria-label={o === '+' ? 'Tendenz plus' : 'Tendenz minus'} aria-pressed={active}>
-            {o === '+' ? '+' : '−'}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div className="gradepad" style={{ gridTemplateColumns: tmpl }}>
+        {opts.map(v => {
+          const active = value === v; const col = gradeColor(v, system, config);
+          return (
+            <button key={v} type="button" className={'gradepad-btn' + (active ? ' is-active' : '')}
+              style={active ? { background: col, boxShadow: `0 10px 24px -8px ${col}` } : undefined}
+              onClick={() => pick(v)}>
+              {meta.formatValue(v).replace(' P', '')}
+            </button>
+          );
+        })}
+      </div>
+      {showTend && (
+        <div className="gradepad-tend" style={{ gridTemplateColumns: tmpl }}>
+          {opts.map(v => {
+            if (v !== value) return <div key={v} />;
+            // In den Randspalten den einzelnen Knopf nach innen rücken
+            // (linke Spalte → nach rechts, rechte Spalte → nach links).
+            const idx = opts.indexOf(v);
+            const justify = idx === 0 ? 'flex-end' : idx === opts.length - 1 ? 'flex-start' : 'center';
+            return (
+              <div key={v} className="tend-cell" style={{ justifyContent: justify }}>
+                {allowPlus(v) && (
+                  <button type="button" className={'tend-mini' + (tendency === '+' ? ' is-active' : '')}
+                    style={tendency === '+' ? { background: activeColor } : undefined}
+                    onClick={() => onTendencyChange?.(tendency === '+' ? undefined : '+')}
+                    aria-label="Tendenz plus" aria-pressed={tendency === '+'}>+</button>
+                )}
+                {allowMinus(v) && (
+                  <button type="button" className={'tend-mini' + (tendency === '-' ? ' is-active' : '')}
+                    style={tendency === '-' ? { background: activeColor } : undefined}
+                    onClick={() => onTendencyChange?.(tendency === '-' ? undefined : '-')}
+                    aria-label="Tendenz minus" aria-pressed={tendency === '-'}>−</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
