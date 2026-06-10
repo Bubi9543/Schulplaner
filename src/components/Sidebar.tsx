@@ -4,6 +4,7 @@ import { LayoutDashboard, CalendarCheck, CalendarDays, CalendarRange, Graduation
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { Avatar } from '@/components/Avatar';
+import { FocusMiniWidget } from '@/components/FocusMiniWidget';
 import { oberstufeTermsFor, oberstufeTermLabelFor } from '@/types';
 
 export interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; }
@@ -241,14 +242,13 @@ export function Sidebar() {
           <SidebarLink key={item.to} {...item} />
         ))}
       </nav>
-      <div className="mt-auto card text-center text-xs text-ink-500">
-        <div className="font-semibold text-ink-700 mb-1">Tipp</div>
-        Klicke im Stundenplan auf ein Fach – du springst direkt zur Fach-Analyse.
-      </div>
-      <div className="flex items-center justify-center gap-3 text-[11px] text-ink-400 mt-1">
-        <NavLink to="/impressum" className="hover:text-ink-700 transition">Impressum</NavLink>
-        <span>·</span>
-        <NavLink to="/datenschutz" className="hover:text-ink-700 transition">Datenschutz</NavLink>
+      <div className="mt-auto flex flex-col gap-3">
+        <FocusMiniWidget />
+        <div className="flex items-center justify-center gap-3 text-[11px] text-ink-400">
+          <NavLink to="/impressum" className="hover:text-ink-700 transition">Impressum</NavLink>
+          <span>·</span>
+          <NavLink to="/datenschutz" className="hover:text-ink-700 transition">Datenschutz</NavLink>
+        </div>
       </div>
     </aside>
   );
