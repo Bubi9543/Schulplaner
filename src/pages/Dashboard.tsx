@@ -27,7 +27,7 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { GradeDetailDialog } from '@/components/dialogs/GradeDetailDialog';
 import { useStore } from '@/store/useStore';
 import {
-  effectiveWeight, formatAverage, gradeTrend, overallAverage,
+  activeSystem, effectiveWeight, formatAverage, gradeTrend, overallAverage,
   subjectAverage, getSystemMeta, gradeColor, CATEGORY_LABEL, getTaskKindLabel, getKindLabel,
 } from '@/lib/grading';
 import { cn, daysUntil, relativeDate, WEEKDAYS_DE } from '@/lib/utils';
@@ -148,10 +148,24 @@ function WidgetShell({
 
 // ─── Individual widget components ──────────────────────────────────────────────
 
+/**
+ * Notensystem für die Gesamt-Diagramme – abgeleitet aus dem aktiven Schuljahr,
+ * nicht aus dem (nach einem Oberstufen-Jahr „nachhängenden") settings.system.
+ * Siehe activeSystem() in grading.ts.
+ */
+function useActiveSystem() {
+  const subjects = useStore(s => s.subjects);
+  const settings = useStore(s => s.settings);
+  const schoolYears = useStore(s => s.schoolYears);
+  const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
+  const activeYear = schoolYears.find(y => y.id === activeSchoolYearId) ?? null;
+  return activeSystem(activeYear, subjects, settings);
+}
+
 function GradeOverviewWidget() {
   const { subjects, grades, settings } = useStore();
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
-  const system = settings?.system ?? 'bayern';
+  const system = useActiveSystem();
   const overall = useMemo(() => overallAverage(grades, subjects, config), [grades, subjects, config]);
   const trend = useMemo(() =>
     gradeTrend(grades, g => subjects.find(s => s.id === g.subjectId), config, settings?.trendThreshold ?? 0.2),
@@ -221,7 +235,7 @@ function GradeOverviewWidget() {
 function GradeTrendWidget() {
   const { grades, subjects, settings } = useStore();
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
-  const system = settings?.system ?? 'bayern';
+  const system = useActiveSystem();
   const systemMeta = getSystemMeta(system, config);
 
   const chartData = useMemo(() => {
@@ -435,7 +449,7 @@ function PendingGradesWidget({ onSelectGrade }: { onSelectGrade: (g: Grade) => v
 function GradeDistributionWidget() {
   const { grades, settings } = useStore();
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
-  const system = settings?.system ?? 'bayern';
+  const system = useActiveSystem();
   const systemMeta = getSystemMeta(system, config);
 
   const pieData = useMemo(() => {

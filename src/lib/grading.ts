@@ -122,6 +122,30 @@ export function getSystemMeta(system: GradingSystem, config: GradingSystemConfig
 }
 
 /**
+ * Das für Gesamt-Diagramme & -Anzeigen gültige Notensystem.
+ *
+ * `settings.system` ist nur die Vorlage für NEUE Fächer und „hängt" nach einem
+ * Oberstufen-Jahr fälschlich auf 'oberstufe' fest. Für die Skala der Diagramme
+ * leiten wir das System deshalb aus dem aktiven Jahr ab:
+ *   • Oberstufen-Jahr            → 'oberstufe'
+ *   • sonst aus den Fächern       → deren tatsächliches System (z. B. 'bayern')
+ *   • Fallback                    → settings.system, aber niemals ein
+ *                                   nachhängendes 'oberstufe' in einem
+ *                                   regulären Jahr.
+ */
+export function activeSystem(
+  activeYear: { oberstufe?: boolean } | null | undefined,
+  subjects: Subject[],
+  settings: { system?: GradingSystem } | null | undefined,
+): GradingSystem {
+  if (activeYear?.oberstufe) return 'oberstufe';
+  const fromSubjects = subjects.find(s => s.system !== 'oberstufe')?.system;
+  if (fromSubjects) return fromSubjects;
+  const fallback = settings?.system ?? 'bayern';
+  return fallback === 'oberstufe' ? 'bayern' : fallback;
+}
+
+/**
  * Gibt true zurück, wenn die Notenart als „Schulaufgabe / Klausur" gilt
  * (vs. „kleine LN / Rest"). Custom-Kinds mit `weighting: 'large'` werden
  * ebenfalls als groß behandelt.

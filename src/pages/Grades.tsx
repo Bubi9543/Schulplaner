@@ -10,7 +10,7 @@ import { SubjectIcon } from '@/components/SubjectIcon';
 import { GradeDialog } from '@/components/dialogs/GradeDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
+import { activeSystem, effectiveWeight, formatAverage, getSystemMeta, gradeColor, gradeTrend, needsAttention, overallAverage, subjectAverage, CATEGORY_LABEL } from '@/lib/grading';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { Subject, SubjectGroup } from '@/types';
@@ -38,7 +38,8 @@ export function GradesPage() {
       setPdfBusy(false);
     }
   }
-  const system = settings?.system ?? 'bayern';
+  const activeYear = schoolYears.find(y => y.id === activeSchoolYearId) ?? null;
+  const system = activeSystem(activeYear, subjects, settings);
   const meta = getSystemMeta(system, config);
   const digits = settings?.averageDigits ?? 2;
 
