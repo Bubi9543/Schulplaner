@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Trophy, Users, RefreshCw, Medal } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { StreakFlame } from '@/components/StreakFlame';
-import { publishWeeklyStudy, fetchWeeklyLeaderboard, computeStreak } from '@/lib/studyShare';
+import {
+  publishWeeklyStudy, fetchWeeklyLeaderboard, computeStreak,
+  publishDailyStudy, fetchDailyLeaderboard, dailyTotalsFromSessions,
+  rangeForPeriod, startOfDay, startOfMonth, startOfSchoolYear, startOfISOWeek,
+} from '@/lib/studyShare';
 import { flashcardActivity } from '@/lib/flashcards';
 import { getOrCreateMyProfile } from '@/lib/homeworkShare';
-import type { WeeklyStudyEntry } from '@/lib/studyShare';
+import type { WeeklyStudyEntry, LeaderboardPeriod } from '@/lib/studyShare';
 
 function fmtDuration(ms: number): string {
   const totalMin = Math.round(ms / 60000);
@@ -21,6 +26,24 @@ function fmtDuration(ms: number): string {
 
 const MEDAL = ['#f59e0b', '#94a3b8', '#b45309'];
 
+/** Beschriftung + Titel-Zusatz je Zeitraum (für den Umschalter im Fokus-Tab). */
+const PERIOD_META: Record<LeaderboardPeriod, { label: string; title: string }> = {
+  today: { label: 'Heute', title: 'heute' },
+  week: { label: 'Woche', title: 'der Woche' },
+  month: { label: 'Monat', title: 'dieses Monats' },
+  year: { label: 'Schuljahr', title: 'des Schuljahres' },
+};
+
+/** Lokaler Start-Timestamp (ms) eines Zeitraums – für die eigene Summe. */
+function periodStart(period: LeaderboardPeriod, now: number): number {
+  switch (period) {
+    case 'today': return startOfDay(now);
+    case 'week': return startOfISOWeek(now);
+    case 'month': return startOfMonth(now);
+    case 'year': return startOfSchoolYear(now);
+  }
+}
+
 interface Props {
   weekTotalMs: number;
   weekStart: number;
@@ -29,6 +52,8 @@ interface Props {
   bare?: boolean;
   /** Treppchen (Top 3) über der Liste anzeigen. */
   podium?: boolean;
+  /** Zeitraum-Umschalter (Heute/Woche/Monat/Schuljahr) anzeigen – nur Fokus-Tab. */
+  showPeriodToggle?: boolean;
 }
 
 /** Treppchen der Woche – Gold/Silber/Bronze für die Top 3. */
@@ -71,7 +96,7 @@ function Podium({ rows, meId }: { rows: WeeklyStudyEntry[]; meId?: string }) {
  * Wöchentliche Lern-Rangliste mit Freunden (inkl. Profilbildern).
  * Freunde kommen aus dem Freundes-Graph (`store.friends`).
  */
-export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = false, podium = false }: Props) {
+export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = false, podium = false, showPeriodToggle = false }: Props) {
   const authUser = useStore(s => s.authUser);
   const settings = useStore(s => s.settings);
   const friends = useStore(s => s.friends);
@@ -80,12 +105,22 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
   const flashcards = useStore(s => s.flashcards);
   const [entries, setEntries] = useState<WeeklyStudyEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [period, setPeriod] = useState<LeaderboardPeriod>('week');
 
   const myStreak = useMemo(
     () => computeStreak([...focusSessions, ...flashcardActivity(flashcards)]),
     [focusSessions, flashcards],
   );
   const friendIds = friends.map(f => f.userId).join(',');
+
+  // Eigene Lernzeit für den gewählten Zeitraum – lokal, sofort korrekt.
+  const myPeriodMs = useMemo(() => {
+    if (!showPeriodToggle) return weekTotalMs;
+    const start = periodStart(period, Date.now());
+    let sum = 0;
+    for (const f of focusSessions) if (f.startedAt >= start) sum += f.focusedMs;
+    return sum;
+  }, [showPeriodToggle, period, focusSessions, weekTotalMs]);
 
   const refresh = useCallback(async () => {
     if (!authUser) return;
@@ -98,16 +133,28 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
         displayName = profile.displayName;
         myAvatar = profile.avatarUrl;
       } catch { /* Profil optional */ }
+
+      // Immer beide Quellen pflegen: Wochensumme (für Dashboard/Social) …
       await publishWeeklyStudy(weekStart, weekTotalMs, displayName, myStreak);
+      // … und Tagessummen des Schuljahres (für den Zeitraum-Umschalter).
+      await publishDailyStudy(dailyTotalsFromSessions(focusSessions), displayName, myStreak);
 
       const ids = Array.from(new Set([authUser.id, ...friends.map(f => f.userId)]));
-      const rows = await fetchWeeklyLeaderboard(ids, weekStart);
+
+      let rows: WeeklyStudyEntry[];
+      if (showPeriodToggle) {
+        const { startKey, endKey } = rangeForPeriod(period);
+        rows = await fetchDailyLeaderboard(ids, startKey, endKey);
+      } else {
+        rows = await fetchWeeklyLeaderboard(ids, weekStart);
+      }
+
       // Eigenen Eintrag sicherstellen (Upsert evtl. noch nicht sichtbar).
       const mine = rows.find(r => r.userId === authUser.id);
       if (!mine) {
-        rows.push({ userId: authUser.id, displayName, weekStart, totalMs: weekTotalMs, avatarUrl: myAvatar, streak: myStreak });
+        rows.push({ userId: authUser.id, displayName, weekStart, totalMs: myPeriodMs, avatarUrl: myAvatar, streak: myStreak });
       } else {
-        mine.totalMs = Math.max(mine.totalMs, weekTotalMs);
+        mine.totalMs = Math.max(mine.totalMs, myPeriodMs);
         mine.streak = myStreak;
         if (!mine.avatarUrl) mine.avatarUrl = myAvatar;
       }
@@ -119,20 +166,38 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser, settings?.name, friendIds, weekStart, weekTotalMs, myStreak]);
+  }, [authUser, settings?.name, friendIds, weekStart, weekTotalMs, myStreak, showPeriodToggle, period, myPeriodMs]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const inner = (
     <>
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h3 className="h3 flex items-center gap-2"><Trophy className="size-5" style={{ color: '#f59e0b' }} />Rangliste der Woche</h3>
+        <h3 className="h3 flex items-center gap-2"><Trophy className="size-5" style={{ color: '#f59e0b' }} />Rangliste {showPeriodToggle ? PERIOD_META[period].title : 'der Woche'}</h3>
         {authUser && (
           <button onClick={() => void refresh()} disabled={loading} className="text-ink-400 hover:text-ink-700 transition disabled:opacity-50" title="Aktualisieren">
             <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         )}
       </div>
+
+      {showPeriodToggle && authUser && friends.length > 0 && (
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-[rgb(var(--ink-200)/0.5)] mb-3 flex-shrink-0">
+          {(Object.keys(PERIOD_META) as LeaderboardPeriod[]).map(p => {
+            const isActive = period === p;
+            return (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`relative flex-1 px-2 py-1.5 rounded-xl text-xs font-semibold transition ${isActive ? 'text-white' : 'text-ink-600 hover:text-ink-900'}`}
+              >
+                {isActive && <motion.span layoutId="leaderboard-period" className="absolute inset-0 rounded-xl theme-gradient shadow-glow" transition={{ type: 'spring', stiffness: 380, damping: 30 }} />}
+                <span className="relative">{PERIOD_META[p].label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-auto">
       {!authUser ? (
@@ -177,7 +242,7 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
         </ul>
         </>
       ) : (
-        <p className="text-sm text-ink-500 py-5 text-center">{loading ? 'Lädt …' : 'Noch keine Lernzeiten diese Woche – sei die/der Erste!'}</p>
+        <p className="text-sm text-ink-500 py-5 text-center">{loading ? 'Lädt …' : `Noch keine Lernzeiten ${showPeriodToggle ? PERIOD_META[period].title : 'diese Woche'} – sei die/der Erste!`}</p>
       )}
       </div>
     </>

@@ -68,6 +68,59 @@ CREATE POLICY "study_weekly_update"
 
 ---
 
+## 3. Tagesbasis-Tabelle für den Zeitraum-Umschalter
+
+Damit die Rangliste im Fokus-Tab zwischen **Heute · Diese Woche · Dieser Monat
+· Dieses Schuljahr** umschalten kann, wird die Lernzeit zusätzlich **pro Tag**
+gespeichert (aus Tagessummen lässt sich jeder Zeitraum exakt aufsummieren).
+
+Führe dieses Snippet **einmal** im Supabase SQL-Editor aus
+(**Dashboard → SQL Editor → New query**):
+
+```sql
+-- ─── study_daily: fokussierte Lernzeit pro Nutzer & Tag ──────────────────
+CREATE TABLE IF NOT EXISTS public.study_daily (
+  user_id      uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  day          date NOT NULL,           -- Kalendertag (lokal), YYYY-MM-DD
+  display_name text NOT NULL DEFAULT 'Anonym',
+  total_ms     bigint NOT NULL DEFAULT 0,
+  streak       integer NOT NULL DEFAULT 0,
+  updated_at   timestamptz DEFAULT now(),
+  PRIMARY KEY (user_id, day)
+);
+
+-- Index für schnelle Bereichs-Abfragen (Rangliste lädt nach Tages-Bereich)
+CREATE INDEX IF NOT EXISTS study_daily_day_idx ON public.study_daily(day);
+
+-- Row Level Security
+ALTER TABLE public.study_daily ENABLE ROW LEVEL SECURITY;
+
+-- Jeder eingeloggte Nutzer darf alle Tageszeilen lesen (für die Freundes-Liste)
+CREATE POLICY "study_daily_select"
+  ON public.study_daily FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Nur der Besitzer darf seine eigenen Zeilen einfügen …
+CREATE POLICY "study_daily_insert"
+  ON public.study_daily FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+-- … und aktualisieren (Upsert nach jeder Fokus-Session).
+CREATE POLICY "study_daily_update"
+  ON public.study_daily FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+```
+
+> Ohne diese Tabelle funktioniert die Rangliste weiter – aber nur „diese Woche"
+> ist dann mit Zahlen gefüllt; die anderen Zeiträume bleiben bei Freunden leer,
+> bis sie die App das nächste Mal benutzen.
+
+---
+
 ## Fertig!
 
 Nach dem Setup:

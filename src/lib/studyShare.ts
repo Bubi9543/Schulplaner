@@ -46,6 +46,49 @@ export function startOfISOWeek(ts: number): number {
   return d.getTime();
 }
 
+/** Zeiträume für die Rangliste-Umschaltung im Fokus-Tab. */
+export type LeaderboardPeriod = 'today' | 'week' | 'month' | 'year';
+
+/** Lokale Mitternacht (00:00) des Tages, in dem `ts` liegt. */
+export function startOfDay(ts: number): number {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Erster des Monats, 00:00 (lokal), in dem `ts` liegt. */
+export function startOfMonth(ts: number): number {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
+
+/**
+ * Beginn des aktuellen Schuljahres (Bayern): 1. September, 00:00 lokal.
+ * Ab September zählt das laufende Kalenderjahr, davor das Vorjahr.
+ */
+export function startOfSchoolYear(ts: number): number {
+  const d = new Date(ts);
+  const year = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; // 8 = September
+  return new Date(year, 8, 1).getTime();
+}
+
+/**
+ * Liefert den Tages-Bereich [startKey, endKey) (jeweils YYYY-MM-DD) für einen
+ * Zeitraum. `endKey` ist exklusiv (der Tag nach dem letzten gezählten Tag).
+ */
+export function rangeForPeriod(period: LeaderboardPeriod, now: number = Date.now()): { startKey: string; endKey: string } {
+  let start: number;
+  switch (period) {
+    case 'today': start = startOfDay(now); break;
+    case 'week': start = startOfISOWeek(now); break;
+    case 'month': start = startOfMonth(now); break;
+    case 'year': start = startOfSchoolYear(now); break;
+  }
+  // Ende = morgen 00:00, damit der heutige Tag immer einschließlich gezählt wird.
+  const end = startOfDay(now) + 86400000;
+  return { startKey: toDateKey(start), endKey: toDateKey(end) };
+}
+
 /** YYYY-MM-DD aus einem ms-Timestamp (lokale Zeit). */
 function toDateKey(ts: number): string {
   const d = new Date(ts);
@@ -166,5 +209,131 @@ export async function fetchWeeklyLeaderboard(userIds: string[], weekStart: numbe
     totalMs: row.total_ms,
     avatarUrl: avatars.get(row.user_id),
     streak: row.streak ?? 0,
+  }));
+}
+
+// ─── Tagesbasis (für den Zeitraum-Umschalter im Fokus-Tab) ──────────────────
+
+interface DailyRow {
+  user_id: string;
+  display_name: string;
+  day: string; // YYYY-MM-DD
+  total_ms: number;
+  streak?: number | null;
+}
+
+/** Eine einzelne Tagessumme zum Hochladen. */
+export interface DailyStudyTotal {
+  /** YYYY-MM-DD (lokale Tagesgrenze). */
+  dayKey: string;
+  totalMs: number;
+}
+
+/**
+ * Rechnet aus einzelnen Fokus-Sessions die fokussierte Lernzeit pro Kalendertag
+ * (lokal) zusammen – nur Tage ab `since` (Standard: Beginn des Schuljahres),
+ * damit nicht die ganze Historie hochgeladen wird.
+ */
+export function dailyTotalsFromSessions(
+  sessions: { startedAt: number; focusedMs: number }[],
+  since: number = startOfSchoolYear(Date.now()),
+): DailyStudyTotal[] {
+  const map = new Map<string, number>();
+  for (const s of sessions) {
+    if (s.focusedMs <= 0 || s.startedAt < since) continue;
+    const key = toDateKey(s.startedAt);
+    map.set(key, (map.get(key) ?? 0) + s.focusedMs);
+  }
+  return [...map.entries()].map(([dayKey, totalMs]) => ({ dayKey, totalMs }));
+}
+
+/**
+ * Veröffentlicht (upsert) die fokussierte Lernzeit pro Tag in einem Rutsch.
+ * Die `streak` wird auf jede Tageszeile geschrieben; die Rangliste liest sie
+ * aus der jüngsten Zeile.
+ */
+export async function publishDailyStudy(totals: DailyStudyTotal[], displayName: string, streak = 0): Promise<void> {
+  if (!supabase || totals.length === 0) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const now = new Date().toISOString();
+  const base = totals.map(t => ({
+    user_id: user.id,
+    day: t.dayKey,
+    display_name: displayName,
+    total_ms: Math.round(t.totalMs),
+    updated_at: now,
+  }));
+
+  const { error } = await supabase
+    .from('study_daily')
+    .upsert(base.map(b => ({ ...b, streak: Math.round(streak) })), { onConflict: 'user_id,day' });
+
+  // Fallback, falls die `streak`-Spalte noch nicht migriert wurde.
+  if (error && /streak/i.test(error.message)) {
+    await supabase.from('study_daily').upsert(base, { onConflict: 'user_id,day' });
+  }
+}
+
+/**
+ * Holt die Tageszeilen im Bereich [startKey, endKey) für die User und summiert
+ * sie pro Person zu einem Zeitraum-Total. `streak` kommt aus der jüngsten
+ * Tageszeile, Avatare aus `user_profiles`.
+ */
+export async function fetchDailyLeaderboard(userIds: string[], startKey: string, endKey: string): Promise<WeeklyStudyEntry[]> {
+  if (!supabase || userIds.length === 0) return [];
+
+  const selectDaily = (cols: string) =>
+    supabase!
+      .from('study_daily')
+      .select(cols)
+      .gte('day', startKey)
+      .lt('day', endKey)
+      .in('user_id', userIds);
+
+  const [dailyResRaw, profilesRes] = await Promise.all([
+    selectDaily('user_id, display_name, day, total_ms, streak'),
+    supabase
+      .from('user_profiles')
+      .select('user_id, avatar_url')
+      .in('user_id', userIds),
+  ]);
+
+  // Fallback ohne `streak`, falls die Spalte noch nicht migriert wurde.
+  let dailyRes = dailyResRaw;
+  if (dailyRes.error && /streak/i.test(dailyRes.error.message)) {
+    dailyRes = await selectDaily('user_id, display_name, day, total_ms');
+  }
+
+  if (dailyRes.error) {
+    console.warn('fetchDailyLeaderboard error:', dailyRes.error.message);
+    return [];
+  }
+
+  const avatars = new Map<string, string | undefined>();
+  for (const p of (profilesRes.data as { user_id: string; avatar_url: string | null }[] | null) ?? []) {
+    avatars.set(p.user_id, p.avatar_url ?? undefined);
+  }
+
+  // Pro User: Lernzeit summieren, Name + Streak aus der jüngsten Tageszeile.
+  const agg = new Map<string, { displayName: string; totalMs: number; latestDay: string; streak: number }>();
+  for (const row of (dailyRes.data as unknown as DailyRow[])) {
+    const cur = agg.get(row.user_id);
+    if (!cur) {
+      agg.set(row.user_id, { displayName: row.display_name, totalMs: row.total_ms, latestDay: row.day, streak: row.streak ?? 0 });
+    } else {
+      cur.totalMs += row.total_ms;
+      if (row.day >= cur.latestDay) { cur.latestDay = row.day; cur.displayName = row.display_name; cur.streak = row.streak ?? 0; }
+    }
+  }
+
+  return [...agg.entries()].map(([userId, v]) => ({
+    userId,
+    displayName: v.displayName,
+    weekStart: fromDateKey(startKey),
+    totalMs: v.totalMs,
+    avatarUrl: avatars.get(userId),
+    streak: v.streak,
   }));
 }

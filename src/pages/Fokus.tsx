@@ -565,7 +565,7 @@ export function FokusPage() {
 
         {/* ─── Wöchentliche Rangliste ─── */}
         <div className="col-span-12 md:col-span-6">
-          <StudyLeaderboard weekTotalMs={stats.week} weekStart={weekStart} />
+          <StudyLeaderboard weekTotalMs={stats.week} weekStart={weekStart} showPeriodToggle />
         </div>
 
         {/* ─── Letzte Sessions ─── */}
