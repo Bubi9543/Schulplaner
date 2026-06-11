@@ -73,6 +73,8 @@ export interface GradingSystemConfig {
 
 export interface Subject {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   name: string;
   short: string;
   color: string;
@@ -115,6 +117,8 @@ export type GradeWeightPreset = 0.5 | 1 | 1.5 | 2;
 
 export interface Grade {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   subjectId: string;
   value: number;
   kind: GradeKind;
@@ -168,6 +172,8 @@ export type BuiltinTaskKind = typeof BUILTIN_TASK_KINDS[number];
 
 export interface AppTask {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   title: string;
   description?: string;
   subjectId?: string;
@@ -243,6 +249,8 @@ export type FocusMode = 'pomodoro' | 'timer' | 'stopwatch';
  */
 export interface FocusSession {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   /** Optional zugeordnetes Fach. */
   subjectId?: string;
   /** Optional verknüpfter Test/Prüfung (Grade-ID, oft isPending). */
@@ -261,6 +269,8 @@ export interface FocusSession {
 
 export interface Lesson {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   subjectId: string;
   weekday: Weekday;
   start: string;
@@ -298,6 +308,8 @@ export type ReviewOutcome = 'correct' | 'partial' | 'wrong';
 /** Ein Ordner zum Gruppieren mehrerer Karteikästen (rein organisatorisch). */
 export interface DeckFolder {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   name: string;
   color?: string;
   position?: number;
@@ -312,6 +324,8 @@ export interface DeckFolder {
  */
 export interface Deck {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   name: string;
   description?: string;
   color: string;
@@ -331,6 +345,8 @@ export interface Deck {
 /** Ein Themengebiet/Kapitel innerhalb eines Kastens. */
 export interface CardTopic {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   deckId: string;
   name: string;
   color?: string;
@@ -344,6 +360,8 @@ export interface CardTopic {
  */
 export interface Flashcard {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   deckId: string;
   /** Optionales Themengebiet (CardTopic.id). */
   topicId?: string;
@@ -389,6 +407,8 @@ export type GreetingStyle = 'casual' | 'formal' | 'fun';
 
 export interface Photo {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   refId: string;
   refType: 'grade' | 'task';
   /** Pfad in Supabase Storage, Form: "{userId}/{photoId}.jpg". Neue Fotos haben das. */
@@ -585,6 +605,8 @@ export const DEFAULT_KIND_WEIGHTS: Record<GradeKind, GradeKindWeight> = {
 
 export interface SchoolYear {
   id: string;
+  /** ms-Timestamp der letzten Änderung. Wird automatisch gesetzt (Sync-Konfliktlösung „neuester gewinnt"). */
+  updatedAt?: number;
   name: string;        // e.g. "2024/25"
   startDate: number;   // ms timestamp
   endDate?: number;    // ms timestamp, open if undefined
