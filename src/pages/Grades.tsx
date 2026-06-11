@@ -194,9 +194,8 @@ export function GradesPage() {
         </Card>
 
         <Card delay={0.05} className="col-span-12 md:col-span-8 lg:col-span-9">
-          <div className="flex items-center justify-between mb-2">
+          <div className="mb-2">
             <h3 className="h3">Notenverlauf</h3>
-            <span className="chip">{chartData.length} Punkte</span>
           </div>
           <div className="h-64">
             {chartData.length > 1 ? (

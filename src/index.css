@@ -66,7 +66,7 @@
     --ink-900: 255 255 255;
   }
 
-  html[data-mode="dark"] body {
+  html[data-mode="dark"] body::before {
     background:
       radial-gradient(at 50% 0%, rgb(var(--theme-primary-rgb) / 0.08), transparent 55%),
       radial-gradient(at 85% 95%, rgb(var(--theme-secondary-rgb) / 0.05), transparent 55%),
@@ -82,10 +82,19 @@
   body {
     @apply font-sans antialiased;
     color: rgb(var(--ink-800));
-    background: linear-gradient(180deg, var(--theme-bg-start), var(--theme-bg-end));
-    transition: background 0.4s ease, color 0.3s ease;
+    transition: color 0.3s ease;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
+  }
+  /* Grund-Verlauf als fest stehende Schicht über den ganzen Bildschirm.
+     Bleibt beim Scrollen liegen (wie die Aurora) – keine harte Kante mehr. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -30;
+    background: linear-gradient(180deg, var(--theme-bg-start), var(--theme-bg-end));
+    transition: background 0.4s ease;
   }
   body {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
