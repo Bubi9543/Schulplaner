@@ -141,8 +141,11 @@ export function StudyLeaderboard({ weekTotalMs, weekStart, delay = 0.25, bare = 
 
       const ids = Array.from(new Set([authUser.id, ...friends.map(f => f.userId)]));
 
+      // „Woche" liest aus der etablierten Wochentabelle (dort stehen alle
+      // Freunde) – nur Heute/Monat/Schuljahr nutzen die Tagesbasis, die sich
+      // bei Freunden nach und nach füllt.
       let rows: WeeklyStudyEntry[];
-      if (showPeriodToggle) {
+      if (showPeriodToggle && period !== 'week') {
         const { startKey, endKey } = rangeForPeriod(period);
         rows = await fetchDailyLeaderboard(ids, startKey, endKey);
       } else {
