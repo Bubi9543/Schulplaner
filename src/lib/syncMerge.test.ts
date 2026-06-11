@@ -4,20 +4,22 @@ import { mergeByUpdatedAt } from './syncMerge';
 interface Row { id: string; updatedAt?: number; label?: string }
 
 describe('mergeByUpdatedAt', () => {
-  it('neuere lokale Version gewinnt und wird hochgeladen', () => {
+  it('neuere lokale Version gewinnt und wird hochgeladen (nicht lokal neu geschrieben)', () => {
     const local: Row[] = [{ id: 'a', updatedAt: 200, label: 'lokal-neu' }];
     const cloud: Row[] = [{ id: 'a', updatedAt: 100, label: 'cloud-alt' }];
-    const { merged, toUpload } = mergeByUpdatedAt(local, cloud);
+    const { merged, toUpload, toApplyLocal } = mergeByUpdatedAt(local, cloud);
     expect(merged).toEqual([{ id: 'a', updatedAt: 200, label: 'lokal-neu' }]);
     expect(toUpload).toEqual([{ id: 'a', updatedAt: 200, label: 'lokal-neu' }]);
+    expect(toApplyLocal).toEqual([]);
   });
 
-  it('neuere Cloud-Version gewinnt und wird NICHT hochgeladen', () => {
+  it('neuere Cloud-Version gewinnt: lokal übernehmen, nicht hochladen', () => {
     const local: Row[] = [{ id: 'a', updatedAt: 100, label: 'lokal-alt' }];
     const cloud: Row[] = [{ id: 'a', updatedAt: 300, label: 'cloud-neu' }];
-    const { merged, toUpload } = mergeByUpdatedAt(local, cloud);
+    const { merged, toUpload, toApplyLocal } = mergeByUpdatedAt(local, cloud);
     expect(merged).toEqual([{ id: 'a', updatedAt: 300, label: 'cloud-neu' }]);
     expect(toUpload).toEqual([]);
+    expect(toApplyLocal).toEqual([{ id: 'a', updatedAt: 300, label: 'cloud-neu' }]);
   });
 
   it('genau dieser Schul-Fall: alter lokaler Stand überschreibt die neuere Cloud NICHT', () => {
@@ -31,17 +33,19 @@ describe('mergeByUpdatedAt', () => {
   it('nur lokal vorhanden (offline erstellt) → behalten und hochladen', () => {
     const local: Row[] = [{ id: 'b', updatedAt: 50, label: 'offline' }];
     const cloud: Row[] = [];
-    const { merged, toUpload } = mergeByUpdatedAt(local, cloud);
+    const { merged, toUpload, toApplyLocal } = mergeByUpdatedAt(local, cloud);
     expect(merged).toEqual([{ id: 'b', updatedAt: 50, label: 'offline' }]);
     expect(toUpload).toEqual([{ id: 'b', updatedAt: 50, label: 'offline' }]);
+    expect(toApplyLocal).toEqual([]);
   });
 
-  it('nur in der Cloud vorhanden → übernehmen, nicht hochladen', () => {
+  it('nur in der Cloud vorhanden → lokal übernehmen, nicht hochladen', () => {
     const local: Row[] = [];
     const cloud: Row[] = [{ id: 'c', updatedAt: 50, label: 'aus-cloud' }];
-    const { merged, toUpload } = mergeByUpdatedAt(local, cloud);
+    const { merged, toUpload, toApplyLocal } = mergeByUpdatedAt(local, cloud);
     expect(merged).toEqual([{ id: 'c', updatedAt: 50, label: 'aus-cloud' }]);
     expect(toUpload).toEqual([]);
+    expect(toApplyLocal).toEqual([{ id: 'c', updatedAt: 50, label: 'aus-cloud' }]);
   });
 
   it('leere Cloud löscht NICHT die lokalen Daten', () => {
@@ -49,17 +53,18 @@ describe('mergeByUpdatedAt', () => {
       { id: 'a', updatedAt: 1 },
       { id: 'b', updatedAt: 2 },
     ];
-    const { merged, toUpload } = mergeByUpdatedAt(local, []);
+    const { merged, toUpload, toApplyLocal } = mergeByUpdatedAt(local, []);
     expect(merged).toHaveLength(2);
     expect(toUpload).toHaveLength(2);
+    expect(toApplyLocal).toEqual([]);
   });
 
-  it('Gleichstand: Cloud gewinnt, kein unnötiger Upload', () => {
+  it('Gleichstand: bereits synchron – kein Upload, kein lokales Schreiben', () => {
     const local: Row[] = [{ id: 'a', updatedAt: 100, label: 'lokal' }];
     const cloud: Row[] = [{ id: 'a', updatedAt: 100, label: 'cloud' }];
-    const { merged, toUpload } = mergeByUpdatedAt(local, cloud);
-    expect(merged[0].label).toBe('cloud');
+    const { toUpload, toApplyLocal } = mergeByUpdatedAt(local, cloud);
     expect(toUpload).toEqual([]);
+    expect(toApplyLocal).toEqual([]);
   });
 
   it('fehlender Zeitstempel gilt als uralt und bekommt einen konkreten Wert', () => {

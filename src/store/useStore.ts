@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { db, uid } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { syncRow, syncSettings, deleteRow, uploadAll, downloadAll, startRealtime, stopRealtime, deleteAllCloudData } from '@/lib/sync';
+import { syncRow, syncSettings, deleteRow, uploadAll, syncMergeAll, flushSyncQueue, startRealtime, stopRealtime, deleteAllCloudData } from '@/lib/sync';
 import type { SyncTable } from '@/lib/sync';
 import type { SharePayload } from '@/lib/scheduleShare';
 import { DEFAULT_GRADING_CONFIG, DEFAULT_SETTINGS, normalizeSubjectCategory } from '@/types';
@@ -392,6 +392,8 @@ interface State {
 let authListenerBound = false;
 let visibilityListenerBound = false;
 let autoSyncRunning = false;
+/** Aktiver „wieder online"-Handler, um gemerkte Uploads sofort nachzuholen. */
+let onlineHandler: (() => void) | null = null;
 
 /** Liest gespeicherte active-Year-ID. Beim ersten Aufruf wird Default-Jahr erzeugt + alle Daten zugeordnet. */
 async function ensureSchoolYears(allYears: SchoolYear[], allSubjects: Subject[], allGrades: Grade[], allTasks: AppTask[], allLessons: Lesson[]): Promise<{ years: SchoolYear[]; activeId: string | null }> {
@@ -666,10 +668,12 @@ export const useStore = create<State>((set, get) => ({
       // Existierende Task-IDs vor dem Sync merken (für Auto-Publish via Shortcut)
       const existingTaskIds = new Set(get().tasks.map(t => t.id));
 
-      // Erst lokale Daten hochladen (eigene Edits behalten), dann Cloud-Stand ziehen.
-      // → Konflikte: local-row gewinnt für IDs, die beide Seiten haben (gewünscht beim Geräte-Login).
-      await uploadAll(authUser.id);
-      await downloadAll(authUser.id);
+      // Zuerst evtl. früher fehlgeschlagene Uploads nachholen, dann lokalen und
+      // Cloud-Stand pro Eintrag nach Zeitstempel zusammenführen („neuester gewinnt").
+      // Kein blindes Überschreiben mehr → veraltete Geräte können keine neueren
+      // Daten (z. B. Lernchecklisten) mehr löschen.
+      await flushSyncQueue(authUser.id);
+      await syncMergeAll(authUser.id);
       await get().load(); // State frisch aus Dexie ziehen
       set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
 
@@ -694,11 +698,22 @@ export const useStore = create<State>((set, get) => ({
 
     // Realtime-Subscription für alle Tabellen
     startRealtimeHandlers(authUser.id, set, get);
+
+    // Sobald das Gerät wieder online ist, gemerkte Uploads sofort nachholen.
+    if (!onlineHandler) {
+      const uid = authUser.id;
+      onlineHandler = () => { void flushSyncQueue(uid); };
+      window.addEventListener('online', onlineHandler);
+    }
   },
 
   stopAutoSync() {
     stopRealtime();
     autoSyncRunning = false;
+    if (onlineHandler) {
+      window.removeEventListener('online', onlineHandler);
+      onlineHandler = null;
+    }
     set({ liveSync: 'off' });
   },
 
@@ -707,7 +722,9 @@ export const useStore = create<State>((set, get) => ({
     if (!authUser) return;
     set({ syncStatus: 'syncing' });
     try {
-      await uploadAll(authUser.id);
+      await flushSyncQueue(authUser.id);
+      await syncMergeAll(authUser.id);
+      await get().load();
       set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
     } catch {
       set({ syncStatus: 'error' });
@@ -719,10 +736,11 @@ export const useStore = create<State>((set, get) => ({
     if (!authUser) return false;
     set({ syncStatus: 'syncing' });
     try {
-      const pulled = await downloadAll(authUser.id);
-      if (pulled) await get().load();
+      await flushSyncQueue(authUser.id);
+      const hadCloudData = await syncMergeAll(authUser.id);
+      await get().load();
       set({ syncStatus: 'idle', lastSyncedAt: Date.now() });
-      return pulled;
+      return hadCloudData;
     } catch {
       set({ syncStatus: 'error' });
       return false;
@@ -1709,7 +1727,11 @@ function startRealtimeHandlers(userId: string, set: SetFn, get: GetFn): void {
       await applyRealtimeSettings(data, set);
     },
     onStatusChange: (status) => {
-      if (status === 'connected') set({ liveSync: 'live' });
+      if (status === 'connected') {
+        set({ liveSync: 'live' });
+        // Verbindung (wieder) da → evtl. gemerkte Uploads nachholen.
+        void flushSyncQueue(userId);
+      }
       else if (status === 'connecting') set({ liveSync: 'connecting' });
       else if (status === 'error') set({ liveSync: 'error' });
       else if (status === 'closed') set({ liveSync: 'off' });
@@ -1717,9 +1739,40 @@ function startRealtimeHandlers(userId: string, set: SetFn, get: GetFn): void {
   });
 }
 
+/**
+ * Liefert die lokale Dexie-Tabelle zu einem Cloud-Tabellennamen (oder null).
+ * Wird nur gebraucht, um beim Live-Sync den lokalen Zeitstempel zu prüfen.
+ */
+function realtimeLocalTable(table: SyncTable): { get(id: string): Promise<{ updatedAt?: number } | undefined> } | null {
+  switch (table) {
+    case 'subjects': return db.subjects;
+    case 'grades': return db.grades;
+    case 'tasks': return db.tasks;
+    case 'lessons': return db.lessons;
+    case 'photos': return db.photos;
+    case 'school_years': return db.schoolYears;
+    case 'focus_sessions': return db.focusSessions;
+    case 'deck_folders': return db.deckFolders;
+    case 'decks': return db.decks;
+    case 'card_topics': return db.cardTopics;
+    case 'flashcards': return db.flashcards;
+    default: return null;
+  }
+}
+
 async function applyRealtimeUpsert(table: SyncTable, raw: unknown, set: SetFn, get: GetFn): Promise<void> {
   const data = raw as Record<string, unknown> & { id: string };
   if (!data || typeof data !== 'object' || !data.id) return;
+
+  // „Neuester gewinnt" auch live: einen hereinkommenden Stand ignorieren, wenn
+  // unsere lokale Version neuer ist – sonst macht ein verspätetes Broadcast eine
+  // gerade erst gemachte Änderung wieder kaputt.
+  const localTable = realtimeLocalTable(table);
+  if (localTable) {
+    const existing = await localTable.get(data.id);
+    const incomingTs = typeof data.updatedAt === 'number' ? data.updatedAt : 0;
+    if (existing && (existing.updatedAt ?? 0) > incomingTs) return;
+  }
 
   switch (table) {
     case 'subjects': {

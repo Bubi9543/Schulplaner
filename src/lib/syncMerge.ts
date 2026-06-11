@@ -19,24 +19,32 @@ export interface Syncable {
 }
 
 export interface MergeResult<T> {
-  /** Vollständige, zusammengeführte Liste – dieser Stand soll lokal gespeichert werden. */
+  /** Vollständige, zusammengeführte Liste (für Übersicht/Tests). */
   merged: T[];
-  /** Einträge, deren lokale Version gewonnen hat (neu oder neuer) – die müssen hochgeladen werden. */
+  /** Einträge, deren lokale Version gewonnen hat (neu oder neuer) – die müssen in die Cloud hochgeladen werden. */
   toUpload: T[];
+  /**
+   * Einträge, deren Cloud-Version gewonnen hat (neuer oder nur in der Cloud) –
+   * nur die müssen lokal gespeichert werden. Lokale Gewinner liegen ja schon
+   * in der Datenbank und werden bewusst NICHT erneut geschrieben.
+   */
+  toApplyLocal: T[];
 }
 
 /**
- * Führt lokale und Cloud-Einträge zusammen. Regeln:
- * - Gibt es einen Eintrag auf beiden Seiten, gewinnt der mit dem größeren
- *   `updatedAt`. Bei Gleichstand gewinnt die Cloud (vermeidet unnötige Uploads).
- * - Nur lokal vorhanden → behalten und hochladen (z. B. offline erstellt).
- * - Nur in der Cloud vorhanden → übernehmen.
+ * Führt lokale und Cloud-Einträge zusammen. Regeln pro Eintrag (über die id):
+ * - Auf beiden Seiten vorhanden → der mit dem größeren `updatedAt` gewinnt.
+ *     · Lokal neuer  → hochladen (toUpload), lokal liegt er schon.
+ *     · Cloud neuer  → lokal übernehmen (toApplyLocal).
+ *     · Gleichstand  → bereits synchron, nichts tun.
+ * - Nur lokal vorhanden (z. B. offline erstellt) → behalten und hochladen.
+ * - Nur in der Cloud vorhanden → lokal übernehmen.
  *
  * Wichtig: Ist die Cloud-Liste leer (z. B. weil der Abruf fehlschlug), bleiben
- * dadurch alle lokalen Einträge erhalten – es wird also NIE blind gelöscht.
+ * alle lokalen Einträge erhalten – es wird also NIE blind gelöscht.
  *
- * Der Gewinner bekommt immer einen konkreten Zahlen-Zeitstempel, damit ihn die
- * Datenbank-Automatik beim Speichern nicht versehentlich „neu" stempelt.
+ * Lokale Gewinner mit fehlendem Zeitstempel bekommen einen konkreten Wert,
+ * damit die Datenbank-Automatik sie beim erneuten Speichern nicht „neu" stempelt.
  */
 export function mergeByUpdatedAt<T extends Syncable>(local: T[], cloud: T[]): MergeResult<T> {
   const ts = (x: T) => x.updatedAt ?? 0;
@@ -45,28 +53,33 @@ export function mergeByUpdatedAt<T extends Syncable>(local: T[], cloud: T[]): Me
 
   const merged: T[] = [];
   const toUpload: T[] = [];
+  const toApplyLocal: T[] = [];
 
   for (const id of new Set([...localById.keys(), ...cloudById.keys()])) {
     const l = localById.get(id);
     const c = cloudById.get(id);
 
-    let winner: T;
-    let localWon: boolean;
     if (l && c) {
-      localWon = ts(l) > ts(c);
-      winner = localWon ? l : c;
+      if (ts(l) > ts(c)) {
+        const norm = l.updatedAt == null ? { ...l, updatedAt: ts(l) } : l;
+        merged.push(norm);
+        toUpload.push(norm);
+      } else if (ts(l) < ts(c)) {
+        merged.push(c);
+        toApplyLocal.push(c);
+      } else {
+        // Gleichstand: bereits synchron, keine Aktion nötig.
+        merged.push(c);
+      }
     } else if (l) {
-      winner = l;
-      localWon = true;
+      const norm = l.updatedAt == null ? { ...l, updatedAt: ts(l) } : l;
+      merged.push(norm);
+      toUpload.push(norm);
     } else {
-      winner = c as T;
-      localWon = false;
+      merged.push(c as T);
+      toApplyLocal.push(c as T);
     }
-
-    const normalized = winner.updatedAt == null ? { ...winner, updatedAt: ts(winner) } : winner;
-    merged.push(normalized);
-    if (localWon) toUpload.push(normalized);
   }
 
-  return { merged, toUpload };
+  return { merged, toUpload, toApplyLocal };
 }

@@ -2,6 +2,21 @@ import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, SchoolHoliday, FriendTask, FocusSession, Deck, CardTopic, Flashcard, DeckFolder } from '@/types';
 
+/**
+ * Ein noch nicht (erfolgreich) hochgeladener Sync-Vorgang. Schlägt ein Upload
+ * fehl (z. B. kein Internet), wird er hier gemerkt und später wiederholt.
+ * Schlüssel ist "tabelle|id", damit pro Datensatz nur die jüngste Aktion bleibt.
+ */
+export interface SyncQueueItem {
+  key: string;
+  table: string;
+  rowId: string;
+  op: 'upsert' | 'delete';
+  /** Vollständiger Datensatz bei 'upsert'; bei 'delete' nicht gesetzt. */
+  data?: unknown;
+  queuedAt: number;
+}
+
 export class NotenDB extends Dexie {
   subjects!: Table<Subject, string>;
   grades!: Table<Grade, string>;
@@ -17,6 +32,7 @@ export class NotenDB extends Dexie {
   decks!: Table<Deck, string>;
   cardTopics!: Table<CardTopic, string>;
   flashcards!: Table<Flashcard, string>;
+  syncQueue!: Table<SyncQueueItem, string>;
 
   constructor() {
     super('notenapp');
@@ -144,6 +160,54 @@ export class NotenDB extends Dexie {
       cardTopics: 'id, deckId, position, createdAt',
       flashcards: 'id, deckId, topicId, box, schoolYearId, createdAt',
     });
+
+    this.version(11).stores({
+      subjects: 'id, name, system, category, schoolYearId, createdAt',
+      grades: 'id, subjectId, schoolYearId, date, kind, isPending',
+      tasks: 'id, subjectId, schoolYearId, dueDate, done, kind, priority, createdAt',
+      lessons: 'id, subjectId, schoolYearId, weekday, start',
+      settings: 'id',
+      photos: 'id, refId, refType, createdAt',
+      schoolYears: 'id, active, startDate, createdAt',
+      holidays: 'id, cacheKey, startDate, endDate',
+      friendTasks: 'id, ownerUserId, dueDate, fetchedAt',
+      focusSessions: 'id, subjectId, gradeId, schoolYearId, startedAt',
+      deckFolders: 'id, schoolYearId, position, createdAt',
+      decks: 'id, subjectId, folderId, schoolYearId, position, createdAt',
+      cardTopics: 'id, deckId, position, createdAt',
+      flashcards: 'id, deckId, topicId, box, schoolYearId, createdAt',
+      syncQueue: 'key, queuedAt',
+    });
+
+    this.registerUpdatedAtHooks();
+  }
+
+  /**
+   * Vergibt automatisch einen „zuletzt geändert"-Zeitstempel (`updatedAt`) bei
+   * jeder lokalen Änderung an synchronisierten Daten. Grundlage der Sync-
+   * Konfliktlösung „neuester Stand gewinnt" (siehe syncMerge.ts).
+   *
+   * Wichtig: Nur stempeln, wenn noch kein `updatedAt` mitgegeben wurde. So
+   * behalten aus der Cloud übernommene Datensätze ihren echten Zeitstempel und
+   * werden nicht fälschlich als „gerade bearbeitet" markiert.
+   */
+  private registerUpdatedAtHooks() {
+    const syncedTables: Table<{ updatedAt?: number }, string>[] = [
+      this.subjects, this.grades, this.tasks, this.lessons, this.photos,
+      this.schoolYears, this.focusSessions, this.deckFolders, this.decks,
+      this.cardTopics, this.flashcards,
+    ];
+    for (const table of syncedTables) {
+      table.hook('creating', (_primKey, obj) => {
+        if (obj.updatedAt == null) obj.updatedAt = Date.now();
+      });
+      table.hook('updating', (modifications) => {
+        if (!('updatedAt' in (modifications as object))) {
+          return { updatedAt: Date.now() };
+        }
+        return undefined;
+      });
+    }
   }
 }
 

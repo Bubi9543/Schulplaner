@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
-import { db } from './db';
-import type { Subject, Grade, AppTask, Lesson, AppSettings, Photo, SchoolYear, FocusSession, Deck, CardTopic, Flashcard, DeckFolder } from '@/types';
+import { db, type SyncQueueItem } from './db';
+import { mergeByUpdatedAt, type Syncable } from './syncMerge';
+import type { Table } from 'dexie';
+import type { AppSettings } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export type SyncTable = 'subjects' | 'grades' | 'tasks' | 'lessons' | 'photos' | 'school_years' | 'focus_sessions' | 'deck_folders' | 'decks' | 'card_topics' | 'flashcards';
@@ -44,66 +46,138 @@ export async function uploadAll(userId: string): Promise<void> {
   ]);
 }
 
+/** Zuordnung Cloud-Tabellenname → lokale Dexie-Tabelle (nur synchronisierte Daten). */
+function syncedTableSpecs(): { name: SyncTable; table: Table<Syncable, string> }[] {
+  const t = (x: unknown) => x as Table<Syncable, string>;
+  return [
+    { name: 'subjects', table: t(db.subjects) },
+    { name: 'grades', table: t(db.grades) },
+    { name: 'tasks', table: t(db.tasks) },
+    { name: 'lessons', table: t(db.lessons) },
+    { name: 'photos', table: t(db.photos) },
+    { name: 'school_years', table: t(db.schoolYears) },
+    { name: 'focus_sessions', table: t(db.focusSessions) },
+    { name: 'deck_folders', table: t(db.deckFolders) },
+    { name: 'decks', table: t(db.decks) },
+    { name: 'card_topics', table: t(db.cardTopics) },
+    { name: 'flashcards', table: t(db.flashcards) },
+  ];
+}
+
 /**
- * Lädt Cloud-Daten und überschreibt lokale Daten komplett.
- * Gibt true zurück, wenn Cloud-Daten existieren.
+ * Führt eine einzelne Tabelle lokal ⇄ Cloud zusammen („neuester gewinnt").
+ * Gibt die Anzahl der Cloud-Einträge zurück (für die „Daten gefunden?"-Anzeige).
  */
-export async function downloadAll(userId: string): Promise<boolean> {
-  if (!supabase) return false;
-  const [sRes, gRes, tRes, lRes, pRes, yRes, fRes, dfRes, dRes, ctRes, fcRes, setRes] = await Promise.all([
-    supabase.from('subjects').select('data').eq('user_id', userId),
-    supabase.from('grades').select('data').eq('user_id', userId),
-    supabase.from('tasks').select('data').eq('user_id', userId),
-    supabase.from('lessons').select('data').eq('user_id', userId),
-    supabase.from('photos').select('data').eq('user_id', userId),
-    supabase.from('school_years').select('data').eq('user_id', userId),
-    supabase.from('focus_sessions').select('data').eq('user_id', userId),
-    supabase.from('deck_folders').select('data').eq('user_id', userId),
-    supabase.from('decks').select('data').eq('user_id', userId),
-    supabase.from('card_topics').select('data').eq('user_id', userId),
-    supabase.from('flashcards').select('data').eq('user_id', userId),
-    supabase.from('user_settings').select('data').eq('user_id', userId).maybeSingle(),
+async function reconcileTable(name: SyncTable, table: Table<Syncable, string>, userId: string): Promise<number> {
+  if (!supabase) return 0;
+  const [cloudRes, localRows] = await Promise.all([
+    supabase.from(name).select('data').eq('user_id', userId),
+    table.toArray(),
   ]);
+  if (cloudRes.error) {
+    // Cloud-Abruf fehlgeschlagen → lokale Daten NICHT anfassen (kein Datenverlust).
+    console.warn('sync read error', name, cloudRes.error.message);
+    return 0;
+  }
+  const cloud = (cloudRes.data ?? []).map(r => (r as { data: Syncable }).data);
+  const { toUpload, toApplyLocal } = mergeByUpdatedAt(localRows, cloud);
 
-  const subjects: Subject[] = (sRes.data ?? []).map(r => r.data);
-  const grades: Grade[] = (gRes.data ?? []).map(r => r.data);
-  const tasks: AppTask[] = (tRes.data ?? []).map(r => r.data);
-  const lessons: Lesson[] = (lRes.data ?? []).map(r => r.data);
-  const photos: Photo[] = (pRes.data ?? []).map(r => r.data);
-  const schoolYears: SchoolYear[] = (yRes.data ?? []).map(r => r.data);
-  const focusSessions: FocusSession[] = (fRes.data ?? []).map(r => r.data);
-  const deckFolders: DeckFolder[] = (dfRes.data ?? []).map(r => r.data);
-  const decks: Deck[] = (dRes.data ?? []).map(r => r.data);
-  const cardTopics: CardTopic[] = (ctRes.data ?? []).map(r => r.data);
-  const flashcards: Flashcard[] = (fcRes.data ?? []).map(r => r.data);
-  const settings: AppSettings | null = setRes.data?.data ?? null;
+  // Cloud-Gewinner lokal übernehmen (lokale Gewinner liegen schon in der DB).
+  if (toApplyLocal.length) await table.bulkPut(toApplyLocal);
 
-  if (!subjects.length && !grades.length && !tasks.length && !lessons.length && !photos.length && !schoolYears.length && !focusSessions.length && !deckFolders.length && !decks.length && !cardTopics.length && !flashcards.length && !settings) {
-    return false;
+  // Lokale Gewinner hochladen; klappt das nicht, für später merken.
+  if (toUpload.length) {
+    try {
+      const { error } = await supabase.from(name).upsert(toUpload.map(x => row(x.id, userId, x)));
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      console.warn('sync upload error', name, e);
+      for (const x of toUpload) {
+        await enqueue({ key: queueKey(name, x.id), table: name, rowId: x.id, op: 'upsert', data: x, queuedAt: Date.now() });
+      }
+    }
+  }
+  return cloud.length;
+}
+
+/**
+ * Führt lokalen und Cloud-Stand zusammen, statt eine Seite blind zu
+ * überschreiben. Pro Eintrag gewinnt die neuere Version (Zeitstempel).
+ * Ersetzt das frühere „erst alles hoch, dann alles runter".
+ *
+ * Gibt true zurück, wenn in der Cloud überhaupt Daten lagen.
+ */
+export async function syncMergeAll(userId: string): Promise<boolean> {
+  if (!supabase) return false;
+
+  let cloudCount = 0;
+  for (const spec of syncedTableSpecs()) {
+    cloudCount += await reconcileTable(spec.name, spec.table, userId);
   }
 
-  await db.transaction('rw', [db.subjects, db.grades, db.tasks, db.lessons, db.photos, db.schoolYears, db.focusSessions, db.deckFolders, db.decks, db.cardTopics, db.flashcards, db.settings], async () => {
-    await db.subjects.clear(); if (subjects.length) await db.subjects.bulkPut(subjects);
-    await db.grades.clear(); if (grades.length) await db.grades.bulkPut(grades);
-    await db.tasks.clear(); if (tasks.length) await db.tasks.bulkPut(tasks);
-    await db.lessons.clear(); if (lessons.length) await db.lessons.bulkPut(lessons);
-    await db.photos.clear(); if (photos.length) await db.photos.bulkPut(photos);
-    await db.schoolYears.clear(); if (schoolYears.length) await db.schoolYears.bulkPut(schoolYears);
-    await db.focusSessions.clear(); if (focusSessions.length) await db.focusSessions.bulkPut(focusSessions);
-    await db.deckFolders.clear(); if (deckFolders.length) await db.deckFolders.bulkPut(deckFolders);
-    await db.decks.clear(); if (decks.length) await db.decks.bulkPut(decks);
-    await db.cardTopics.clear(); if (cardTopics.length) await db.cardTopics.bulkPut(cardTopics);
-    await db.flashcards.clear(); if (flashcards.length) await db.flashcards.bulkPut(flashcards);
-    if (settings) await db.settings.put({ ...settings, id: 'app' });
-  });
-  return true;
+  // Einstellungen (ein einzelner Datensatz): lokale Einstellungen behalten und
+  // hochladen; nur wenn es lokal keine gibt, die aus der Cloud übernehmen.
+  const cloudSettingsRes = await supabase.from('user_settings').select('data').eq('user_id', userId).maybeSingle();
+  const cloudSettings = (cloudSettingsRes.data?.data as AppSettings | undefined) ?? null;
+  const localSettings = await db.settings.get('app');
+  if (localSettings) {
+    await supabase.from('user_settings').upsert({ user_id: userId, data: localSettings, updated_at: new Date().toISOString() });
+  } else if (cloudSettings) {
+    await db.settings.put({ ...cloudSettings, id: 'app' });
+  }
+  if (cloudSettings) cloudCount += 1;
+
+  return cloudCount > 0;
+}
+
+// ─── Offline-Warteschlange ──────────────────────────────────────────────
+// Fehlgeschlagene Uploads/Löschungen werden gemerkt und später wiederholt,
+// damit z. B. Schul-WLAN-Aussetzer keine Änderungen verschlucken.
+
+function queueKey(table: string, rowId: string): string {
+  return `${table}|${rowId}`;
+}
+
+async function enqueue(item: SyncQueueItem): Promise<void> {
+  try {
+    // put() ersetzt eine evtl. ältere wartende Aktion für denselben Datensatz.
+    await db.syncQueue.put(item);
+  } catch (e) {
+    console.warn('queue write failed', e);
+  }
+}
+
+/**
+ * Versucht, alle gemerkten Sync-Vorgänge erneut auszuführen. Bricht beim ersten
+ * Fehler ab (vermutlich wieder offline) – die restlichen bleiben für später.
+ */
+export async function flushSyncQueue(userId: string): Promise<void> {
+  if (!supabase) return;
+  const items = await db.syncQueue.orderBy('queuedAt').toArray();
+  for (const item of items) {
+    try {
+      const res = item.op === 'delete'
+        ? await supabase.from(item.table as SyncTable).delete().eq('id', item.rowId)
+        : await supabase.from(item.table as SyncTable).upsert(row(item.rowId, userId, item.data));
+      if (res.error) throw new Error(res.error.message);
+      await db.syncQueue.delete(item.key);
+    } catch (e) {
+      console.warn('queue flush stopped at', item.table, e);
+      break;
+    }
+  }
 }
 
 export async function syncRow(table: SyncTable, id: string, data: unknown, userId: string): Promise<void> {
   if (!supabase) return;
-  supabase.from(table).upsert(row(id, userId, data)).then(({ error }) => {
-    if (error) console.warn('sync error', table, error.message);
-  });
+  try {
+    const { error } = await supabase.from(table).upsert(row(id, userId, data));
+    if (error) throw new Error(error.message);
+    await db.syncQueue.delete(queueKey(table, id));
+  } catch (e) {
+    console.warn('sync error', table, e);
+    await enqueue({ key: queueKey(table, id), table, rowId: id, op: 'upsert', data, queuedAt: Date.now() });
+  }
 }
 
 export async function syncSettings(data: AppSettings, userId: string): Promise<void> {
@@ -115,9 +189,14 @@ export async function syncSettings(data: AppSettings, userId: string): Promise<v
 
 export async function deleteRow(table: SyncTable, id: string): Promise<void> {
   if (!supabase) return;
-  supabase.from(table).delete().eq('id', id).then(({ error }) => {
-    if (error) console.warn('sync delete error', table, error.message);
-  });
+  try {
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    await db.syncQueue.delete(queueKey(table, id));
+  } catch (e) {
+    console.warn('sync delete error', table, e);
+    await enqueue({ key: queueKey(table, id), table, rowId: id, op: 'delete', queuedAt: Date.now() });
+  }
 }
 
 // ─── Realtime Live-Sync ─────────────────────────────────────────────────
