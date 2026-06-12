@@ -15,7 +15,7 @@ import { SubjectIcon } from '@/components/SubjectIcon';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { useStore } from '@/store/useStore';
 import { addDays, isSameDay, startOfWeek } from '@/lib/utils';
-import { getTaskKindLabel, getKindLabel } from '@/lib/grading';
+import { getTaskKindLabel, getKindLabel, gradeLabel } from '@/lib/grading';
 import { fetchUpcomingHolidays, isoLocal } from '@/lib/holidays';
 import type { AppTask, TaskKind, SchoolHoliday, Grade } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
@@ -60,19 +60,26 @@ export function CalendarPage() {
   // In dieser App werden angekündigte Prüfungen als „ausstehende Note" angelegt.
   // Sie leben in `grades` (nicht in `tasks`), darum hier als Kalender-Einträge
   // einmischen, damit sie – wie vom User erwartet – im Kalender auftauchen.
-  const pendingExams = useMemo(() => grades.filter(g => g.isPending && !!g.date), [grades]);
-  const examById = useMemo(() => new Map(pendingExams.map(g => [EXAM_ID_PREFIX + g.id, g])), [pendingExams]);
-  const examItems = useMemo<AppTask[]>(() => pendingExams.map(g => ({
-    id: EXAM_ID_PREFIX + g.id,
-    title: g.title?.trim() || getKindLabel(g.kind, gradingConfig),
-    kind: g.kind,
-    subjectId: g.subjectId,
-    dueDate: g.date,
-    done: false,
-    priority: 3,
-    createdAt: g.date,
-    schoolYearId: g.schoolYearId,
-  })), [pendingExams, gradingConfig]);
+  // Tests im Kalender = Noten mit Datum. Ausstehende (noch ohne Note) UND bereits
+  // benotete werden gezeigt – benotete erscheinen ausgegraut/abgehakt mit der Note.
+  const examGrades = useMemo(() => grades.filter(g => !!g.date), [grades]);
+  const examById = useMemo(() => new Map(examGrades.map(g => [EXAM_ID_PREFIX + g.id, g])), [examGrades]);
+  const examItems = useMemo<AppTask[]>(() => examGrades.map(g => {
+    const base = g.title?.trim() || getKindLabel(g.kind, gradingConfig);
+    const graded = !g.isPending;
+    const sys = subjects.find(s => s.id === g.subjectId)?.system ?? settings?.system ?? 'bayern';
+    return {
+      id: EXAM_ID_PREFIX + g.id,
+      title: graded ? `${base} · ${gradeLabel(g.value, sys)}${g.tendency ?? ''}` : base,
+      kind: g.kind,
+      subjectId: g.subjectId,
+      dueDate: g.date,
+      done: graded,
+      priority: 3,
+      createdAt: g.date,
+      schoolYearId: g.schoolYearId,
+    };
+  }), [examGrades, gradingConfig, subjects, settings]);
 
   // ── Ferien laden (unverändert aus der bestehenden Seite) ──────────────────
   const [holidays, setHolidays] = useState<SchoolHoliday[]>([]);
@@ -95,12 +102,12 @@ export function CalendarPage() {
   const examKinds = useMemo(() => {
     const ids = new Set<string>();
     for (const k of allKinds) if (isExamKind(k.id)) ids.add(k.id);
-    for (const g of pendingExams) ids.add(g.kind);
+    for (const g of examGrades) ids.add(g.kind);
     return [...ids].map(id => {
       const taskLabel = getTaskKindLabel(id, gradingConfig);
       return { id, label: taskLabel !== id ? taskLabel : getKindLabel(id, gradingConfig) };
     });
-  }, [allKinds, pendingExams, gradingConfig]);
+  }, [allKinds, examGrades, gradingConfig]);
 
   // ── View / Navigation ─────────────────────────────────────────────────────
   const weekStartsOn = (settings?.weekStart ?? 1) as 0 | 1;
@@ -128,7 +135,9 @@ export function CalendarPage() {
   const resetFilter = () => { setGroup('all'); setSubKind(null); setSubjectSel(new Set()); setShowDone(false); };
 
   const filtered = useMemo(() => [...tasks, ...examItems].filter(t => {
-    if (!showDone && t.done) return false;
+    // Benotete Tests bleiben immer sichtbar – der „Erledigte"-Schalter betrifft nur Aufgaben/Todos.
+    const isExam = t.id.startsWith(EXAM_ID_PREFIX);
+    if (!showDone && t.done && !isExam) return false;
     if (!inGroup(t.kind, group)) return false;
     if (group === 'exam' && subKind && t.kind !== subKind) return false;
     if (subjectSel.size && (!t.subjectId || !subjectSel.has(t.subjectId))) return false;
