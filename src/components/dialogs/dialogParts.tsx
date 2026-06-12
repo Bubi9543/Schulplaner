@@ -25,6 +25,16 @@ const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 export function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+/**
+ * Wandelt ein ISO-Datum (YYYY-MM-DD) in den Zeitstempel der LOKALEN Mitternacht.
+ * Wichtig: `new Date("2026-06-15")` würde als UTC gelesen und das Datum je nach
+ * Zeitzone um einen Tag verschieben. Der Rest der App rechnet lokal – darum hier
+ * bewusst aus den Bestandteilen ein lokales Datum bauen.
+ */
+export function isoToTs(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
 /** Datum relativ zu heute (n Tage), auf Mitternacht normiert. */
 export function dayFromToday(n: number): Date {
   const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n); return d;

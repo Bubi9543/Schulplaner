@@ -10,7 +10,7 @@ import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
 import { BookOpen, Tag, GraduationCap, Calendar, Flag, Check, Share2, Sparkles } from 'lucide-react';
 import {
   DialogShell, Field, KindChips, SubjectChips, LessonDateChips, PriorityPicker,
-  isoDate, relDaysFromIso, relText, type KindChipItem,
+  isoDate, isoToTs, relDaysFromIso, relText, type KindChipItem,
 } from './dialogParts';
 
 interface Props {
@@ -75,7 +75,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
       description: description.trim() || undefined,
       kind,
       subjectId: subjectId || undefined,
-      dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
+      dueDate: dueDate ? isoToTs(dueDate) : undefined,
       priority,
       done: initial?.done ?? false,
       doneAt: initial?.doneAt,

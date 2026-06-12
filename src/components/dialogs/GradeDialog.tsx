@@ -12,7 +12,7 @@ import { uid } from '@/lib/db';
 import { GraduationCap, Tag, Check, Sparkles } from 'lucide-react';
 import {
   DialogShell, Field, GradePad, SubjectChips, KindChips, SegmentedControl,
-  type KindChipItem, type SegOption,
+  isoDate, isoToTs, type KindChipItem, type SegOption,
 } from './dialogParts';
 
 interface Props {
@@ -70,7 +70,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
   const [tendency, setTendency] = useState<'+' | '-' | undefined>(initial?.tendency);
   const [kind, setKind] = useState<GradeKind>(initial?.kind ?? 'schulaufgabe');
   const [title, setTitle] = useState(initial?.title ?? '');
-  const [date, setDate] = useState<string>(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
+  const [date, setDate] = useState<string>(isoDate(new Date(initial?.date ?? Date.now())));
   const [weightMultiplier, setWeightMultiplier] = useState<number>(initial?.weightMultiplier ?? 1);
   const [customWeightInput, setCustomWeightInput] = useState<string>(
     initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : ''
@@ -100,7 +100,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
     setTendency(initial?.tendency);
     setKind(initial?.kind ?? 'schulaufgabe');
     setTitle(initial?.title ?? '');
-    setDate(new Date(initial?.date ?? Date.now()).toISOString().slice(0, 10));
+    setDate(isoDate(new Date(initial?.date ?? Date.now())));
     setWeightMultiplier(initial?.weightMultiplier ?? 1);
     setCustomWeightInput(initial?.weightMultiplier && !isPreset(initial.weightMultiplier) ? String(initial.weightMultiplier).replace('.', ',') : '');
     setCustomMode(!!initial?.weightMultiplier && !isPreset(initial.weightMultiplier));
@@ -119,7 +119,7 @@ export function GradeDialog({ open, onClose, initial, defaultSubjectId }: Props)
       value,
       kind,
       title: title.trim() || undefined,
-      date: new Date(date).getTime(),
+      date: isoToTs(date),
       weight: 1,
       weightMultiplier: weightMultiplier !== 1 ? weightMultiplier : undefined,
       isPending,
