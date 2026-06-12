@@ -12,6 +12,7 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { relativeDate, formatShortDate, daysUntil } from '@/lib/utils';
 import { getTaskKindLabel } from '@/lib/grading';
+import { tasksLikelySame, sameHomework } from '@/lib/homeworkMatch';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import type { AppTask, FriendTask, TaskKind, Subject, GradingSystemConfig } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
@@ -240,88 +241,6 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     .filter(b => b.items.length || b.friendItems.length);
 }
 
-// ── Inhaltlicher Abgleich zweier Aufgaben-Titel ─────────────────────────────
-// Wörter (länger als 2 Zeichen, ohne Satzzeichen) – Fallback wenn keine Zahlen.
-function titleWords(s: string): Set<string> {
-  return new Set(
-    s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w.length > 2),
-  );
-}
-
-// Eine einzelne Seiten-/Aufgaben-Referenz, z. B. Seite 150, Aufgabe 4.
-// page === null heißt "ohne Seitenangabe" und passt dann auf jede Seite.
-interface ExRef { page: number | null; ex: number }
-
-// Liest aus einem Hausaufgaben-Titel die referenzierten Seiten + Aufgaben heraus –
-// egal in welcher Schreibweise. "Seite"/"S."/"S" zählt als Seitenmarker, "/" als
-// Trenner zwischen Seite und Aufgabe. Buchstaben-Teile (a, b, c) werden ignoriert,
-// weil sie nur Unteraufgaben derselben Aufgabe sind. Beispiele:
-//   "S.150/4 b) c) f) und S 151/8" → [150/4, 151/8]
-//   "150/4bcf,8"                   → [150/4, 150/8]
-//   "Seite 165 Aufgabe 5 und 7a"   → [165/5, 165/7]
-function parseExRefs(title: string): ExRef[] {
-  const s = title.toLowerCase()
-    .replace(/seiten?/g, ' s ')                                   // "Seite" → Marker s
-    .replace(/aufgaben?|aufg\.?|übung(?:en)?|nummer|nr\.?/g, ' ') // Aufgaben-Wörter raus
-    .replace(/(^|[^a-zäöüß])s\.?(?=\s*\d)/g, '$1 ⟂ ');            // Seitenmarker → ⟂
-  const re = /(⟂)|(\d+)|(\/)/g;
-  type Tok = { kind: 's' | 'num' | 'slash'; val?: number };
-  const toks: Tok[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    if (m[1] !== undefined) toks.push({ kind: 's' });
-    else if (m[2] !== undefined) toks.push({ kind: 'num', val: parseInt(m[2], 10) });
-    else toks.push({ kind: 'slash' });
-  }
-  const refs: ExRef[] = [];
-  let page: number | null = null;
-  let pendingPage = false;                                        // gerade einen Seitenmarker gesehen
-  for (let i = 0; i < toks.length; i++) {
-    const tk = toks[i];
-    if (tk.kind === 's') pendingPage = true;
-    else if (tk.kind === 'slash') continue;
-    else if (pendingPage) { page = tk.val!; pendingPage = false; }      // Zahl nach "S" → Seite
-    else if (toks[i + 1]?.kind === 'slash') page = tk.val!;             // Zahl vor "/" → Seite
-    else refs.push({ page, ex: tk.val! });                             // sonst → Aufgabe
-  }
-  return refs;
-}
-
-// Teilen sich zwei Referenz-Listen mindestens eine Seite + Aufgabe?
-function refsOverlap(a: ExRef[], b: ExRef[]): boolean {
-  for (const x of a) for (const y of b) {
-    if (x.ex === y.ex && (x.page === y.page || x.page === null || y.page === null)) return true;
-  }
-  return false;
-}
-
-// Beschreiben zwei Titel wahrscheinlich dieselbe Aufgabe?
-// Wenn beide Seiten-/Aufgabennummern enthalten, gelten sie als gleich, sobald
-// sie sich eine Seite + Aufgabe teilen – dadurch passen "S.150/4 b) c) f)" und
-// "150/4bcf,8" zusammen. Ganz verschiedene Aufgaben (andere Seite/Nummer)
-// werden NICHT gruppiert. Ohne Zahlenbezug zählt die Wort-Überschneidung.
-function tasksLikelySame(a: string, b: string): boolean {
-  const ra = parseExRefs(a), rb = parseExRefs(b);
-  if (ra.length && rb.length) return refsOverlap(ra, rb);
-  const wa = titleWords(a), wb = titleWords(b);
-  if (!wa.size || !wb.size) return false;
-  let inter = 0; for (const w of wa) if (wb.has(w)) inter++;
-  const union = new Set([...wa, ...wb]).size;
-  return inter / union >= 0.5;
-}
-
-// Passen zwei Fremdaufgaben (gleiches Fach + gleicher Tag + inhaltlich) zusammen?
-function friendTasksSame(a: FriendTask, b: FriendTask): boolean {
-  if (!a.subjectName || !b.subjectName || a.dueDate == null || b.dueDate == null) {
-    // Ohne Fach/Datum nur exakt gleiche Titel zusammenfassen.
-    return a.title.trim().toLowerCase() === b.title.trim().toLowerCase()
-      && (a.subjectName ?? '') === (b.subjectName ?? '');
-  }
-  return a.subjectName.toLowerCase() === b.subjectName.toLowerCase()
-    && startOfDay(a.dueDate) === startOfDay(b.dueDate)
-    && tasksLikelySame(a.title, b.title);
-}
-
 // Pro Bucket: Map<eigeneTaskId → FriendTask[]> (gleiches Fach + gleicher Tag
 // + inhaltlich passend) + zu Gruppen gebündelte Fremdaufgaben ohne eigenes
 // Pendant. Jede Gruppe (cluster) ist EINE Hausaufgabe, die mehrere Mitschüler
@@ -348,7 +267,7 @@ function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
   const rest = bucket.friendItems.filter(ft => !matchedToOwn.has(ft.id));
   const clusters: FriendTask[][] = [];
   for (const ft of rest) {
-    const hit = clusters.find(c => friendTasksSame(c[0], ft));
+    const hit = clusters.find(c => sameHomework(c[0], ft));
     if (hit) hit.push(ft);
     else clusters.push([ft]);
   }
@@ -593,7 +512,7 @@ interface BucketProps {
   onSelect: (t: AppTask) => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
-  onDismiss: (id: string) => void;
+  onDismiss: (id: string | string[]) => void;
   onAccept: (ft: FriendTask) => void;
 }
 
@@ -650,7 +569,7 @@ function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
 }
 
 // Mehrere Mitschüler haben dieselbe Hausaufgabe geteilt → eine zusammengefasste Zeile.
-function FriendClusterRow({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
+function FriendClusterRow({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string | string[]) => void; onAccept: (ft: FriendTask) => void }) {
   const [open, setOpen] = useState(false);
   const rep = cluster[0];
   return (
@@ -673,7 +592,7 @@ function FriendClusterRow({ cluster, onDismiss, onAccept }: { cluster: FriendTas
             className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold bg-theme-soft/70 text-theme-deep border border-theme/25 hover:bg-theme-soft transition">
             <Check className="size-3.5" strokeWidth={2.6} />Annehmen
           </button>
-          <button onClick={() => cluster.forEach(ft => onDismiss(ft.id))} title="Alle ablehnen"
+          <button onClick={() => onDismiss(cluster.map(ft => ft.id))} title="Alle ablehnen"
             className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 transition"><X className="size-4" /></button>
         </div>
       </div>
@@ -844,7 +763,7 @@ function FriendTile({ ft, onDismiss, onAccept }: { ft: FriendTask; onDismiss: (i
 }
 
 // Kachel-Variante: dieselbe Hausaufgabe von mehreren Mitschülern, gebündelt.
-function FriendClusterTile({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
+function FriendClusterTile({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string | string[]) => void; onAccept: (ft: FriendTask) => void }) {
   const [open, setOpen] = useState(false);
   const rep = cluster[0];
   return (
@@ -882,7 +801,7 @@ function FriendClusterTile({ cluster, onDismiss, onAccept }: { cluster: FriendTa
           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
           <Check className="size-4" strokeWidth={2.6} />Annehmen
         </button>
-        <button onClick={() => cluster.forEach(ft => onDismiss(ft.id))}
+        <button onClick={() => onDismiss(cluster.map(ft => ft.id))}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
           <X className="size-4" />Ablehnen
         </button>

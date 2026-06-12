@@ -13,6 +13,7 @@ import type { SupabaseUser } from '@/lib/supabase';
 import { applyTheme, resolveThemeId } from '@/lib/themes';
 import { applyVisualSettings, bindAutoModeWatcher } from '@/lib/visualSettings';
 import { fetchTasksFromUser, publishTask as publishSharedTask, unpublishTask as unpublishSharedTask, getOrCreateMyProfile } from '@/lib/homeworkShare';
+import { sameHomework } from '@/lib/homeworkMatch';
 import type { UserProfile } from '@/lib/homeworkShare';
 import {
   loadFriendGraph,
@@ -382,8 +383,8 @@ interface State {
   publishTask: (task: AppTask) => Promise<void>;
   /** Zieht eine Aufgabe aus shared_tasks zurück. */
   unpublishTask: (taskId: string) => Promise<void>;
-  /** Blendet eine Fremdaufgabe dauerhaft aus (abgelehnt, geräteübergreifend gemerkt). */
-  dismissFriendTask: (id: string) => void;
+  /** Blendet eine oder mehrere Fremdaufgaben dauerhaft aus (abgelehnt, geräteübergreifend gemerkt). */
+  dismissFriendTask: (id: string | string[]) => void;
   /** Übernimmt eine Fremdaufgabe als eigene Aufgabe und blendet die geteilte Version aus. */
   acceptFriendTask: (ft: FriendTask) => Promise<void>;
 }
@@ -1678,11 +1679,13 @@ export const useStore = create<State>((set, get) => ({
   },
 
   dismissFriendTask(id) {
-    set(state => ({ dismissedFriendTaskIds: new Set([...state.dismissedFriendTaskIds, id]) }));
+    const ids = Array.isArray(id) ? id : [id];
+    if (ids.length === 0) return;
+    set(state => ({ dismissedFriendTaskIds: new Set([...state.dismissedFriendTaskIds, ...ids]) }));
     // Dauerhaft + geräteübergreifend merken (über die synchronisierten Settings).
     const current = get().settings;
     if (current) {
-      const nextIds = Array.from(new Set([...(current.dismissedFriendTaskIds ?? []), id]));
+      const nextIds = Array.from(new Set([...(current.dismissedFriendTaskIds ?? []), ...ids]));
       void get().setSettings({ dismissedFriendTaskIds: nextIds });
     }
   },
@@ -1703,8 +1706,12 @@ export const useStore = create<State>((set, get) => ({
       priority: get().settings?.defaultTaskPriority ?? 2,
       shared: false,
     });
-    // Die Freundes-Version dauerhaft ausblenden, damit sie nicht doppelt steht.
-    get().dismissFriendTask(ft.id);
+    // Diese Hausaufgabe gehört jetzt dir – ALLE geteilten Kopien davon ausblenden
+    // (auch dieselbe Aufgabe von anderen Mitschülern), damit nichts doppelt steht.
+    const sameIds = get().friendTasks
+      .filter(o => o.id === ft.id || sameHomework(ft, o))
+      .map(o => o.id);
+    get().dismissFriendTask(sameIds);
   },
 }));
 
