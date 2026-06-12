@@ -103,6 +103,7 @@ export function DatenschutzPage() {
           <ul className="list-disc pl-5 space-y-1 text-ink-700">
             <li><strong>Lokal im Browser:</strong> deine Fächer, Noten, Aufgaben, Stundenplan, Schuljahre, App-Einstellungen.</li>
             <li><strong>Bei Cloud-Sync:</strong> zusätzlich E-Mail-Adresse (für Login), die obigen Inhaltsdaten, optional von dir hochgeladene Fotos.</li>
+            <li><strong>Bei den sozialen Funktionen (freiwillig):</strong> dein Anzeigename, ein 6-stelliger Freundecode, optional ein Profilbild, sowie Inhalte, die du aktiv mit ausgewählten Freunden teilst – Beiträge und Fotos im Lern-Feed, Kommentare, Reaktionen, geteilte Hausaufgaben, geteilter Stundenplan und deine wöchentliche Lernzeit (Bestenliste).</li>
             <li><strong>Technisch unvermeidbar:</strong> IP-Adresse und User-Agent in den Server-Logs des Hosters (Vercel, Supabase) zur Abwehr von Missbrauch.</li>
           </ul>
         </Section>
@@ -111,11 +112,28 @@ export function DatenschutzPage() {
           <ul className="list-disc pl-5 space-y-1 text-ink-700">
             <li><strong>Bereitstellung der App:</strong> Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung) bzw. lit. f (berechtigtes Interesse am Betrieb).</li>
             <li><strong>Cloud-Sync und Fotos:</strong> Art. 6 Abs. 1 lit. a DSGVO (Einwilligung – jederzeit widerrufbar durch Abmelden in den Einstellungen).</li>
+            <li><strong>Soziale Funktionen (Freunde, Lern-Feed, Teilen, Bestenliste):</strong> Art. 6 Abs. 1 lit. a DSGVO (Einwilligung – du entscheidest pro Inhalt, ob und mit wem du teilst; jederzeit widerrufbar durch Löschen der Inhalte oder Abmelden).</li>
             <li><strong>Server-Logs:</strong> Art. 6 Abs. 1 lit. f DSGVO (Sicherheit und Stabilität).</li>
           </ul>
         </Section>
 
-        <Section title="4. Auftragsverarbeiter und externe Dienste">
+        <Section title="4. Soziale Funktionen – Daten, die andere Nutzer sehen können">
+          <p className="text-ink-700 leading-relaxed mb-2">
+            Die App enthält freiwillige soziale Funktionen. Wenn du sie nutzt, werden bestimmte Daten für <strong>von dir ausgewählte Freunde</strong> sichtbar. Nutzt du sie nicht, bleibt die App rein privat.
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-ink-700">
+            <li><strong>Freunde:</strong> Über einen 6-stelligen Freundecode könnt ihr euch gegenseitig als Freunde hinzufügen. Andere Nutzer sehen dann deinen Anzeigenamen und – falls vorhanden – dein Profilbild.</li>
+            <li><strong>Lern-Feed:</strong> Du kannst Beiträge und Fotos posten. Beim Posten wählst du selbst aus, welche Freunde den Beitrag sehen dürfen. Nur diese ausgewählten Freunde können ihn sehen, kommentieren und darauf reagieren. Wer erst später dein Freund wird, sieht ältere Beiträge nicht.</li>
+            <li><strong>Hausaufgaben &amp; Stundenplan teilen:</strong> Wenn du diese Funktion nutzt, können deine Freunde die von dir geteilten Aufgaben bzw. deinen Stundenplan sehen.</li>
+            <li><strong>Lernzeit / Bestenliste:</strong> Deine wöchentliche Lernzeit kann deinen Freunden in einer Bestenliste angezeigt werden.</li>
+            <li><strong>Anstupsen:</strong> Du kannst Freunden einen kurzen „Stupser" senden; dabei sehen sie, dass er von dir kommt.</li>
+          </ul>
+          <p className="text-ink-700 leading-relaxed mt-2">
+            <strong>Wichtig:</strong> Inhalte, die du mit anderen teilst, können von diesen Personen gesehen und theoretisch kopiert oder gespeichert werden. Überlege dir daher gut, welche Fotos und Informationen du teilst. Du kannst geteilte Inhalte und Freundschaften jederzeit wieder löschen.
+          </p>
+        </Section>
+
+        <Section title="5. Auftragsverarbeiter und externe Dienste">
           <p className="text-ink-700 leading-relaxed mb-2">Wir nutzen folgende Dienstleister:</p>
           <ul className="list-disc pl-5 space-y-2 text-ink-700">
             <li>
@@ -125,7 +143,7 @@ export function DatenschutzPage() {
             </li>
             <li>
               <strong>Supabase Inc.</strong> (970 Toa Payoh North #07-04, Singapur 318992; Server in der EU – Frankfurt) –
-              Datenbank, Authentifizierung und Foto-Speicher für die Cloud-Sync-Funktion. Wird nur aktiviert, wenn du dich einloggst.
+              Datenbank, Authentifizierung und Foto-Speicher für die Cloud-Sync- und die sozialen Funktionen (Freunde, Lern-Feed, geteilte Inhalte, Bestenliste). Wird nur aktiviert, wenn du dich einloggst.
             </li>
             <li>
               <strong>Google Ireland Limited</strong> (Gordon House, Barrow Street, Dublin 4, Irland) – nur wenn du dich per „Mit Google anmelden" einloggst.
@@ -134,7 +152,7 @@ export function DatenschutzPage() {
           </ul>
         </Section>
 
-        <Section title="5. Cookies und lokale Speicherung">
+        <Section title="6. Cookies und lokale Speicherung">
           <p className="text-ink-700 leading-relaxed">
             Die App nutzt <strong>keine Tracking-Cookies und kein Analytics</strong>. Es kommen ausschließlich technisch notwendige Mechanismen zum Einsatz:
           </p>
@@ -147,15 +165,16 @@ export function DatenschutzPage() {
           </p>
         </Section>
 
-        <Section title="6. Speicherdauer">
+        <Section title="7. Speicherdauer">
           <p className="text-ink-700 leading-relaxed">
             Inhaltsdaten (Noten, Aufgaben etc.) bleiben so lange gespeichert, wie du sie behältst. Du kannst sie jederzeit in den Einstellungen löschen.
+            Geteilte Beiträge, Fotos, Freundschaften und Bestenlisten-Einträge bleiben bestehen, bis du sie löschst – beim Löschen verschwinden sie auch bei deinen Freunden.
             Server-Logs des Hosters werden in der Regel nach 30 Tagen gelöscht.
             Wenn du deinen Account löschst, werden alle deine Daten unverzüglich aus der Cloud entfernt.
           </p>
         </Section>
 
-        <Section title="7. Deine Rechte">
+        <Section title="8. Deine Rechte">
           <p className="text-ink-700 leading-relaxed mb-2">Nach DSGVO hast du folgende Rechte:</p>
           <ul className="list-disc pl-5 space-y-1 text-ink-700">
             <li>Auskunft über deine gespeicherten Daten (Art. 15)</li>
@@ -171,15 +190,16 @@ export function DatenschutzPage() {
           </p>
         </Section>
 
-        <Section title="8. Hinweis für Minderjährige">
+        <Section title="9. Hinweis für Minderjährige">
           <p className="text-ink-700 leading-relaxed">
-            Diese App richtet sich an Schülerinnen und Schüler. Wenn du jünger als 16 Jahre alt bist und Cloud-Sync nutzen möchtest,
+            Diese App richtet sich an Schülerinnen und Schüler. Wenn du jünger als 16 Jahre alt bist und Cloud-Sync oder die sozialen Funktionen nutzen möchtest,
             brauchen wir die Zustimmung deiner Erziehungsberechtigten (Art. 8 DSGVO).
+            Das gilt besonders für das Teilen von Fotos und persönlichen Inhalten mit anderen – überlege dir gut, welche Bilder und Informationen du teilst.
             Ohne Cloud-Sync kannst du die App ohne Account und ohne Datenweitergabe nutzen.
           </p>
         </Section>
 
-        <Section title="9. Änderungen dieser Erklärung">
+        <Section title="10. Änderungen dieser Erklärung">
           <p className="text-ink-700 leading-relaxed">
             Wir behalten uns vor, diese Datenschutzerklärung anzupassen, damit sie stets aktuellen rechtlichen Anforderungen entspricht.
             Die jeweils aktuelle Version ist immer hier auf dieser Seite abrufbar.
