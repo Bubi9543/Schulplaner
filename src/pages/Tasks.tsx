@@ -241,14 +241,6 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
 }
 
 // ── Inhaltlicher Abgleich zweier Aufgaben-Titel ─────────────────────────────
-// Zieht Zahlen-Tokens (mit optionalem Buchstaben-Suffix) aus einem Titel.
-//   "165/5,7a"                 → ["165","5","7a"]
-//   "Seite 165 Aufgabe 5 und 7a" → ["165","5","7a"]
-function numberTokens(s: string): string[] {
-  return s.toLowerCase().match(/\d+[a-z]?/g) ?? [];
-}
-const tokenBase = (tok: string) => parseInt(tok, 10);
-
 // Wörter (länger als 2 Zeichen, ohne Satzzeichen) – Fallback wenn keine Zahlen.
 function titleWords(s: string): Set<string> {
   return new Set(
@@ -256,24 +248,61 @@ function titleWords(s: string): Set<string> {
   );
 }
 
-// Beschreiben zwei Titel wahrscheinlich dieselbe Aufgabe?
-// Mit Seiten-/Aufgabennummern wird tolerant über die Zahlen verglichen:
-// gleiche (größte) Seitenzahl + Überschneidung bei den Aufgabennummern.
-// Dadurch passen "165/5,7a" ↔ "Seite 165 Aufgabe 5 und 7b" zusammen, aber
-// zwei verschiedene Aufgaben am selben Tag/Fach werden NICHT mehr gruppiert.
-function tasksLikelySame(a: string, b: string): boolean {
-  const ta = numberTokens(a), tb = numberTokens(b);
-  if (ta.length && tb.length) {
-    const basesA = ta.map(tokenBase), basesB = tb.map(tokenBase);
-    const pageA = Math.max(...basesA), pageB = Math.max(...basesB);
-    if (pageA !== pageB) return false;                       // andere Seite → andere Aufgabe
-    const restA = new Set(basesA.filter(n => n !== pageA));
-    const restB = new Set(basesB.filter(n => n !== pageB));
-    if (restA.size === 0 && restB.size === 0) return true;    // nur eine Seitenangabe, gleich
-    for (const n of restA) if (restB.has(n)) return true;     // mind. eine gemeinsame Aufgabe
-    return false;
+// Eine einzelne Seiten-/Aufgaben-Referenz, z. B. Seite 150, Aufgabe 4.
+// page === null heißt "ohne Seitenangabe" und passt dann auf jede Seite.
+interface ExRef { page: number | null; ex: number }
+
+// Liest aus einem Hausaufgaben-Titel die referenzierten Seiten + Aufgaben heraus –
+// egal in welcher Schreibweise. "Seite"/"S."/"S" zählt als Seitenmarker, "/" als
+// Trenner zwischen Seite und Aufgabe. Buchstaben-Teile (a, b, c) werden ignoriert,
+// weil sie nur Unteraufgaben derselben Aufgabe sind. Beispiele:
+//   "S.150/4 b) c) f) und S 151/8" → [150/4, 151/8]
+//   "150/4bcf,8"                   → [150/4, 150/8]
+//   "Seite 165 Aufgabe 5 und 7a"   → [165/5, 165/7]
+function parseExRefs(title: string): ExRef[] {
+  const s = title.toLowerCase()
+    .replace(/seiten?/g, ' s ')                                   // "Seite" → Marker s
+    .replace(/aufgaben?|aufg\.?|übung(?:en)?|nummer|nr\.?/g, ' ') // Aufgaben-Wörter raus
+    .replace(/(^|[^a-zäöüß])s\.?(?=\s*\d)/g, '$1 ⟂ ');            // Seitenmarker → ⟂
+  const re = /(⟂)|(\d+)|(\/)/g;
+  type Tok = { kind: 's' | 'num' | 'slash'; val?: number };
+  const toks: Tok[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    if (m[1] !== undefined) toks.push({ kind: 's' });
+    else if (m[2] !== undefined) toks.push({ kind: 'num', val: parseInt(m[2], 10) });
+    else toks.push({ kind: 'slash' });
   }
-  // Kein Zahlenbezug → über Wort-Überschneidung (Jaccard ≥ 0,5).
+  const refs: ExRef[] = [];
+  let page: number | null = null;
+  let pendingPage = false;                                        // gerade einen Seitenmarker gesehen
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i];
+    if (tk.kind === 's') pendingPage = true;
+    else if (tk.kind === 'slash') continue;
+    else if (pendingPage) { page = tk.val!; pendingPage = false; }      // Zahl nach "S" → Seite
+    else if (toks[i + 1]?.kind === 'slash') page = tk.val!;             // Zahl vor "/" → Seite
+    else refs.push({ page, ex: tk.val! });                             // sonst → Aufgabe
+  }
+  return refs;
+}
+
+// Teilen sich zwei Referenz-Listen mindestens eine Seite + Aufgabe?
+function refsOverlap(a: ExRef[], b: ExRef[]): boolean {
+  for (const x of a) for (const y of b) {
+    if (x.ex === y.ex && (x.page === y.page || x.page === null || y.page === null)) return true;
+  }
+  return false;
+}
+
+// Beschreiben zwei Titel wahrscheinlich dieselbe Aufgabe?
+// Wenn beide Seiten-/Aufgabennummern enthalten, gelten sie als gleich, sobald
+// sie sich eine Seite + Aufgabe teilen – dadurch passen "S.150/4 b) c) f)" und
+// "150/4bcf,8" zusammen. Ganz verschiedene Aufgaben (andere Seite/Nummer)
+// werden NICHT gruppiert. Ohne Zahlenbezug zählt die Wort-Überschneidung.
+function tasksLikelySame(a: string, b: string): boolean {
+  const ra = parseExRefs(a), rb = parseExRefs(b);
+  if (ra.length && rb.length) return refsOverlap(ra, rb);
   const wa = titleWords(a), wb = titleWords(b);
   if (!wa.size || !wb.size) return false;
   let inter = 0; for (const w of wa) if (wb.has(w)) inter++;
@@ -281,10 +310,25 @@ function tasksLikelySame(a: string, b: string): boolean {
   return inter / union >= 0.5;
 }
 
+// Passen zwei Fremdaufgaben (gleiches Fach + gleicher Tag + inhaltlich) zusammen?
+function friendTasksSame(a: FriendTask, b: FriendTask): boolean {
+  if (!a.subjectName || !b.subjectName || a.dueDate == null || b.dueDate == null) {
+    // Ohne Fach/Datum nur exakt gleiche Titel zusammenfassen.
+    return a.title.trim().toLowerCase() === b.title.trim().toLowerCase()
+      && (a.subjectName ?? '') === (b.subjectName ?? '');
+  }
+  return a.subjectName.toLowerCase() === b.subjectName.toLowerCase()
+    && startOfDay(a.dueDate) === startOfDay(b.dueDate)
+    && tasksLikelySame(a.title, b.title);
+}
+
 // Pro Bucket: Map<eigeneTaskId → FriendTask[]> (gleiches Fach + gleicher Tag
-// + inhaltlich passend) + eigenständige Fremdaufgaben (kein eigenes Pendant).
+// + inhaltlich passend) + zu Gruppen gebündelte Fremdaufgaben ohne eigenes
+// Pendant. Jede Gruppe (cluster) ist EINE Hausaufgabe, die mehrere Mitschüler
+// geteilt haben – der ausführlichste Titel steht vorne (Repräsentant).
 function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
   const byOwn = new Map<string, FriendTask[]>();
+  const matchedToOwn = new Set<string>();
   for (const ft of bucket.friendItems) {
     if (!ft.subjectName || !ft.dueDate) continue;
     for (const t of bucket.items) {
@@ -296,17 +340,25 @@ function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
         tasksLikelySame(t.title, ft.title)
       ) {
         const arr = byOwn.get(t.id) ?? []; arr.push(ft); byOwn.set(t.id, arr);
+        matchedToOwn.add(ft.id);
       }
     }
   }
-  const dupIds = new Set<string>();
-  for (const arr of byOwn.values()) arr.forEach(ft => dupIds.add(ft.id));
-  const standalone = bucket.friendItems.filter(ft => !dupIds.has(ft.id));
-  return { byOwn, standalone };
+  // Übrige Fremdaufgaben untereinander zu Gruppen bündeln.
+  const rest = bucket.friendItems.filter(ft => !matchedToOwn.has(ft.id));
+  const clusters: FriendTask[][] = [];
+  for (const ft of rest) {
+    const hit = clusters.find(c => friendTasksSame(c[0], ft));
+    if (hit) hit.push(ft);
+    else clusters.push([ft]);
+  }
+  for (const c of clusters) c.sort((a, b) => b.title.length - a.title.length);
+  return { byOwn, clusters };
 }
 
-function bucketTotal(bucket: Bucket, byOwn: Map<string, FriendTask[]>, standalone: FriendTask[]) {
-  return bucket.items.length + standalone.length + [...byOwn.values()].reduce((s, a) => s + a.length, 0);
+function bucketTotal(bucket: Bucket, byOwn: Map<string, FriendTask[]>, clusters: FriendTask[][]) {
+  const friendCount = clusters.reduce((s, c) => s + c.length, 0);
+  return bucket.items.length + friendCount + [...byOwn.values()].reduce((s, a) => s + a.length, 0);
 }
 
 // ════════════════════════════ HEADER · TOGGLE · FILTER ══════════════════════
@@ -548,10 +600,10 @@ interface BucketProps {
 // ════════════════════════════ A · LISTE ═════════════════════════════════════
 
 function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
-  const { byOwn, standalone } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
+  const { byOwn, clusters } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const total = bucketTotal(bucket, byOwn, standalone);
+  const total = bucketTotal(bucket, byOwn, clusters);
   const cardCls = bucket.tone === 'danger' ? '!border-rose-200/70 !bg-rose-50/40' : '';
 
   return (
@@ -589,8 +641,52 @@ function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
             </div>
           );
         })}
-        {standalone.map(ft => <FriendRowInline key={ft.id} ft={ft} onDismiss={onDismiss} onAccept={onAccept} />)}
+        {clusters.map(cluster => cluster.length === 1
+          ? <FriendRowInline key={cluster[0].id} ft={cluster[0]} onDismiss={onDismiss} onAccept={onAccept} />
+          : <FriendClusterRow key={cluster[0].id} cluster={cluster} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
+    </div>
+  );
+}
+
+// Mehrere Mitschüler haben dieselbe Hausaufgabe geteilt → eine zusammengefasste Zeile.
+function FriendClusterRow({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
+  const [open, setOpen] = useState(false);
+  const rep = cluster[0];
+  return (
+    <div>
+      <div className="group flex items-center gap-3 py-2.5">
+        <button onClick={() => setOpen(v => !v)} className="flex -space-x-2 flex-shrink-0">
+          {cluster.slice(0, 3).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={28} /></span>)}
+        </button>
+        <button onClick={() => setOpen(v => !v)} className="flex-1 min-w-0 text-left">
+          <div className="text-[13.5px] font-medium text-ink-700 truncate">{rep.title}</div>
+          <div className="flex items-center gap-2 mt-0.5 text-[11.5px] text-ink-400 flex-wrap">
+            <span className="text-theme-deep font-semibold">{cluster.length} Mitschüler haben das</span>
+            {rep.subjectName && <><span className="text-ink-300">·</span><span>{rep.subjectName}</span></>}
+          </div>
+        </button>
+        <HeroDue ts={rep.dueDate} small />
+        <ChevronDown className={`size-4 text-theme-deep flex-shrink-0 transition-transform cursor-pointer ${open ? 'rotate-180' : ''}`} onClick={() => setOpen(v => !v)} />
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button onClick={() => onAccept(rep)} title="Als eigene Aufgabe übernehmen"
+            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold bg-theme-soft/70 text-theme-deep border border-theme/25 hover:bg-theme-soft transition">
+            <Check className="size-3.5" strokeWidth={2.6} />Annehmen
+          </button>
+          <button onClick={() => cluster.forEach(ft => onDismiss(ft.id))} title="Alle ablehnen"
+            className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 transition"><X className="size-4" /></button>
+        </div>
+      </div>
+      {open && cluster.map(ft => (
+        <div key={ft.id} className="flex items-center gap-3 py-2 mt-1 pl-3 -mx-1 px-3 rounded-xl bg-theme-soft/20">
+          <OwnerAvatar ft={ft} size={24} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[12.5px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
+            <div className="text-[11.5px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
+          </div>
+          <HeroDue ts={ft.dueDate} small />
+        </div>
+      ))}
     </div>
   );
 }
@@ -627,14 +723,16 @@ function FriendRowInline({ ft, onDismiss, onAccept, indent }: { ft: FriendTask; 
 // ════════════════════════════ B · KACHELN ═══════════════════════════════════
 
 function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
-  const { byOwn, standalone } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
-  const total = bucketTotal(bucket, byOwn, standalone);
+  const { byOwn, clusters } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
+  const total = bucketTotal(bucket, byOwn, clusters);
   return (
     <div>
       <BucketHead bucket={bucket} count={total} />
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(282px, 1fr))' }}>
         {bucket.items.map(task => <TaskTile key={task.id} task={task} friends={byOwn.get(task.id) ?? []} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} onDismiss={onDismiss} />)}
-        {standalone.map(ft => <FriendTile key={ft.id} ft={ft} onDismiss={onDismiss} onAccept={onAccept} />)}
+        {clusters.map(cluster => cluster.length === 1
+          ? <FriendTile key={cluster[0].id} ft={cluster[0]} onDismiss={onDismiss} onAccept={onAccept} />
+          : <FriendClusterTile key={cluster[0].id} cluster={cluster} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
     </div>
   );
@@ -737,6 +835,54 @@ function FriendTile({ ft, onDismiss, onAccept }: { ft: FriendTask; onDismiss: (i
           <Check className="size-4" strokeWidth={2.6} />Annehmen
         </button>
         <button onClick={() => onDismiss(ft.id)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
+          <X className="size-4" />Ablehnen
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Kachel-Variante: dieselbe Hausaufgabe von mehreren Mitschülern, gebündelt.
+function FriendClusterTile({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
+  const [open, setOpen] = useState(false);
+  const rep = cluster[0];
+  return (
+    <div className="group relative rounded-3xl border border-dashed border-theme/30 bg-theme-soft/25 p-3.5 hover:bg-theme-soft/40 transition">
+      <div className="flex items-start gap-2.5">
+        <div className="flex -space-x-2 flex-shrink-0">
+          {cluster.slice(0, 3).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={34} /></span>)}
+        </div>
+        <div className="flex-1 min-w-0 pt-0.5">
+          <div className="text-[14px] font-bold text-ink-800 leading-snug" style={{ textWrap: 'pretty' } as React.CSSProperties}>{rep.title}</div>
+          <div className="text-[12px] text-theme-deep font-semibold mt-0.5">{cluster.length} Mitschüler{rep.subjectName ? ` · ${rep.subjectName}` : ''}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <CountdownPill ts={rep.dueDate} size="sm" />
+        <button onClick={() => setOpen(v => !v)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400 hover:text-theme-deep transition">
+          <Users className="size-3" />Wer & Wortlaut<ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {open && (
+        <div className="mt-2.5 flex flex-col gap-1.5">
+          {cluster.map(ft => (
+            <div key={ft.id} className="flex items-center gap-2 rounded-xl bg-white/45 px-2 py-1.5">
+              <OwnerAvatar ft={ft} size={24} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
+                <div className="text-[11px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-theme/15">
+        <button onClick={() => onAccept(rep)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
+          <Check className="size-4" strokeWidth={2.6} />Annehmen
+        </button>
+        <button onClick={() => cluster.forEach(ft => onDismiss(ft.id))}
           className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
           <X className="size-4" />Ablehnen
         </button>
