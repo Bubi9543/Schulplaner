@@ -12,6 +12,7 @@ import {
   DialogShell, Field, KindChips, SubjectChips, LessonDateChips, PriorityPicker,
   isoDate, isoToTs, relDaysFromIso, relText, type KindChipItem,
 } from './dialogParts';
+import { TitleShortcuts } from './TitleShortcuts';
 
 interface Props {
   open: boolean;
@@ -33,6 +34,7 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
 
   const editing = !!initial?.id;
   const taskIdRef = useRef<string>(initial?.id ?? uid());
+  const titleRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [kind, setKind] = useState<TaskKind>(initial?.kind ?? defaultKind ?? 'hausaufgabe');
@@ -120,7 +122,8 @@ export function TaskDialog({ open, onClose, initial, defaultKind }: Props) {
       }
     >
       <Field label="Titel">
-        <input className="input" autoFocus placeholder="z. B. Aufgaben S. 42 Nr. 3–7" value={title} onChange={e => setTitle(e.target.value)} />
+        <input ref={titleRef} className="input" autoFocus placeholder="z. B. Aufgaben S. 42 Nr. 3–7" value={title} onChange={e => setTitle(e.target.value)} />
+        <TitleShortcuts value={title} onChange={setTitle} inputRef={titleRef} />
       </Field>
 
       <Field label="Art" icon={Tag}>
