@@ -163,8 +163,8 @@ function VokabelnPopup({ open, onClose, onDone }: {
     >
       <Box label="Seite" value={seite} onChange={setSeite} onEnter={submit} placeholder="15" autoFocus numeric />
       <div className="grid grid-cols-2 gap-3">
-        <Box label="Vokabel von" value={von} onChange={setVon} onEnter={submit} numeric />
-        <Box label="Vokabel bis" value={bis} onChange={setBis} onEnter={submit} numeric />
+        <Box label="Vokabel von" value={von} onChange={setVon} onEnter={submit} />
+        <Box label="Vokabel bis" value={bis} onChange={setBis} onEnter={submit} />
       </div>
       <Preview>{valid ? build() : 'Vokabeln Seite … …->…'}</Preview>
     </NestedDialog>
