@@ -81,11 +81,12 @@ export function AbiturPage() {
     void patchAbitur({ struckKeys: has ? struck.filter(x => x !== key) : [...struck, key] });
   }
 
-  const note = result.note;
-  const noteStr = note !== null ? note.toFixed(1).replace('.', ',') : '–';
+  // Die große Zahl ist die Prognose (fehlende Leistungen aus dem Schnitt hochgerechnet).
+  const prognoseNote = result.prognoseNote;
+  const prognoseNoteStr = prognoseNote !== null ? prognoseNote.toFixed(1).replace('.', ',') : '–';
   // Notenfarbe: 1,0 grün → 4,0 rot (umgekehrt zur Punkteskala).
-  const noteColor = note === null ? '#64748b'
-    : note <= 1.5 ? '#10b981' : note <= 2.5 ? '#22c55e' : note <= 3.3 ? '#f59e0b' : '#f97316';
+  const noteColor = prognoseNote === null ? '#64748b'
+    : prognoseNote <= 1.5 ? '#10b981' : prognoseNote <= 2.5 ? '#22c55e' : prognoseNote <= 3.3 ? '#f59e0b' : '#f97316';
 
   return (
     <PageShell
@@ -94,12 +95,22 @@ export function AbiturPage() {
     >
       <div className="grid grid-cols-12 gap-4 md:gap-5">
         {/* Ergebnis-Hero */}
-        <Card delay={0} className="col-span-12 md:col-span-4 theme-gradient !text-white border-0 flex flex-col items-center justify-center py-7 gap-1">
-          <div className="text-xs uppercase tracking-widest opacity-80 font-semibold">Abiturnote (Prognose)</div>
-          <div className="font-display font-extrabold text-7xl leading-none mt-2 drop-shadow-sm">{noteStr}</div>
-          <div className="mt-3 text-sm font-semibold opacity-90">{result.total} / {MAX_TOTAL} Punkte</div>
-          <div className={`mt-2 inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full ${result.passed ? 'bg-white/20' : 'bg-black/20'}`}>
-            {result.passed ? <><CheckCircle2 className="size-4" />Bestanden</> : <><AlertTriangle className="size-4" />Noch nicht bestanden</>}
+        <Card delay={0} className="col-span-12 md:col-span-4 theme-gradient !text-white border-0 flex flex-col items-center justify-center py-7 gap-1 text-center">
+          <div className="text-xs uppercase tracking-widest opacity-80 font-semibold">Abiturnote · Prognose</div>
+          <div className="font-display font-extrabold text-7xl leading-none mt-2 drop-shadow-sm">{prognoseNoteStr}</div>
+          <div className="text-[11px] opacity-80 mt-1">bei gleichbleibender Leistung</div>
+          <div className="mt-2 text-sm font-semibold opacity-90">{result.prognoseTotal} / {MAX_TOTAL} Punkte</div>
+          <div className={`mt-2 inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full ${result.prognosePassed ? 'bg-white/20' : 'bg-black/20'}`}>
+            {result.prognosePassed ? <><CheckCircle2 className="size-4" />Prognose: bestanden</> : <><AlertTriangle className="size-4" />Prognose: nicht bestanden</>}
+          </div>
+
+          {/* Ehrlicher Ist-Stand: nur die bereits erreichten Punkte, ohne Hochrechnung. */}
+          <div className="mt-4 pt-3 border-t border-white/25 w-full">
+            <div className="text-[11px] uppercase tracking-wider opacity-70 font-semibold">Ist-Stand (erreicht)</div>
+            <div className="text-sm font-semibold mt-0.5">{result.total} / {MAX_TOTAL} Punkte</div>
+            <div className="text-[11px] opacity-75 mt-0.5">
+              {result.hjlVorhanden}/{MAX_EINGEBRACHT} Halbjahresleistungen · {result.pruefungenVorhanden}/{NUM_ABITURFAECHER} Prüfungen
+            </div>
           </div>
         </Card>
 

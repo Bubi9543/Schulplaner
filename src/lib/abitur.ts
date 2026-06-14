@@ -74,6 +74,23 @@ export interface AbiResult {
   /** Erfüllt die Bestehensgrenzen (Block I ≥ 200, Block II ≥ 100, Gesamt ≥ 300). */
   passed: boolean;
   warnings: string[];
+
+  // --- Prognose: fehlende Leistungen aus dem bisherigen Schnitt hochgerechnet. ---
+  /** Durchschnittliche Punkte pro vorhandener Halbjahresleistung (0–15) oder null. */
+  hjlSchnitt: number | null;
+  /** Anzahl der bereits vorhandenen (eingebrachten) Halbjahresleistungen. */
+  hjlVorhanden: number;
+  /** Anzahl der bereits eingetragenen Abiturprüfungen (0–5). */
+  pruefungenVorhanden: number;
+  /** Block I, wenn alle 40 HJL den bisherigen Schnitt erreichen. */
+  prognoseBlockI: number;
+  /** Block II, wenn fehlende Prüfungen den bisherigen Schnitt erreichen. */
+  prognoseBlockII: number;
+  prognoseTotal: number;
+  /** Prognostizierte Abiturnote oder null, wenn noch keine Daten vorliegen. */
+  prognoseNote: number | null;
+  /** Würde die Prognose die Bestehensgrenzen erfüllen? */
+  prognosePassed: boolean;
 }
 
 export function hjlKey(e: { subjectId: string; term: number }): string {
@@ -133,13 +150,51 @@ export function computeAbitur(
   if (examIds.length < NUM_ABITURFAECHER) {
     warnings.push(`Wähle ${NUM_ABITURFAECHER} Abiturprüfungsfächer (aktuell ${examIds.length}).`);
   }
-  if (blockI < MIN_BLOCK_I) warnings.push(`Block I unter der Mindestgrenze (${blockI}/${MIN_BLOCK_I} P).`);
-  if (examIds.length === NUM_ABITURFAECHER && blockII < MIN_BLOCK_II) {
-    warnings.push(`Block II unter der Mindestgrenze (${blockII}/${MIN_BLOCK_II} P).`);
-  }
 
   const note = total > 0 ? pointsToAbiNote(total) : null;
   const passed = blockI >= MIN_BLOCK_I && blockII >= MIN_BLOCK_II && total >= MIN_TOTAL;
 
-  return { hjl, eingebracht, eingebrachtKeys, pflichtKeys: pflichtKeySet, struckKeys, blockI, blockII, total, note, passed, warnings };
+  // --- Prognose: "bei gleichbleibender Leistung" ---
+  // Schnitt der vorhandenen eingebrachten HJL. Fehlende HJL und fehlende
+  // Abiturprüfungen werden mit diesem Schnitt hochgerechnet, damit die Note
+  // nicht künstlich auf 4,0 fällt, nur weil noch nicht alle Leistungen da sind.
+  const hjlVorhanden = eingebracht.length;
+  const hjlSchnitt = hjlVorhanden > 0 ? blockI / hjlVorhanden : null;
+
+  // Eingetragene Prüfungspunkte (auch 0 zählt als eingetragen); der Rest der
+  // 5 Prüfungen wird mit dem HJL-Schnitt geschätzt.
+  const eingetragenePruefungen = examIds
+    .map(id => abitur?.examPoints?.[id])
+    .filter((p): p is number => p != null);
+  const pruefungenVorhanden = eingetragenePruefungen.length;
+  const eingetragenePruefungSumme = eingetragenePruefungen.reduce((sum, p) => sum + p, 0);
+  const fehlendePruefungen = Math.max(0, NUM_ABITURFAECHER - pruefungenVorhanden);
+
+  let prognoseBlockI = blockI;
+  let prognoseBlockII = blockII;
+  if (hjlSchnitt !== null) {
+    prognoseBlockI = Math.min(MAX_BLOCK_I, Math.round(hjlSchnitt * MAX_EINGEBRACHT));
+    const pruefungSummeProg = eingetragenePruefungSumme + hjlSchnitt * fehlendePruefungen;
+    prognoseBlockII = Math.min(MAX_BLOCK_II, Math.round(pruefungSummeProg * 4));
+  }
+  const prognoseTotal = prognoseBlockI + prognoseBlockII;
+  const prognoseNote = hjlSchnitt !== null ? pointsToAbiNote(prognoseTotal) : null;
+  const prognosePassed =
+    prognoseBlockI >= MIN_BLOCK_I && prognoseBlockII >= MIN_BLOCK_II && prognoseTotal >= MIN_TOTAL;
+
+  // Mindestgrenzen-Warnungen auf Prognose-Basis: nur warnen, wenn selbst die
+  // Hochrechnung bei gleichbleibender Leistung unter der Grenze bliebe.
+  if (hjlSchnitt !== null && prognoseBlockI < MIN_BLOCK_I) {
+    warnings.push(`Block I (Prognose) unter der Mindestgrenze (${prognoseBlockI}/${MIN_BLOCK_I} P).`);
+  }
+  if (hjlSchnitt !== null && prognoseBlockII < MIN_BLOCK_II) {
+    warnings.push(`Block II (Prognose) unter der Mindestgrenze (${prognoseBlockII}/${MIN_BLOCK_II} P).`);
+  }
+
+  return {
+    hjl, eingebracht, eingebrachtKeys, pflichtKeys: pflichtKeySet, struckKeys,
+    blockI, blockII, total, note, passed, warnings,
+    hjlSchnitt, hjlVorhanden, pruefungenVorhanden,
+    prognoseBlockI, prognoseBlockII, prognoseTotal, prognoseNote, prognosePassed,
+  };
 }
