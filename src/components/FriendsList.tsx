@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Hand, Loader2, Check, BellOff, AlertTriangle, Users } from 'lucide-react';
+import { Hand, Send, Loader2, Check, BellOff, AlertTriangle, Users } from 'lucide-react';
 import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { StreakFlame } from '@/components/StreakFlame';
@@ -15,6 +15,10 @@ type NudgeState = 'idle' | 'sending' | 'sent' | 'undelivered' | 'error';
  * Freundesliste unter der Rangliste: Profilbild, Name und Streak (falls
  * vorhanden). Der Anstupsen-Button erscheint nur bei Freunden, die auf
  * mindestens einem Gerät push-bereit sind (siehe NUDGE_STATUS_SETUP.md).
+ *
+ * Klick auf die Hand klappt unter dem Namen eine Nachrichten-Zeile auf und die
+ * Hand wird zum Papierflieger; Klick auf den Flieger sendet den Anstupser mit
+ * der Nachricht und schließt die Zeile wieder.
  */
 export function FriendsList() {
   const authUser = useStore(s => s.authUser);
@@ -25,6 +29,9 @@ export function FriendsList() {
   const [streaks, setStreaks] = useState<Record<string, number>>({});
   const [nudgeable, setNudgeable] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Record<string, NudgeState>>({});
+  // Welcher Freund hat gerade die Nachrichten-Zeile offen, und sein Entwurf.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
 
   const load = useCallback(async () => {
     if (!authUser || friends.length === 0) { setStreaks({}); setNudgeable(new Set()); return; }
@@ -43,10 +50,19 @@ export function FriendsList() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function nudge(f: Friend) {
+  function openCompose(f: Friend) {
+    setOpenId(f.userId);
+    setDraft('');
+    setStatus(p => ({ ...p, [f.userId]: 'idle' }));
+  }
+
+  async function send(f: Friend) {
+    const message = draft;
+    setOpenId(null);
+    setDraft('');
     setStatus(p => ({ ...p, [f.userId]: 'sending' }));
     try {
-      const { delivered } = await sendNudge(f.userId);
+      const { delivered } = await sendNudge(f.userId, message);
       setStatus(p => ({ ...p, [f.userId]: delivered > 0 ? 'sent' : 'undelivered' }));
     } catch {
       setStatus(p => ({ ...p, [f.userId]: 'error' }));
@@ -68,18 +84,41 @@ export function FriendsList() {
           const streak = streaks[f.userId] ?? 0;
           const canNudge = nudgeable.has(f.userId);
           const st = status[f.userId] ?? 'idle';
+          const open = openId === f.userId;
           return (
-            <li key={f.userId} className="flex items-center gap-3 rounded-2xl p-2 bg-[rgb(var(--surface-rgb))]">
-              <Avatar name={f.displayName} avatarUrl={f.avatarUrl} className="size-9" textClassName="text-xs" />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-ink-800 truncate text-sm">{f.displayName}</div>
-                {streak > 0 && (
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-orange-500 leading-tight">
-                    <StreakFlame size={13} active /> {streak} {streak === 1 ? 'Tag' : 'Tage'}
-                  </div>
+            <li key={f.userId} className="rounded-2xl p-2 bg-[rgb(var(--surface-rgb))]">
+              <div className="flex items-center gap-3">
+                <Avatar name={f.displayName} avatarUrl={f.avatarUrl} className="size-9" textClassName="text-xs" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-ink-800 truncate text-sm">{f.displayName}</div>
+                  {streak > 0 && (
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-orange-500 leading-tight">
+                      <StreakFlame size={13} active /> {streak} {streak === 1 ? 'Tag' : 'Tage'}
+                    </div>
+                  )}
+                </div>
+                {canNudge && (
+                  <NudgeButton
+                    state={st}
+                    open={open}
+                    onClick={() => (open ? void send(f) : openCompose(f))}
+                  />
                 )}
               </div>
-              {canNudge && <NudgeButton state={st} onClick={() => nudge(f)} />}
+
+              {open && (
+                <div className="mt-2 flex items-center gap-1.5 rounded-full bg-ink-100 pl-3 pr-1 py-1">
+                  <input
+                    autoFocus
+                    value={draft}
+                    maxLength={160}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') void send(f); if (e.key === 'Escape') { setOpenId(null); setDraft(''); } }}
+                    placeholder="Nachricht (optional) …"
+                    className="flex-1 bg-transparent text-[13px] outline-none text-ink-800 placeholder:text-ink-400"
+                  />
+                </div>
+              )}
             </li>
           );
         })}
@@ -88,16 +127,18 @@ export function FriendsList() {
   );
 }
 
-function NudgeButton({ state, onClick }: { state: NudgeState; onClick: () => void }) {
+function NudgeButton({ state, open, onClick }: { state: NudgeState; open: boolean; onClick: () => void }) {
   const sending = state === 'sending';
   return (
     <button
       onClick={onClick}
       disabled={sending}
       title={
-        state === 'sent' ? 'Angestupst!'
+        sending ? 'Wird gesendet …'
+          : state === 'sent' ? 'Angestupst!'
           : state === 'undelivered' ? 'Gerade nicht erreichbar'
           : state === 'error' ? 'Fehler – nochmal versuchen'
+          : open ? 'Anstupser senden'
           : 'Anstupsen'
       }
       className={cn(
@@ -112,6 +153,7 @@ function NudgeButton({ state, onClick }: { state: NudgeState; onClick: () => voi
         : state === 'sent' ? <Check className="size-4" />
         : state === 'undelivered' ? <BellOff className="size-4" />
         : state === 'error' ? <AlertTriangle className="size-4" />
+        : open ? <Send className="size-4" />
         : <Hand className="size-4" />}
     </button>
   );
