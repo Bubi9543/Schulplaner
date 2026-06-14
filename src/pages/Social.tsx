@@ -10,6 +10,7 @@ import { Card } from '@/components/Card';
 import { Avatar } from '@/components/Avatar';
 import { StreakFlame } from '@/components/StreakFlame';
 import { StudyLeaderboard } from '@/components/StudyLeaderboard';
+import { FriendsList } from '@/components/FriendsList';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { AccountAuth } from '@/components/AccountAuth';
 import { useStore } from '@/store/useStore';
@@ -612,6 +613,7 @@ export function SocialPage() {
     <>
       <ProfileCard />
       <StudyLeaderboard weekTotalMs={weekTotalMs} weekStart={weekStart} podium delay={0} />
+      <FriendsList />
       <RequestsCard />
     </>
   );
@@ -670,7 +672,7 @@ export function SocialPage() {
             <div className="lg:hidden space-y-4">{community}</div>
           </div>
           <aside className="hidden lg:block w-[330px] flex-shrink-0">
-            <div className="sticky top-4 space-y-4">{community}</div>
+            <div className="space-y-4">{community}</div>
           </aside>
         </div>
       )}
