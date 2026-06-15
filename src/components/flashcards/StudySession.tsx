@@ -69,6 +69,8 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
   const [mode, setMode] = useState<ReviewMode>('flip');
   const [tolerance, setTolerance] = useState<TypoTolerance>('lenient');
+  // Anzahl der Aufgaben in der Prüfung (0 = alle).
+  const [testCount, setTestCount] = useState(0);
   const labels = useMemo<SideLabels>(() => ({ front: frontLabel, back: backLabel }), [frontLabel, backLabel]);
 
   // Beim Öffnen Konfig zurücksetzen.
@@ -103,6 +105,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
               direction={direction} setDirection={setDirection}
               mode={mode} setMode={setMode}
               tolerance={tolerance} setTolerance={setTolerance}
+              testCount={testCount} setTestCount={setTestCount}
               onStart={() => setPhase(mode === 'flip' ? 'flip' : (mode as Phase))}
             />
           )}
@@ -122,7 +125,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
             <LearnRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
           )}
           {phase === 'test' && (
-            <TestRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
+            <TestRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} limit={testCount} onReview={onReview} onDone={() => setPhase('done')} />
           )}
           {phase === 'gravity' && (
             <MeteorRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
@@ -138,11 +141,12 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
 
 // ─── Schritt: Konfiguration ──────────────────────────────────────────────────
 
-function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, setTolerance, onStart }: {
+function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, setTolerance, testCount, setTestCount, onStart }: {
   count: number;
   direction: ReviewDirection; setDirection: (d: ReviewDirection) => void;
   mode: ReviewMode; setMode: (m: ReviewMode) => void;
   tolerance: TypoTolerance; setTolerance: (t: TypoTolerance) => void;
+  testCount: number; setTestCount: (n: number) => void;
   onStart: () => void;
 }) {
   const dirs: { id: ReviewDirection; label: string; icon: typeof ArrowLeftRight }[] = [
@@ -160,6 +164,10 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, 
     { id: 'gravity', label: 'Meteor', desc: 'Antwort tippen, bevor die Karte einschlägt', icon: Flame },
   ];
   const showTolerance = TYPED_MODES.includes(mode);
+  const showCount = mode === 'test';
+  // Auswahl-Knöpfe in 5er-Schritten (5, 10, 15 …) plus „Alle".
+  const countSteps: number[] = [];
+  for (let n = 5; n < count; n += 5) countSteps.push(n);
   return (
     <div className="h-full overflow-y-auto px-5 md:px-8 pb-8 flex items-center justify-center">
       <div className="w-full max-w-md space-y-6">
@@ -207,6 +215,28 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, 
               className="overflow-hidden"
             >
               <ToleranceSlider tolerance={tolerance} setTolerance={setTolerance} />
+            </motion.div>
+          )}
+          {showCount && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div>
+                <label className="label">Wie viele Vokabeln abfragen?</label>
+                <div className="flex flex-wrap gap-2">
+                  {countSteps.map(n => (
+                    <button key={n} onClick={() => setTestCount(n)}
+                      className={`btn px-4 py-2 ${testCount === n ? 'btn-primary' : 'btn-ghost'}`}>
+                      {n}
+                    </button>
+                  ))}
+                  <button onClick={() => setTestCount(0)}
+                    className={`btn px-4 py-2 ${testCount === 0 ? 'btn-primary' : 'btn-ghost'}`}>
+                    Alle ({count})
+                  </button>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -485,6 +515,9 @@ function ChoiceRunner({ cards, direction, labels, onReview, onDone }: {
 // Jede Karte hat eine Stufe: 0 = neu → wird per Multiple-Choice gefragt,
 // 1 = einmal erkannt → muss getippt werden, 2 = sitzt (raus). Richtig hebt die
 // Stufe, falsch wirft auf 0 zurück. Fertig, wenn alle Karten Stufe 2 erreichen.
+// Gelernt wird in 5er-Päckchen: erst Multiple-Choice, dann Tippen je Päckchen.
+
+const LEARN_BATCH = 5;
 
 function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
   cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
@@ -512,12 +545,21 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
   const recognized = useMemo(() => Object.values(levels).filter(l => l >= 1).length, [levels]);
   const allDone = queue.length > 0 && mastered >= queue.length;
 
-  // Aktuelle Karte: ab pos die erste noch nicht beherrschte (mit Umlauf).
+  // In 5er-Päckchen lernen: das erste Päckchen mit noch offenen Karten ist aktiv.
+  // So werden 5 Karten erst per Multiple-Choice, dann sofort getippt – bevor das
+  // nächste Päckchen kommt (man hat sie noch frisch im Kopf).
+  let batchStart = 0;
+  for (let b = 0; b < queue.length; b += LEARN_BATCH) {
+    if (queue.slice(b, b + LEARN_BATCH).some(c => (levels[c.id] ?? 0) < 2)) { batchStart = b; break; }
+  }
+  const batch = queue.slice(batchStart, batchStart + LEARN_BATCH);
+
+  // Aktuelle Karte: ab pos die erste offene Karte im Päckchen (mit Umlauf).
   let card: Flashcard | null = null;
   let ci = -1;
-  for (let k = 0; k < queue.length; k++) {
-    const idx = (pos + k) % queue.length;
-    if ((levels[queue[idx].id] ?? 0) < 2) { card = queue[idx]; ci = idx; break; }
+  for (let k = 0; k < batch.length; k++) {
+    const idx = (pos + k) % batch.length;
+    if ((levels[batch[idx].id] ?? 0) < 2) { card = batch[idx]; ci = idx; break; }
   }
 
   useEffect(() => { if (allDone) onDone(); }, [allDone, onDone]);
@@ -545,7 +587,7 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
     const next = pendingLevel.current;
     pendingLevel.current = null;
     if (next !== null) setLevels(l => ({ ...l, [curId]: next }));
-    setPos((curCi + 1) % queue.length);
+    setPos((curCi + 1) % Math.max(1, batch.length));
     setChosen(null); setInput(''); setResult(null);
   }
 
@@ -650,22 +692,22 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
 
 // ─── Schritt: Prüfung (gemischte Aufgaben mit Auswertung) ────────────────────
 
-const TEST_MAX = 20;
-
 type TestQ =
   | { kind: 'choice'; card: Flashcard; prompt: string; label: string; answer: string; options: string[]; correctIndex: number }
   | { kind: 'write'; card: Flashcard; prompt: string; label: string; answer: string; answerLabel: string }
   | { kind: 'tf'; card: Flashcard; prompt: string; label: string; answer: string; shown: string; truth: boolean };
 
-function TestRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
+function TestRunner({ cards, direction, labels, tolerance, limit, onReview, onDone }: {
   cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
+  /** Anzahl der Aufgaben; 0 = alle Karten. */
+  limit: number;
   onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
 }) {
   const answerOf = useCallback((c: Flashcard) => sides(c, direction).answer, [direction]);
 
   // Prüfung einmalig zusammenstellen.
   const questions = useMemo<TestQ[]>(() => {
-    const picked = shuffle(cards).slice(0, TEST_MAX);
+    const picked = shuffle(cards).slice(0, limit > 0 ? limit : cards.length);
     return picked.map((card, i): TestQ => {
       const v = sides(card, direction, labels);
       const kind = (['choice', 'write', 'tf'] as const)[i % 3];
@@ -687,7 +729,7 @@ function TestRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
       }
       return { kind, card, prompt: v.prompt, label: v.promptLabel, answer: v.answer, shown, truth };
     });
-  }, [cards, direction, labels, answerOf]);
+  }, [cards, direction, labels, answerOf, limit]);
 
   const [answers, setAnswers] = useState<Record<number, number | string | boolean>>({});
   const [submitted, setSubmitted] = useState(false);
