@@ -68,8 +68,9 @@
 
   html[data-mode="dark"] body::before {
     background:
-      radial-gradient(at 50% 0%, rgb(var(--theme-primary-rgb) / 0.08), transparent 55%),
-      radial-gradient(at 85% 95%, rgb(var(--theme-secondary-rgb) / 0.05), transparent 55%),
+      radial-gradient(at 50% -5%, rgb(var(--theme-primary-rgb) / 0.16), transparent 55%),
+      radial-gradient(at 12% 20%, rgb(var(--theme-secondary-rgb) / 0.10), transparent 50%),
+      radial-gradient(at 85% 95%, rgb(var(--theme-accent-rgb) / 0.10), transparent 55%),
       linear-gradient(180deg, var(--theme-bg-start), var(--theme-bg-end));
   }
 
@@ -141,14 +142,33 @@
     -webkit-backdrop-filter: none;
     background: rgb(var(--surface-rgb) / 0.95);
   }
+  /* Dark Mode: dezentes Glas zurück – leicht durchscheinend, sanfter Blur,
+     feine Lichtkante oben + weicher Glow in der Akzentfarbe. */
   html[data-mode="dark"] .glass,
+  html[data-mode="dark"] .glass-strong,
+  html[data-mode="dark"] .card {
+    backdrop-filter: saturate(140%) blur(14px);
+    -webkit-backdrop-filter: saturate(140%) blur(14px);
+    background: rgb(var(--surface-rgb) / 0.72);
+    border-color: rgb(var(--surface-border-rgb) / 0.7);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 18px 44px -28px rgb(var(--theme-primary-rgb) / 0.35);
+  }
   html[data-mode="dark"] .glass-strong {
+    background: rgb(var(--surface-strong-rgb) / 0.82);
+  }
+  /* „Glas aus"-Schalter behält im Dark Mode Vorrang (höhere Spezifität). */
+  html[data-glass="off"][data-mode="dark"] .glass,
+  html[data-glass="off"][data-mode="dark"] .glass-strong,
+  html[data-glass="off"][data-mode="dark"] .card {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgb(var(--surface-rgb));
-    border-color: rgb(var(--surface-border-rgb) / 0.6);
+    box-shadow: none;
   }
-  html[data-mode="dark"] .glass-strong {
+  html[data-glass="off"][data-mode="dark"] .glass-strong {
     background: rgb(var(--surface-strong-rgb));
   }
   .card {
@@ -169,6 +189,11 @@
   .btn-primary {
     @apply btn text-white shadow-lg;
     background-image: linear-gradient(135deg, var(--theme-gradient-from), var(--theme-gradient-via) 55%, var(--theme-gradient-to));
+  }
+  html[data-mode="dark"] .btn-primary {
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.12),
+      0 10px 30px -10px rgb(var(--theme-primary-rgb) / 0.55);
   }
   .btn-ghost {
     @apply btn;
@@ -215,9 +240,9 @@
   }
   html[data-mode="dark"] .theme-aurora {
     background:
-      radial-gradient(at 18% 12%, rgb(var(--theme-aurora-1) / 0.10) 0, transparent 60%),
-      radial-gradient(at 82% 18%, rgb(var(--theme-aurora-2) / 0.08) 0, transparent 60%),
-      radial-gradient(at 50% 92%, rgb(var(--theme-aurora-3) / 0.06) 0, transparent 60%);
+      radial-gradient(at 18% 12%, rgb(var(--theme-aurora-1) / 0.18) 0, transparent 60%),
+      radial-gradient(at 82% 18%, rgb(var(--theme-aurora-2) / 0.14) 0, transparent 60%),
+      radial-gradient(at 50% 92%, rgb(var(--theme-aurora-3) / 0.10) 0, transparent 60%);
   }
   .theme-gradient {
     background-image: linear-gradient(135deg, var(--theme-gradient-from), var(--theme-gradient-via) 55%, var(--theme-gradient-to));
