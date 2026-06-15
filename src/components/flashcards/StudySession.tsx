@@ -3,11 +3,11 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import {
   X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy, Undo2, Flag,
   ThumbsUp, ThumbsDown, Equal, ChevronRight, PartyPopper,
-  Keyboard, Check, ArrowRight, CornerDownLeft,
+  Keyboard, Check, ArrowRight, CornerDownLeft, ListChecks,
 } from 'lucide-react';
 import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome, TypoTolerance } from '@/types';
 import { LEITNER_BOXES } from '@/types';
-import { judgeTyped, outcomeFromTyped } from '@/lib/flashcards';
+import { judgeTyped, outcomeFromTyped, buildChoices } from '@/lib/flashcards';
 
 interface Props {
   open: boolean;
@@ -23,7 +23,7 @@ interface Props {
   restoreCard: (cardId: string, snapshot: Partial<Flashcard>) => void;
 }
 
-type Phase = 'config' | 'flip' | 'match' | 'write' | 'done';
+type Phase = 'config' | 'flip' | 'match' | 'write' | 'choice' | 'done';
 
 /** Modi, bei denen die Antwort getippt wird → Toleranz-Regler relevant. */
 const TYPED_MODES: ReviewMode[] = ['write', 'learn', 'test'];
@@ -102,7 +102,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
               direction={direction} setDirection={setDirection}
               mode={mode} setMode={setMode}
               tolerance={tolerance} setTolerance={setTolerance}
-              onStart={() => setPhase(mode === 'match' ? 'match' : mode === 'write' ? 'write' : 'flip')}
+              onStart={() => setPhase(mode === 'match' ? 'match' : mode === 'write' ? 'write' : mode === 'choice' ? 'choice' : 'flip')}
             />
           )}
           {phase === 'flip' && (
@@ -113,6 +113,9 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
           )}
           {phase === 'write' && (
             <WriteRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
+          )}
+          {phase === 'choice' && (
+            <ChoiceRunner cards={cards} direction={direction} labels={labels} onReview={onReview} onDone={() => setPhase('done')} />
           )}
           {phase === 'done' && (
             <DoneStep deckName={deckName} onRestart={() => setPhase('config')} onClose={onClose} />
@@ -140,6 +143,7 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, 
   const modes: { id: ReviewMode; label: string; desc: string; icon: typeof Layers }[] = [
     { id: 'flip', label: 'Aufdecken', desc: 'Karte aufdecken & per Swipe bewerten', icon: Layers },
     { id: 'write', label: 'Schreiben', desc: 'Antwort selbst eintippen', icon: Keyboard },
+    { id: 'choice', label: 'Multiple-Choice', desc: 'Aus 4 Antworten die richtige tippen', icon: ListChecks },
     { id: 'match', label: 'Zuordnen', desc: 'Begriffe einander zuordnen', icon: ArrowLeftRight },
   ];
   const showTolerance = TYPED_MODES.includes(mode);
@@ -368,6 +372,98 @@ function Feedback({ tone, outcome, expected, given, onNext, onOverride }: {
         Weiter <ArrowRight className="size-4" />
       </button>
     </motion.div>
+  );
+}
+
+// ─── Schritt: Multiple-Choice ────────────────────────────────────────────────
+
+function ChoiceRunner({ cards, direction, labels, onReview, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
+}) {
+  const queue = useMemo(() => shuffle(cards), [cards]);
+  const [index, setIndex] = useState(0);
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [stats, setStats] = useState({ correct: 0, wrong: 0 });
+
+  const card = queue[index];
+  const answerOf = useCallback((c: Flashcard) => sides(c, direction).answer, [direction]);
+  const { prompt, promptLabel } = useMemo(() => sides(card, direction, labels), [card, direction, labels]);
+  // Optionen je Karte einmal bauen (buildChoices mischt selbst).
+  const { options, correctIndex } = useMemo(
+    () => buildChoices(card, cards, answerOf, 4),
+    [card, cards, answerOf],
+  );
+
+  const pick = useCallback((i: number) => {
+    if (chosen !== null || !card) return;
+    const outcome: ReviewOutcome = i === correctIndex ? 'correct' : 'wrong';
+    onReview(card.id, outcome);
+    setStats(s => ({ ...s, [outcome]: s[outcome] + 1 }));
+    setChosen(i);
+  }, [chosen, card, correctIndex, onReview]);
+
+  // Nach der Auswahl kurz das Ergebnis zeigen, dann weiter.
+  useEffect(() => {
+    if (chosen === null) return;
+    const t = setTimeout(() => {
+      if (index + 1 >= queue.length) { onDone(); return; }
+      setIndex(i => i + 1);
+      setChosen(null);
+    }, 1100);
+    return () => clearTimeout(t);
+  }, [chosen, index, queue.length, onDone]);
+
+  if (!card) return null;
+  const progress = (index / queue.length) * 100;
+
+  return (
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 h-2 rounded-full bg-white/50 overflow-hidden">
+          <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${progress}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
+        </div>
+        <span className="text-xs font-semibold text-ink-500 tabular-nums">{index + 1}/{queue.length}</span>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
+          <Flag className="size-3" /> Beenden
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-center max-w-md w-full mx-auto">
+        <div className="glass-strong rounded-[2rem] shadow-soft p-6 text-center mb-4">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">{promptLabel}</span>
+          <div className="font-display font-bold text-ink-900 text-xl md:text-2xl whitespace-pre-wrap break-words mt-2">{prompt}</div>
+        </div>
+
+        <div className="grid gap-2.5">
+          {options.map((opt, i) => {
+            const isCorrect = i === correctIndex;
+            const isChosen = chosen === i;
+            const reveal = chosen !== null;
+            const cls = reveal
+              ? isCorrect
+                ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-800'
+                : isChosen
+                  ? 'bg-rose-500/15 border-rose-500/60 text-rose-800'
+                  : 'glass border-white/40 text-ink-400 opacity-60'
+              : 'glass border-white/50 text-ink-800 hover:bg-white/80 active:scale-[0.99]';
+            return (
+              <button key={i} onClick={() => pick(i)} disabled={reveal}
+                className={`w-full rounded-2xl p-4 text-left text-sm md:text-base border transition flex items-center gap-3 ${cls}`}>
+                <span className="size-6 rounded-lg bg-white/60 grid place-items-center text-xs font-bold flex-shrink-0">
+                  {reveal && isCorrect ? <Check className="size-4" /> : reveal && isChosen ? <X className="size-4" /> : String.fromCharCode(65 + i)}
+                </span>
+                <span className="whitespace-pre-wrap break-words">{opt}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="text-center subtle text-xs mt-3">
+        <span className="text-emerald-600 font-semibold">{stats.correct}</span> richtig · <span className="text-rose-600 font-semibold">{stats.wrong}</span> falsch
+      </div>
+    </div>
   );
 }
 
