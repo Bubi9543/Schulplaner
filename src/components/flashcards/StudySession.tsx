@@ -1,11 +1,13 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import {
   X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy, Undo2, Flag,
   ThumbsUp, ThumbsDown, Equal, ChevronRight, PartyPopper,
+  Keyboard, Check, ArrowRight, CornerDownLeft,
 } from 'lucide-react';
-import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome } from '@/types';
+import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome, TypoTolerance } from '@/types';
 import { LEITNER_BOXES } from '@/types';
+import { judgeTyped, outcomeFromTyped } from '@/lib/flashcards';
 
 interface Props {
   open: boolean;
@@ -21,7 +23,10 @@ interface Props {
   restoreCard: (cardId: string, snapshot: Partial<Flashcard>) => void;
 }
 
-type Phase = 'config' | 'flip' | 'match' | 'done';
+type Phase = 'config' | 'flip' | 'match' | 'write' | 'done';
+
+/** Modi, bei denen die Antwort getippt wird → Toleranz-Regler relevant. */
+const TYPED_MODES: ReviewMode[] = ['write', 'learn', 'test'];
 
 /** Mischt eine Kopie eines Arrays (Fisher–Yates). */
 function shuffle<T>(arr: T[]): T[] {
@@ -62,6 +67,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
   const [phase, setPhase] = useState<Phase>('config');
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
   const [mode, setMode] = useState<ReviewMode>('flip');
+  const [tolerance, setTolerance] = useState<TypoTolerance>('lenient');
   const labels: SideLabels = { front: frontLabel, back: backLabel };
 
   // Beim Öffnen Konfig zurücksetzen.
@@ -95,7 +101,8 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
               count={cards.length}
               direction={direction} setDirection={setDirection}
               mode={mode} setMode={setMode}
-              onStart={() => setPhase(mode === 'match' ? 'match' : 'flip')}
+              tolerance={tolerance} setTolerance={setTolerance}
+              onStart={() => setPhase(mode === 'match' ? 'match' : mode === 'write' ? 'write' : 'flip')}
             />
           )}
           {phase === 'flip' && (
@@ -103,6 +110,9 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
           )}
           {phase === 'match' && (
             <MatchRunner cards={cards} direction={direction} onReview={onReview} onDone={() => setPhase('done')} />
+          )}
+          {phase === 'write' && (
+            <WriteRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
           )}
           {phase === 'done' && (
             <DoneStep deckName={deckName} onRestart={() => setPhase('config')} onClose={onClose} />
@@ -115,10 +125,11 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
 
 // ─── Schritt: Konfiguration ──────────────────────────────────────────────────
 
-function ConfigStep({ count, direction, setDirection, mode, setMode, onStart }: {
+function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, setTolerance, onStart }: {
   count: number;
   direction: ReviewDirection; setDirection: (d: ReviewDirection) => void;
   mode: ReviewMode; setMode: (m: ReviewMode) => void;
+  tolerance: TypoTolerance; setTolerance: (t: TypoTolerance) => void;
   onStart: () => void;
 }) {
   const dirs: { id: ReviewDirection; label: string; icon: typeof ArrowLeftRight }[] = [
@@ -128,8 +139,10 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, onStart }: 
   ];
   const modes: { id: ReviewMode; label: string; desc: string; icon: typeof Layers }[] = [
     { id: 'flip', label: 'Aufdecken', desc: 'Karte aufdecken & per Swipe bewerten', icon: Layers },
+    { id: 'write', label: 'Schreiben', desc: 'Antwort selbst eintippen', icon: Keyboard },
     { id: 'match', label: 'Zuordnen', desc: 'Begriffe einander zuordnen', icon: ArrowLeftRight },
   ];
+  const showTolerance = TYPED_MODES.includes(mode);
   return (
     <div className="h-full overflow-y-auto px-5 md:px-8 pb-8 flex items-center justify-center">
       <div className="w-full max-w-md space-y-6">
@@ -170,11 +183,191 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, onStart }: 
           </div>
         </div>
 
+        <AnimatePresence initial={false}>
+          {showTolerance && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <ToleranceSlider tolerance={tolerance} setTolerance={setTolerance} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <button onClick={onStart} className="btn-primary w-full py-3.5 text-base" disabled={count === 0}>
           Los geht's
         </button>
       </div>
     </div>
+  );
+}
+
+/** Schieberegler für die erlaubte Fehlergröße beim Tippen. */
+function ToleranceSlider({ tolerance, setTolerance }: {
+  tolerance: TypoTolerance; setTolerance: (t: TypoTolerance) => void;
+}) {
+  const steps: { id: TypoTolerance; label: string; hint: string }[] = [
+    { id: 'exact', label: 'Exakt', hint: 'Muss Buchstabe für Buchstabe stimmen.' },
+    { id: 'lenient', label: 'Normal', hint: 'Kleine Vertipper, Groß/Klein & Akzente werden verziehen.' },
+    { id: 'loose', label: 'Großzügig', hint: 'Auch mehrere Abweichungen gehen noch durch.' },
+  ];
+  const idx = steps.findIndex(s => s.id === tolerance);
+  return (
+    <div className="rounded-2xl bg-white/40 p-4">
+      <div className="flex items-center justify-between mb-1">
+        <label className="label !mb-0">Fehler erlaubt?</label>
+        <span className="chip text-[11px]">{steps[idx].label}</span>
+      </div>
+      <input
+        type="range" min={0} max={2} step={1} value={idx}
+        onChange={e => setTolerance(steps[Number(e.target.value)].id)}
+        className="w-full accent-theme-deep cursor-pointer"
+      />
+      <div className="flex justify-between text-[10px] font-semibold text-ink-400 mt-1">
+        <span>Streng</span><span>Großzügig</span>
+      </div>
+      <p className="subtle text-xs mt-2">{steps[idx].hint}</p>
+    </div>
+  );
+}
+
+// ─── Schritt: Schreiben (Texteingabe) ────────────────────────────────────────
+
+function WriteRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
+}) {
+  const queue = useMemo(() => shuffle(cards), [cards]);
+  const [index, setIndex] = useState(0);
+  const [input, setInput] = useState('');
+  // null = noch nicht geprüft; sonst das Ergebnis der aktuellen Karte.
+  const [result, setResult] = useState<null | { outcome: ReviewOutcome }>(null);
+  const [stats, setStats] = useState({ correct: 0, partial: 0, wrong: 0 });
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const card = queue[index];
+  const { prompt, answer, promptLabel, answerLabel } = useMemo(
+    () => sides(card, direction, labels),
+    [card, direction, labels],
+  );
+
+  // Nach jedem Kartenwechsel das Eingabefeld fokussieren.
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50); }, [index]);
+
+  const check = useCallback(() => {
+    if (!card || result) return;
+    const outcome = outcomeFromTyped(judgeTyped(input, answer, tolerance));
+    onReview(card.id, outcome);
+    setStats(s => ({ ...s, [outcome]: s[outcome] + 1 }));
+    setResult({ outcome });
+  }, [card, result, input, answer, tolerance, onReview]);
+
+  // „Ich hatte recht": Fehlbewertung nachträglich auf richtig heben.
+  const override = useCallback(() => {
+    if (!card || !result || result.outcome === 'correct') return;
+    onReview(card.id, 'correct');
+    setStats(s => ({ ...s, [result.outcome]: Math.max(0, s[result.outcome] - 1), correct: s.correct + 1 }));
+    setResult({ outcome: 'correct' });
+  }, [card, result, onReview]);
+
+  const next = useCallback(() => {
+    if (index + 1 >= queue.length) { onDone(); return; }
+    setIndex(i => i + 1);
+    setInput('');
+    setResult(null);
+  }, [index, queue.length, onDone]);
+
+  if (!card) return null;
+  const progress = (index / queue.length) * 100;
+  const tone = result?.outcome === 'correct' ? 'emerald' : result?.outcome === 'partial' ? 'amber' : 'rose';
+
+  return (
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      {/* Fortschritt + Beenden */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 h-2 rounded-full bg-white/50 overflow-hidden">
+          <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${progress}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
+        </div>
+        <span className="text-xs font-semibold text-ink-500 tabular-nums">{index + 1}/{queue.length}</span>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
+          <Flag className="size-3" /> Beenden
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-center max-w-md w-full mx-auto">
+        {/* Frage */}
+        <div className="glass-strong rounded-[2rem] shadow-soft p-6 text-center mb-4">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">{promptLabel}</span>
+          <div className="font-display font-bold text-ink-900 text-xl md:text-2xl whitespace-pre-wrap break-words mt-2">{prompt}</div>
+        </div>
+
+        {/* Eingabe / Ergebnis */}
+        {!result ? (
+          <form onSubmit={e => { e.preventDefault(); check(); }} className="space-y-3">
+            <label className="label">Deine Antwort{answerLabel ? ` (${answerLabel})` : ''}</label>
+            <input
+              ref={inputRef} className="input text-center text-lg" value={input}
+              onChange={e => setInput(e.target.value)} placeholder="Antwort eintippen …"
+              autoComplete="off" autoCorrect="off" spellCheck={false}
+            />
+            <div className="flex gap-2">
+              <button type="button" onClick={check} className="btn-soft flex-1 py-3 text-ink-500">
+                Weiß ich nicht
+              </button>
+              <button type="submit" className="btn-primary flex-1 py-3">
+                <Check className="size-4" /> Prüfen
+              </button>
+            </div>
+            <p className="subtle text-center text-[11px]"><CornerDownLeft className="size-3 inline" /> Enter zum Prüfen</p>
+          </form>
+        ) : (
+          <Feedback
+            tone={tone} outcome={result.outcome} expected={answer} given={input}
+            onNext={next} onOverride={override}
+          />
+        )}
+      </div>
+
+      <div className="text-center subtle text-xs mt-3">
+        <span className="text-emerald-600 font-semibold">{stats.correct}</span> gewusst · <span className="text-amber-600 font-semibold">{stats.partial}</span> fast · <span className="text-rose-600 font-semibold">{stats.wrong}</span> daneben
+      </div>
+    </div>
+  );
+}
+
+/** Auswertung einer getippten Antwort mit „Weiter" (Enter) und Override. */
+function Feedback({ tone, outcome, expected, given, onNext, onOverride }: {
+  tone: 'emerald' | 'amber' | 'rose'; outcome: ReviewOutcome;
+  expected: string; given: string; onNext: () => void; onOverride: () => void;
+}) {
+  const nextRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setTimeout(() => nextRef.current?.focus(), 50); }, []);
+  const ring = { emerald: 'border-emerald-500/50 bg-emerald-500/10', amber: 'border-amber-500/50 bg-amber-500/10', rose: 'border-rose-500/50 bg-rose-500/10' }[tone];
+  const text = { emerald: 'text-emerald-700', amber: 'text-amber-700', rose: 'text-rose-700' }[tone];
+  const heading = outcome === 'correct' ? 'Richtig!' : outcome === 'partial' ? 'Fast – kleiner Fehler' : 'Nicht ganz';
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+      <div className={`rounded-2xl border p-4 ${ring}`}>
+        <div className={`font-display font-bold ${text} flex items-center gap-2`}>
+          {outcome === 'wrong' ? <X className="size-5" /> : <Check className="size-5" />} {heading}
+        </div>
+        {outcome !== 'correct' && (
+          <div className="mt-2 text-sm">
+            <div className="text-ink-500">Richtige Antwort:</div>
+            <div className="font-semibold text-ink-900 whitespace-pre-wrap break-words">{expected}</div>
+            {given.trim() && <div className="text-ink-400 text-xs mt-1">Du: „{given}"</div>}
+          </div>
+        )}
+      </div>
+      {outcome === 'wrong' && (
+        <button onClick={onOverride} className="btn-soft w-full py-2 text-sm">
+          Ich hatte doch recht (als gewusst werten)
+        </button>
+      )}
+      <button ref={nextRef} onClick={onNext} className="btn-primary w-full py-3">
+        Weiter <ArrowRight className="size-4" />
+      </button>
+    </motion.div>
   );
 }
 
