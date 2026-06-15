@@ -7,22 +7,31 @@ import { Avatar } from '@/components/Avatar';
 import { FocusMiniWidget } from '@/components/FocusMiniWidget';
 import { oberstufeTermsFor, oberstufeTermLabelFor } from '@/types';
 
-export interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; }
+/** Logische Gruppen der Navigation. 'system' wird unten abgesetzt. */
+export type NavGroup = 'schule' | 'mehr' | 'system';
+
+export interface NavItem { to: string; icon: typeof LayoutDashboard; label: string; short: string; group: NavGroup; }
+
+/** Reihenfolge der Gruppen im Hauptbereich der Seitenleiste. */
+export const NAV_GROUP_ORDER: NavGroup[] = ['schule', 'mehr'];
 
 const NAV: NavItem[] = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', short: 'Start' },
-  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben', short: 'Aufgaben' },
-  { to: '/kalender', icon: CalendarRange, label: 'Kalender', short: 'Kalender' },
-  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan', short: 'Plan' },
-  { to: '/noten', icon: GraduationCap, label: 'Noten', short: 'Noten' },
-  { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus' },
-  { to: '/karteikarten', icon: Layers, label: 'Karteikarten', short: 'Karten' },
-  { to: '/rechner', icon: Calculator, label: 'Rechner', short: 'Rechner' },
-  { to: '/social', icon: Sparkles, label: 'Social', short: 'Social' },
-  { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr' },
+  // Gruppe „Schule" – der organisatorische Alltag
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard', short: 'Start', group: 'schule' },
+  { to: '/noten', icon: GraduationCap, label: 'Noten', short: 'Noten', group: 'schule' },
+  { to: '/aufgaben', icon: CalendarCheck, label: 'Aufgaben', short: 'Aufgaben', group: 'schule' },
+  { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan', short: 'Plan', group: 'schule' },
+  { to: '/kalender', icon: CalendarRange, label: 'Kalender', short: 'Kalender', group: 'schule' },
+  // Gruppe „Mehr" – Werkzeuge & Soziales
+  { to: '/social', icon: Sparkles, label: 'Social', short: 'Social', group: 'mehr' },
+  { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus', group: 'mehr' },
+  { to: '/karteikarten', icon: Layers, label: 'Karteikarten', short: 'Karten', group: 'mehr' },
+  { to: '/rechner', icon: Calculator, label: 'Rechner', short: 'Rechner', group: 'mehr' },
+  // Abgesetzt ganz unten
+  { to: '/einstellungen', icon: Settings, label: 'Einstellungen', short: 'Mehr', group: 'system' },
 ];
 
-const ABITUR_ITEM: NavItem = { to: '/abitur', icon: Trophy, label: 'Abitur', short: 'Abi' };
+const ABITUR_ITEM: NavItem = { to: '/abitur', icon: Trophy, label: 'Abitur', short: 'Abi', group: 'schule' };
 
 /** Diese Einträge lassen sich nicht ausblenden (sonst kommt man nicht mehr zu den Einstellungen). */
 export const LOCKED_NAV_ROUTES = ['/einstellungen'];
@@ -225,6 +234,9 @@ function SchoolYearSwitcher() {
 export function Sidebar() {
   const settings = useStore(s => s.settings);
   const navItems = useNavItems();
+  // Nach Gruppen aufteilen – die vom User gesetzte Reihenfolge bleibt dabei erhalten.
+  const groups = NAV_GROUP_ORDER.map(g => navItems.filter(it => it.group === g)).filter(list => list.length);
+  const systemItems = navItems.filter(it => it.group === 'system');
   return (
     <aside className="hidden md:flex md:flex-col w-[240px] shrink-0 p-4 gap-3 sticky top-0 h-screen">
       <div className="flex items-center gap-3 px-2 py-3">
@@ -238,11 +250,24 @@ export function Sidebar() {
       </div>
       <SchoolYearSwitcher />
       <nav className="flex flex-col gap-1 mt-2">
-        {navItems.map(item => (
-          <SidebarLink key={item.to} {...item} />
+        {groups.map((list, gi) => (
+          <div key={gi} className="flex flex-col gap-1">
+            {gi > 0 && <div className="mx-3 my-2 border-t border-white/50" />}
+            {list.map(item => (
+              <SidebarLink key={item.to} {...item} />
+            ))}
+          </div>
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-3">
+        {systemItems.length > 0 && (
+          <nav className="flex flex-col gap-1">
+            <div className="mx-3 mb-1 border-t border-white/50" />
+            {systemItems.map(item => (
+              <SidebarLink key={item.to} {...item} />
+            ))}
+          </nav>
+        )}
         <FocusMiniWidget />
         <div className="flex items-center justify-center gap-3 text-[11px] text-ink-400">
           <NavLink to="/impressum" className="hover:text-ink-700 transition">Impressum</NavLink>
