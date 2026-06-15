@@ -809,12 +809,15 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
   const [over, setOver] = useState(false);
   const [flash, setFlash] = useState<null | 'hit' | 'miss'>(null);
   const [areaH, setAreaH] = useState(0);
+  // Bei Fehler/Einschlag kurz die richtige Antwort zeigen, bevor es weitergeht.
+  const [reveal, setReveal] = useState<null | { prompt: string; label: string; answer: string }>(null);
   const [highscore, setHighscore] = useState<number>(() => {
     try { return Number(localStorage.getItem(METEOR_HIGHSCORE_KEY)) || 0; } catch { return 0; }
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const livesRef = useRef(3);
+  const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const card = queue.length ? queue[seq % queue.length] : null;
   const view = useMemo(() => card ? sides(card, direction, labels) : null, [card, direction, labels]);
@@ -852,25 +855,34 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlash(null), 280);
   }, []);
-  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+  useEffect(() => () => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    if (revealTimer.current) clearTimeout(revealTimer.current);
+  }, []);
 
   function nextMeteor() { setInput(''); setSeq(s => s + 1); }
 
-  // Karte schlägt ein (kein Treffer rechtzeitig).
-  function impact() {
-    if (over || !card) return;
+  // Fehlschlag (falsch getippt ODER eingeschlagen): kurz die richtige Antwort
+  // einblenden, Leben abziehen, dann weiter zur nächsten Karte (oder Game Over).
+  function fail() {
+    if (over || reveal || !card || !view) return;
     onReview(card.id, 'wrong');
     blink('miss');
+    setInput('');
+    setReveal({ prompt: view.prompt, label: view.promptLabel, answer: view.answer });
     const nl = Math.max(0, livesRef.current - 1);
     livesRef.current = nl;
     setLives(nl);
-    if (nl <= 0) endGame(score);
-    else nextMeteor();
+    revealTimer.current = setTimeout(() => {
+      setReveal(null);
+      if (nl <= 0) endGame(score);
+      else nextMeteor();
+    }, 1200);
   }
 
   // Antwort abschicken.
   function submit() {
-    if (over || !card || !view) return;
+    if (over || reveal || !card || !view) return;
     const j = judgeTyped(input, view.answer, tolerance);
     if (j.ok) {
       onReview(card.id, outcomeFromTyped(j));
@@ -879,13 +891,14 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
       blink('hit');
       nextMeteor();
     } else {
-      setInput('');
+      fail();
     }
   }
 
   function restart() {
     livesRef.current = 3;
-    setSeq(0); setInput(''); setLives(3); setScore(0); setCleared(0); setOver(false); setFlash(null);
+    if (revealTimer.current) clearTimeout(revealTimer.current);
+    setSeq(0); setInput(''); setLives(3); setScore(0); setCleared(0); setOver(false); setFlash(null); setReveal(null);
   }
 
   if (over) {
@@ -932,7 +945,9 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
         ${flash === 'hit' ? 'bg-emerald-500/15' : flash === 'miss' ? 'bg-rose-500/15' : 'bg-white/20'}`}>
         {/* Boden-Linie */}
         <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-rose-500/20 to-transparent border-t-2 border-dashed border-rose-400/40" />
-        {areaH > 0 && (
+
+        {/* Fallende Karte (nur solange keine Antwort eingeblendet wird) */}
+        {areaH > 0 && !reveal && (
           <div className="absolute inset-x-0 top-0 flex justify-center px-4 pointer-events-none">
             <motion.div
               key={seq}
@@ -940,7 +955,7 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
               initial={{ y: -10 }}
               animate={{ y: Math.max(0, areaH - 96) }}
               transition={{ duration: fallDuration, ease: 'linear' }}
-              onAnimationComplete={impact}
+              onAnimationComplete={fail}
             >
               <div className="glass-strong rounded-2xl shadow-soft p-4 text-center">
                 <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-ink-400">
@@ -951,14 +966,31 @@ function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }:
             </motion.div>
           </div>
         )}
+
+        {/* Richtige Antwort kurz einblenden (blinkend) – unten, wo die Karte einschlägt */}
+        {reveal && (
+          <div className="absolute inset-x-0 bottom-3 flex justify-center px-4">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              className="glass-strong rounded-2xl shadow-soft p-4 text-center w-[82%] max-w-sm border-2 border-rose-400/50">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">{reveal.label}</div>
+              <div className="font-display font-bold text-ink-700 text-base whitespace-pre-wrap break-words mt-1">{reveal.prompt}</div>
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-rose-500 mt-3">Richtige Antwort</div>
+              <motion.div
+                animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 0.55, repeat: Infinity }}
+                className="font-display font-extrabold text-emerald-600 text-xl md:text-2xl whitespace-pre-wrap break-words mt-1">
+                {reveal.answer}
+              </motion.div>
+            </motion.div>
+          </div>
+        )}
       </div>
 
       {/* Eingabe */}
       <form onSubmit={e => { e.preventDefault(); submit(); }} className="mt-3 max-w-md w-full mx-auto flex gap-2">
-        <input ref={inputRef} className="input text-center text-lg flex-1" value={input}
+        <input ref={inputRef} className="input text-center text-lg flex-1" value={input} disabled={!!reveal}
           onChange={e => setInput(e.target.value)} placeholder="Antwort tippen & Enter …"
           autoComplete="off" autoCorrect="off" spellCheck={false} />
-        <button type="submit" className="btn-primary px-5"><ArrowRight className="size-5" /></button>
+        <button type="submit" className="btn-primary px-5" disabled={!!reveal}><ArrowRight className="size-5" /></button>
       </form>
       <p className="subtle text-center text-[11px] mt-1">Tippe die Antwort, bevor die Karte unten einschlägt!</p>
     </div>
