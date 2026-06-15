@@ -1,5 +1,5 @@
 import { LEITNER_BOXES } from '@/types';
-import type { Deck, CardTopic, Flashcard, DeckExport, ReviewOutcome } from '@/types';
+import type { Deck, CardTopic, Flashcard, DeckExport, ReviewOutcome, TypoTolerance } from '@/types';
 import { uid } from '@/lib/db';
 
 // ─── Leitner-Algorithmus ─────────────────────────────────────────────────────
@@ -311,4 +311,128 @@ const DECK_COLORS = [
 
 export function randomDeckColor(): string {
   return DECK_COLORS[Math.floor(Math.random() * DECK_COLORS.length)];
+}
+
+// ─── Tipp-Antworten: Vergleich mit Fehlertoleranz ────────────────────────────
+//
+// Für die Modi „Schreiben", „Lernen", „Prüfung". Die gewünschte Strenge kommt
+// über einen Schieberegler vom Nutzer (TypoTolerance).
+
+/** Normalisiert Text für den Vergleich: trimmen, Mehrfach-Leerzeichen zu einem. */
+function normalizeBasic(s: string): string {
+  return s.trim().replace(/\s+/g, ' ');
+}
+
+/** Zusätzlich Groß/Klein + Akzente/diakritische Zeichen entfernen. */
+function normalizeLoose(s: string): string {
+  return normalizeBasic(s)
+    .toLocaleLowerCase('de')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+/** Levenshtein-Distanz (Anzahl Einfügungen/Löschungen/Ersetzungen). */
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let curr = new Array(b.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
+}
+
+/**
+ * Wie viele falsche Buchstaben je nach Toleranzstufe erlaubt sind.
+ * Die erlaubte Anzahl skaliert mit der Antwortlänge (loose = großzügig).
+ */
+function allowedDistance(tol: TypoTolerance, len: number): number {
+  if (tol === 'exact') return 0;
+  if (tol === 'lenient') return len >= 8 ? 2 : len >= 4 ? 1 : 0;
+  // loose: rund ein Drittel der Buchstaben darf abweichen.
+  return Math.max(1, Math.floor(len / 3));
+}
+
+/** Bewertung einer getippten Antwort. */
+export interface TypedJudgement {
+  /** true = als richtig gewertet. */
+  ok: boolean;
+  /** Genau (0 Abweichung) oder „fast" (innerhalb der Toleranz). */
+  exact: boolean;
+}
+
+/**
+ * Prüft eine getippte Antwort gegen die erwartete Lösung.
+ * Mehrere richtige Lösungen können mit „/", „;" oder „," getrennt sein –
+ * eine Übereinstimmung genügt. Liefert das beste Ergebnis zurück.
+ */
+export function judgeTyped(input: string, expected: string, tol: TypoTolerance): TypedJudgement {
+  const candidates = expected.split(/[/;,]/).map(s => s.trim()).filter(Boolean);
+  if (candidates.length === 0) candidates.push(expected);
+
+  let best: TypedJudgement = { ok: false, exact: false };
+  for (const cand of candidates) {
+    // Exakt (nur Leerzeichen normalisiert)?
+    if (normalizeBasic(input) === normalizeBasic(cand)) return { ok: true, exact: true };
+    if (tol === 'exact') continue;
+    // Tolerant: klein/akzentfrei vergleichen, Tippfehler über Levenshtein zulassen.
+    const a = normalizeLoose(input);
+    const b = normalizeLoose(cand);
+    if (a === b) { best = { ok: true, exact: true }; continue; }
+    const dist = levenshtein(a, b);
+    if (dist <= allowedDistance(tol, b.length)) best = { ok: true, exact: false };
+  }
+  return best;
+}
+
+/** Outcome aus einer getippten Antwort (für den Leitner-Schritt). */
+export function outcomeFromTyped(j: TypedJudgement): ReviewOutcome {
+  if (!j.ok) return 'wrong';
+  return j.exact ? 'correct' : 'partial';
+}
+
+// ─── Multiple-Choice: Ablenker (falsche Antworten) ───────────────────────────
+
+/** Mischt eine Kopie eines Arrays (Fisher–Yates). */
+function shuffleArr<T>(arr: T[]): T[] {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Baut die Antwort-Optionen für eine Multiple-Choice-Frage: die richtige
+ * Lösung plus bis zu (count-1) Ablenker aus den übrigen Karten. Es werden die
+ * jeweils angezeigten Antwort-Seiten (`answerOf`) genutzt, Dubletten gefiltert.
+ * Rückgabe ist bereits gemischt; `correctIndex` zeigt auf die richtige Option.
+ */
+export function buildChoices(
+  card: Flashcard,
+  pool: Flashcard[],
+  answerOf: (c: Flashcard) => string,
+  count = 4,
+): { options: string[]; correctIndex: number } {
+  const correct = answerOf(card);
+  const seen = new Set([correct.trim().toLowerCase()]);
+  const distractors: string[] = [];
+  for (const c of shuffleArr(pool)) {
+    if (c.id === card.id) continue;
+    const a = answerOf(c);
+    const key = a.trim().toLowerCase();
+    if (!a.trim() || seen.has(key)) continue;
+    seen.add(key);
+    distractors.push(a);
+    if (distractors.length >= count - 1) break;
+  }
+  const options = shuffleArr([correct, ...distractors]);
+  return { options, correctIndex: options.indexOf(correct) };
 }

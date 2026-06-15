@@ -294,8 +294,25 @@ export const LEITNER_BOXES = 5;
  */
 export type ReviewDirection = 'front-back' | 'back-front' | 'mixed';
 
-/** Lernmodus einer Session. */
-export type ReviewMode = 'flip' | 'match';
+/**
+ * Lernmodus einer Session.
+ * - flip:   Karte aufdecken & per Swipe bewerten (Leitner).
+ * - match:  Begriffe einander zuordnen (Paare auf Zeit).
+ * - write:  Antwort eintippen, Auswertung mit Fehlertoleranz.
+ * - choice: Multiple-Choice mit 4 Antwortmöglichkeiten.
+ * - learn:  Adaptiv – startet mit Multiple-Choice, wechselt zu Texteingabe.
+ * - test:   Gemischte Prüfung über alle Karten mit Auswertung am Ende.
+ * - gravity: Tipp-Spiel – Antwort eintippen, bevor die Karte „einschlägt".
+ */
+export type ReviewMode = 'flip' | 'match' | 'write' | 'choice' | 'learn' | 'test' | 'gravity';
+
+/**
+ * Wie streng eine getippte Antwort geprüft wird (Schreiben/Lernen/Prüfung).
+ * - exact:   muss exakt stimmen.
+ * - lenient: kleine Vertipper + Groß/Klein/Akzente werden verziehen (Default).
+ * - loose:   großzügig – auch mehrere Abweichungen gehen durch.
+ */
+export type TypoTolerance = 'exact' | 'lenient' | 'loose';
 
 /**
  * Ergebnis einer Karten-Bewertung (Leitner).
@@ -331,6 +348,10 @@ export interface Deck {
   color: string;
   /** Name eines lucide-Icons (siehe src/lib/subjectIcons.ts). Optional. */
   icon?: string;
+  /** Beschriftung der Vorderseite (z. B. „Deutsch"). Rein anzeigend. Optional. */
+  frontLabel?: string;
+  /** Beschriftung der Rückseite (z. B. „Englisch"). Rein anzeigend. Optional. */
+  backLabel?: string;
   /** Optionales übergeordnetes Fach (Subject.id). */
   subjectId?: string;
   /** Optionaler Ordner (DeckFolder.id) zum Gruppieren. */
