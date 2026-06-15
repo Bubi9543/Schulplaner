@@ -373,7 +373,10 @@ export interface TypedJudgement {
  * eine Übereinstimmung genügt. Liefert das beste Ergebnis zurück.
  */
 export function judgeTyped(input: string, expected: string, tol: TypoTolerance): TypedJudgement {
-  const candidates = expected.split(/[/;,]/).map(s => s.trim()).filter(Boolean);
+  // Die komplette Lösung gilt immer; zusätzlich zählt jede einzelne Alternative
+  // (durch / ; , getrennt), sodass auch eine von mehreren Lösungen reicht.
+  const parts = expected.split(/[/;,]/).map(s => s.trim()).filter(Boolean);
+  const candidates = Array.from(new Set([expected.trim(), ...parts])).filter(Boolean);
   if (candidates.length === 0) candidates.push(expected);
 
   let best: TypedJudgement = { ok: false, exact: false };

@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import {
   X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy, Undo2, Flag,
   ThumbsUp, ThumbsDown, Equal, ChevronRight, PartyPopper,
-  Keyboard, Check, ArrowRight, CornerDownLeft, ListChecks,
+  Keyboard, Check, ArrowRight, CornerDownLeft, ListChecks, Brain, ClipboardCheck,
 } from 'lucide-react';
 import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome, TypoTolerance } from '@/types';
 import { LEITNER_BOXES } from '@/types';
@@ -23,7 +23,7 @@ interface Props {
   restoreCard: (cardId: string, snapshot: Partial<Flashcard>) => void;
 }
 
-type Phase = 'config' | 'flip' | 'match' | 'write' | 'choice' | 'done';
+type Phase = 'config' | 'flip' | 'match' | 'write' | 'choice' | 'learn' | 'test' | 'done';
 
 /** Modi, bei denen die Antwort getippt wird → Toleranz-Regler relevant. */
 const TYPED_MODES: ReviewMode[] = ['write', 'learn', 'test'];
@@ -68,7 +68,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
   const [mode, setMode] = useState<ReviewMode>('flip');
   const [tolerance, setTolerance] = useState<TypoTolerance>('lenient');
-  const labels: SideLabels = { front: frontLabel, back: backLabel };
+  const labels = useMemo<SideLabels>(() => ({ front: frontLabel, back: backLabel }), [frontLabel, backLabel]);
 
   // Beim Öffnen Konfig zurücksetzen.
   useEffect(() => { if (open) setPhase('config'); }, [open]);
@@ -102,7 +102,7 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
               direction={direction} setDirection={setDirection}
               mode={mode} setMode={setMode}
               tolerance={tolerance} setTolerance={setTolerance}
-              onStart={() => setPhase(mode === 'match' ? 'match' : mode === 'write' ? 'write' : mode === 'choice' ? 'choice' : 'flip')}
+              onStart={() => setPhase(mode === 'flip' ? 'flip' : (mode as Phase))}
             />
           )}
           {phase === 'flip' && (
@@ -116,6 +116,12 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
           )}
           {phase === 'choice' && (
             <ChoiceRunner cards={cards} direction={direction} labels={labels} onReview={onReview} onDone={() => setPhase('done')} />
+          )}
+          {phase === 'learn' && (
+            <LearnRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
+          )}
+          {phase === 'test' && (
+            <TestRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
           )}
           {phase === 'done' && (
             <DoneStep deckName={deckName} onRestart={() => setPhase('config')} onClose={onClose} />
@@ -144,6 +150,8 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, 
     { id: 'flip', label: 'Aufdecken', desc: 'Karte aufdecken & per Swipe bewerten', icon: Layers },
     { id: 'write', label: 'Schreiben', desc: 'Antwort selbst eintippen', icon: Keyboard },
     { id: 'choice', label: 'Multiple-Choice', desc: 'Aus 4 Antworten die richtige tippen', icon: ListChecks },
+    { id: 'learn', label: 'Lernen', desc: 'Adaptiv: erst Auswahl, dann Tippen – bis alles sitzt', icon: Brain },
+    { id: 'test', label: 'Prüfung', desc: 'Gemischte Prüfung mit Auswertung am Ende', icon: ClipboardCheck },
     { id: 'match', label: 'Zuordnen', desc: 'Begriffe einander zuordnen', icon: ArrowLeftRight },
   ];
   const showTolerance = TYPED_MODES.includes(mode);
@@ -462,6 +470,315 @@ function ChoiceRunner({ cards, direction, labels, onReview, onDone }: {
 
       <div className="text-center subtle text-xs mt-3">
         <span className="text-emerald-600 font-semibold">{stats.correct}</span> richtig · <span className="text-rose-600 font-semibold">{stats.wrong}</span> falsch
+      </div>
+    </div>
+  );
+}
+
+// ─── Schritt: Lernen (adaptiv) ───────────────────────────────────────────────
+//
+// Jede Karte hat eine Stufe: 0 = neu → wird per Multiple-Choice gefragt,
+// 1 = einmal erkannt → muss getippt werden, 2 = sitzt (raus). Richtig hebt die
+// Stufe, falsch wirft auf 0 zurück. Fertig, wenn alle Karten Stufe 2 erreichen.
+
+function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
+}) {
+  const queue = useMemo(() => shuffle(cards), [cards]);
+  const [levels, setLevels] = useState<Record<string, number>>(
+    () => Object.fromEntries(queue.map(c => [c.id, 0])),
+  );
+  const [pos, setPos] = useState(0);
+  // Transienter Zustand der aktuellen Frage:
+  const [chosen, setChosen] = useState<number | null>(null);
+  const [input, setInput] = useState('');
+  const [result, setResult] = useState<null | { outcome: ReviewOutcome }>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const mastered = useMemo(() => Object.values(levels).filter(l => l >= 2).length, [levels]);
+
+  // Aktuelle Karte: ab pos die erste noch nicht beherrschte (mit Umlauf).
+  let card: Flashcard | null = null;
+  let ci = -1;
+  for (let k = 0; k < queue.length; k++) {
+    const idx = (pos + k) % queue.length;
+    if ((levels[queue[idx].id] ?? 0) < 2) { card = queue[idx]; ci = idx; break; }
+  }
+
+  useEffect(() => { if (queue.length > 0 && mastered >= queue.length) onDone(); }, [mastered, queue.length, onDone]);
+  const level = card ? (levels[card.id] ?? 0) : 0;
+  const asChoice = level === 0;
+
+  const answerOf = useCallback((c: Flashcard) => sides(c, direction).answer, [direction]);
+  const view = useMemo(() => card ? sides(card, direction, labels) : null, [card, direction, labels]);
+  const choices = useMemo(
+    () => (card && asChoice ? buildChoices(card, cards, answerOf, 4) : null),
+    [card, asChoice, cards, answerOf],
+  );
+
+  useEffect(() => { if (card && !asChoice) setTimeout(() => inputRef.current?.focus(), 50); }, [card?.id, asChoice]);
+
+  const advance = useCallback(() => {
+    setPos((ci + 1) % Math.max(1, queue.length));
+    setChosen(null); setInput(''); setResult(null);
+  }, [ci, queue.length]);
+
+  if (!card || !view) return null;
+
+  // Multiple-Choice-Antwort
+  function pickChoice(i: number) {
+    if (!card || !choices || chosen !== null) return;
+    const correct = i === choices.correctIndex;
+    onReview(card.id, correct ? 'correct' : 'wrong');
+    setLevels(l => ({ ...l, [card!.id]: correct ? 1 : 0 }));
+    setChosen(i);
+    timer.current = setTimeout(advance, 1050);
+  }
+
+  // Getippte Antwort
+  function checkTyped() {
+    if (!card || result) return;
+    const j = judgeTyped(input, view!.answer, tolerance);
+    const outcome = outcomeFromTyped(j);
+    onReview(card.id, outcome);
+    setLevels(l => ({ ...l, [card!.id]: outcome === 'wrong' ? 0 : 2 }));
+    setResult({ outcome });
+  }
+  function overrideTyped() {
+    if (!card || !result || result.outcome === 'correct') return;
+    onReview(card.id, 'correct');
+    setLevels(l => ({ ...l, [card!.id]: 2 }));
+    setResult({ outcome: 'correct' });
+  }
+
+  const progress = (mastered / queue.length) * 100;
+  const tone = result?.outcome === 'correct' ? 'emerald' : result?.outcome === 'partial' ? 'amber' : 'rose';
+
+  return (
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 h-2 rounded-full bg-white/50 overflow-hidden">
+          <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${progress}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
+        </div>
+        <span className="text-xs font-semibold text-ink-500 tabular-nums">{mastered}/{queue.length}</span>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
+          <Flag className="size-3" /> Beenden
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-center max-w-md w-full mx-auto">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <span className="chip text-[10px]">{asChoice ? <><ListChecks className="size-3" /> Erkennen</> : <><Keyboard className="size-3" /> Schreiben</>}</span>
+        </div>
+        <div className="glass-strong rounded-[2rem] shadow-soft p-6 text-center mb-4">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">{view.promptLabel}</span>
+          <div className="font-display font-bold text-ink-900 text-xl md:text-2xl whitespace-pre-wrap break-words mt-2">{view.prompt}</div>
+        </div>
+
+        {asChoice && choices ? (
+          <div className="grid gap-2.5">
+            {choices.options.map((opt, i) => {
+              const isCorrect = i === choices.correctIndex;
+              const isChosen = chosen === i;
+              const reveal = chosen !== null;
+              const cls = reveal
+                ? isCorrect ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-800'
+                  : isChosen ? 'bg-rose-500/15 border-rose-500/60 text-rose-800'
+                  : 'glass border-white/40 text-ink-400 opacity-60'
+                : 'glass border-white/50 text-ink-800 hover:bg-white/80 active:scale-[0.99]';
+              return (
+                <button key={i} onClick={() => pickChoice(i)} disabled={reveal}
+                  className={`w-full rounded-2xl p-4 text-left text-sm md:text-base border transition flex items-center gap-3 ${cls}`}>
+                  <span className="size-6 rounded-lg bg-white/60 grid place-items-center text-xs font-bold flex-shrink-0">
+                    {reveal && isCorrect ? <Check className="size-4" /> : reveal && isChosen ? <X className="size-4" /> : String.fromCharCode(65 + i)}
+                  </span>
+                  <span className="whitespace-pre-wrap break-words">{opt}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : !result ? (
+          <form onSubmit={e => { e.preventDefault(); checkTyped(); }} className="space-y-3">
+            <label className="label">Deine Antwort{view.answerLabel ? ` (${view.answerLabel})` : ''}</label>
+            <input ref={inputRef} className="input text-center text-lg" value={input}
+              onChange={e => setInput(e.target.value)} placeholder="Antwort eintippen …"
+              autoComplete="off" autoCorrect="off" spellCheck={false} />
+            <div className="flex gap-2">
+              <button type="button" onClick={checkTyped} className="btn-soft flex-1 py-3 text-ink-500">Weiß ich nicht</button>
+              <button type="submit" className="btn-primary flex-1 py-3"><Check className="size-4" /> Prüfen</button>
+            </div>
+          </form>
+        ) : (
+          <Feedback tone={tone} outcome={result.outcome} expected={view.answer} given={input} onNext={advance} onOverride={overrideTyped} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Schritt: Prüfung (gemischte Aufgaben mit Auswertung) ────────────────────
+
+const TEST_MAX = 20;
+
+type TestQ =
+  | { kind: 'choice'; card: Flashcard; prompt: string; label: string; answer: string; options: string[]; correctIndex: number }
+  | { kind: 'write'; card: Flashcard; prompt: string; label: string; answer: string; answerLabel: string }
+  | { kind: 'tf'; card: Flashcard; prompt: string; label: string; answer: string; shown: string; truth: boolean };
+
+function TestRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
+}) {
+  const answerOf = useCallback((c: Flashcard) => sides(c, direction).answer, [direction]);
+
+  // Prüfung einmalig zusammenstellen.
+  const questions = useMemo<TestQ[]>(() => {
+    const picked = shuffle(cards).slice(0, TEST_MAX);
+    return picked.map((card, i): TestQ => {
+      const v = sides(card, direction, labels);
+      const kind = (['choice', 'write', 'tf'] as const)[i % 3];
+      if (kind === 'choice') {
+        const { options, correctIndex } = buildChoices(card, cards, answerOf, 4);
+        return { kind, card, prompt: v.prompt, label: v.promptLabel, answer: v.answer, options, correctIndex };
+      }
+      if (kind === 'write') {
+        return { kind, card, prompt: v.prompt, label: v.promptLabel, answer: v.answer, answerLabel: v.answerLabel };
+      }
+      // Wahr/Falsch: mal die echte Lösung, mal einen Ablenker zeigen.
+      // Deterministisch aus der Karten-ID, damit der Render rein bleibt.
+      const truth = hashFlip(card.id + ':tf');
+      let shown = v.answer;
+      if (!truth) {
+        const pair = buildChoices(card, cards, answerOf, 2).options;
+        shown = pair.find(o => o.trim() !== v.answer.trim()) ?? v.answer;
+        if (shown.trim() === v.answer.trim()) return { kind, card, prompt: v.prompt, label: v.promptLabel, answer: v.answer, shown, truth: true };
+      }
+      return { kind, card, prompt: v.prompt, label: v.promptLabel, answer: v.answer, shown, truth };
+    });
+  }, [cards, direction, labels, answerOf]);
+
+  const [answers, setAnswers] = useState<Record<number, number | string | boolean>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  // Pro Frage: richtig?
+  function isCorrect(q: TestQ, i: number): boolean {
+    const a = answers[i];
+    if (q.kind === 'choice') return a === q.correctIndex;
+    if (q.kind === 'tf') return a === q.truth;
+    return judgeTyped(typeof a === 'string' ? a : '', q.answer, tolerance).ok;
+  }
+
+  const score = useMemo(() => submitted ? questions.filter((q, i) => isCorrect(q, i)).length : 0, [submitted, questions, answers]);
+
+  function submit() {
+    if (submitted) return;
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      let outcome: ReviewOutcome;
+      if (q.kind === 'write') outcome = outcomeFromTyped(judgeTyped(typeof answers[i] === 'string' ? answers[i] as string : '', q.answer, tolerance));
+      else outcome = isCorrect(q, i) ? 'correct' : 'wrong';
+      onReview(q.card.id, outcome);
+    }
+    setSubmitted(true);
+    document.querySelector('[data-test-scroll]')?.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const answeredCount = Object.keys(answers).length;
+  const pct = questions.length ? Math.round((score / questions.length) * 100) : 0;
+
+  return (
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="font-display font-bold text-ink-900 flex-1">
+          {submitted ? 'Auswertung' : `Prüfung · ${questions.length} Aufgaben`}
+        </div>
+        {!submitted && <span className="text-xs font-semibold text-ink-500 tabular-nums">{answeredCount}/{questions.length}</span>}
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition"><Flag className="size-3" /> Beenden</button>
+      </div>
+
+      {submitted && (
+        <div className="rounded-2xl theme-gradient text-white p-4 mb-3 text-center shadow-glow">
+          <div className="text-3xl font-display font-extrabold">{score} / {questions.length}</div>
+          <div className="text-sm opacity-90">{pct}% richtig</div>
+        </div>
+      )}
+
+      <div data-test-scroll className="flex-1 min-h-0 overflow-y-auto max-w-xl w-full mx-auto space-y-4 pb-4">
+        {questions.map((q, i) => {
+          const correct = submitted && isCorrect(q, i);
+          const wrong = submitted && !isCorrect(q, i);
+          return (
+            <div key={i} className={`glass rounded-2xl p-4 border ${correct ? 'border-emerald-500/50' : wrong ? 'border-rose-500/50' : 'border-white/50'}`}>
+              <div className="flex items-start gap-2 mb-3">
+                <span className="size-6 rounded-lg bg-white/60 grid place-items-center text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                <div className="min-w-0">
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-400">{q.label}{q.kind === 'tf' ? ' · Wahr oder falsch?' : ''}</span>
+                  <div className="font-semibold text-ink-900 whitespace-pre-wrap break-words">{q.prompt}</div>
+                  {q.kind === 'tf' && <div className="mt-1 text-ink-700">→ <span className="font-medium">{q.shown}</span></div>}
+                </div>
+              </div>
+
+              {q.kind === 'choice' && (
+                <div className="grid gap-2">
+                  {q.options.map((opt, oi) => {
+                    const sel = answers[i] === oi;
+                    const showRight = submitted && oi === q.correctIndex;
+                    const showWrong = submitted && sel && oi !== q.correctIndex;
+                    return (
+                      <button key={oi} disabled={submitted}
+                        onClick={() => setAnswers(a => ({ ...a, [i]: oi }))}
+                        className={`w-full rounded-xl p-3 text-left text-sm border transition flex items-center gap-2
+                          ${showRight ? 'bg-emerald-500/15 border-emerald-500/60' : showWrong ? 'bg-rose-500/15 border-rose-500/60' :
+                            sel ? 'theme-gradient text-white border-transparent' : 'bg-white/50 border-white/50 hover:bg-white/80'}`}>
+                        <span className="size-5 rounded-md bg-white/60 grid place-items-center text-[10px] font-bold flex-shrink-0 text-ink-700">{String.fromCharCode(65 + oi)}</span>
+                        <span className="whitespace-pre-wrap break-words">{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {q.kind === 'write' && (
+                <div>
+                  <input className="input" disabled={submitted} value={typeof answers[i] === 'string' ? answers[i] as string : ''}
+                    onChange={e => setAnswers(a => ({ ...a, [i]: e.target.value }))}
+                    placeholder="Antwort …" autoComplete="off" autoCorrect="off" spellCheck={false} />
+                  {wrong && <div className="text-xs mt-2 text-ink-600">Richtig: <span className="font-semibold text-ink-900">{q.answer}</span></div>}
+                </div>
+              )}
+
+              {q.kind === 'tf' && (
+                <div className="grid grid-cols-2 gap-2">
+                  {[true, false].map(val => {
+                    const sel = answers[i] === val;
+                    const showRight = submitted && val === q.truth;
+                    const showWrong = submitted && sel && val !== q.truth;
+                    return (
+                      <button key={String(val)} disabled={submitted}
+                        onClick={() => setAnswers(a => ({ ...a, [i]: val }))}
+                        className={`rounded-xl p-3 text-sm font-semibold border transition
+                          ${showRight ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-800' : showWrong ? 'bg-rose-500/15 border-rose-500/60 text-rose-800' :
+                            sel ? 'theme-gradient text-white border-transparent' : 'bg-white/50 border-white/50 hover:bg-white/80'}`}>
+                        {val ? 'Stimmt' : 'Stimmt nicht'}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="max-w-xl w-full mx-auto pt-2">
+        {!submitted ? (
+          <button onClick={submit} className="btn-primary w-full py-3.5"><ClipboardCheck className="size-4" /> Abgeben &amp; auswerten</button>
+        ) : (
+          <button onClick={onDone} className="btn-primary w-full py-3.5">Fertig <ArrowRight className="size-4" /></button>
+        )}
       </div>
     </div>
   );
