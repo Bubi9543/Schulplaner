@@ -20,6 +20,9 @@ import { AiImportDialog } from '@/components/flashcards/AiImportDialog';
 import { ShareDialog } from '@/components/flashcards/ShareDialog';
 import { StudySession } from '@/components/flashcards/StudySession';
 
+/** Laufende Lern-Session inkl. Seiten-Beschriftung des Kastens. */
+interface StudyState { name: string; cards: Flashcard[]; frontLabel?: string; backLabel?: string; }
+
 // ─── Übersicht (Deck-Grid) ───────────────────────────────────────────────────
 
 export function KarteikartenPage() {
@@ -45,7 +48,7 @@ export function KarteikartenPage() {
   const [importDialog, setImportDialog] = useState(false);
   const [shareImport, setShareImport] = useState<{ text: string } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [study, setStudy] = useState<{ name: string; cards: Flashcard[] } | null>(null);
+  const [study, setStudy] = useState<StudyState | null>(null);
   // Drag & Drop: aktuell gezogener Kasten.
   const [dragId, setDragId] = useState<string | null>(null);
 
@@ -99,7 +102,7 @@ export function KarteikartenPage() {
         deck={deck}
         cards={cardsByDeck.get(deck.id) ?? []}
         delay={i * 0.04}
-        onQuickStudy={(name, cards) => setStudy({ name, cards })}
+        onQuickStudy={(d, cards) => setStudy({ name: d.name, cards, frontLabel: d.frontLabel, backLabel: d.backLabel })}
       />
     </div>
   );
@@ -223,6 +226,8 @@ export function KarteikartenPage() {
           open
           deckName={study.name}
           cards={study.cards}
+          frontLabel={study.frontLabel}
+          backLabel={study.backLabel}
           onClose={() => setStudy(null)}
           onReview={reviewCard}
           restoreCard={updateCard}
@@ -274,7 +279,7 @@ function FolderSection({ folder, count, children, onRename, onDelete, canDrop, o
 
 function DeckCard({ deck, cards, delay, onQuickStudy }: {
   deck: Deck; cards: Flashcard[]; delay: number;
-  onQuickStudy: (name: string, cards: Flashcard[]) => void;
+  onQuickStudy: (deck: Deck, cards: Flashcard[]) => void;
 }) {
   const due = dueCards(cards);
   const mastery = Math.round(deckMastery(cards) * 100);
@@ -303,7 +308,7 @@ function DeckCard({ deck, cards, delay, onQuickStudy }: {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => onQuickStudy(deck.name, due.length ? due : cards)}
+            onClick={() => onQuickStudy(deck, due.length ? due : cards)}
             disabled={cards.length === 0}
             className="btn-primary flex-1 py-2"
           >
@@ -346,7 +351,7 @@ export function DeckDetailPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [cardDialog, setCardDialog] = useState<{ topicId?: string; card?: Flashcard } | null>(null);
-  const [study, setStudy] = useState<{ name: string; cards: Flashcard[] } | null>(null);
+  const [study, setStudy] = useState<StudyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   if (!deck) {
@@ -424,12 +429,12 @@ export function DeckDetailPage() {
 
         {/* Aktionen */}
         <div className="p-5 flex flex-wrap gap-2">
-          <button onClick={() => setStudy({ name: deck.name, cards: due.length ? due : cards })}
+          <button onClick={() => setStudy({ name: deck.name, cards: due.length ? due : cards, frontLabel: deck.frontLabel, backLabel: deck.backLabel })}
             disabled={cards.length === 0} className="btn-primary">
             <Play className="size-4" /> {due.length ? `${due.length} fällige lernen` : 'Lernen'}
           </button>
           {due.length > 0 && due.length < cards.length && (
-            <button onClick={() => setStudy({ name: deck.name, cards })} className="btn-ghost">
+            <button onClick={() => setStudy({ name: deck.name, cards, frontLabel: deck.frontLabel, backLabel: deck.backLabel })} className="btn-ghost">
               Alle {cards.length} lernen
             </button>
           )}
@@ -479,7 +484,7 @@ export function DeckDetailPage() {
               key={topic.id} topic={topic} cards={cardsForTopic(topic.id)} deckColor={deck.color}
               onAddCard={() => setCardDialog({ topicId: topic.id })}
               onEditCard={card => setCardDialog({ card })}
-              onStudy={tc => setStudy({ name: `${deck.name} · ${topic.name}`, cards: tc })}
+              onStudy={tc => setStudy({ name: `${deck.name} · ${topic.name}`, cards: tc, frontLabel: deck.frontLabel, backLabel: deck.backLabel })}
               onRename={async () => { const n = prompt('Thema umbenennen:', topic.name); if (n?.trim()) await updateTopic(topic.id, { name: n.trim() }); }}
               onDelete={async () => {
                 const c = cardsForTopic(topic.id).length;
@@ -494,7 +499,7 @@ export function DeckDetailPage() {
               topic={null} cards={untopiced} deckColor={deck.color}
               onAddCard={() => setCardDialog({})}
               onEditCard={card => setCardDialog({ card })}
-              onStudy={tc => setStudy({ name: `${deck.name} · Ohne Thema`, cards: tc })}
+              onStudy={tc => setStudy({ name: `${deck.name} · Ohne Thema`, cards: tc, frontLabel: deck.frontLabel, backLabel: deck.backLabel })}
             />
           )}
         </div>
@@ -513,7 +518,7 @@ export function DeckDetailPage() {
         />
       )}
       {study && (
-        <StudySession open deckName={study.name} cards={study.cards} onClose={() => setStudy(null)} onReview={reviewCard} restoreCard={updateCard} />
+        <StudySession open deckName={study.name} cards={study.cards} frontLabel={study.frontLabel} backLabel={study.backLabel} onClose={() => setStudy(null)} onReview={reviewCard} restoreCard={updateCard} />
       )}
     </PageShell>
   );

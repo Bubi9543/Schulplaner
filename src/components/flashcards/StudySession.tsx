@@ -12,6 +12,9 @@ interface Props {
   onClose: () => void;
   deckName: string;
   cards: Flashcard[];
+  /** Beschriftung der Vorder-/Rückseite (z. B. „Deutsch"/„Englisch"). Optional. */
+  frontLabel?: string;
+  backLabel?: string;
   /** Bewertung an den Store weiterreichen (Leitner). */
   onReview: (cardId: string, outcome: ReviewOutcome) => void;
   /** Setzt eine Karte auf einen früheren Stand zurück (für „Zurück"). */
@@ -30,10 +33,19 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+/** Beschriftungen der beiden Seiten (Fallback: „Frage"/„Antwort"). */
+interface SideLabels { front?: string; back?: string; }
+
 /** Für eine Karte: was steht vorne (Prompt), was ist die Lösung – je nach Richtung. */
-function sides(card: Flashcard, dir: ReviewDirection): { prompt: string; answer: string } {
+function sides(card: Flashcard, dir: ReviewDirection, labels?: SideLabels): {
+  prompt: string; answer: string; promptLabel: string; answerLabel: string;
+} {
   const flip = dir === 'back-front' || (dir === 'mixed' && hashFlip(card.id));
-  return flip ? { prompt: card.back, answer: card.front } : { prompt: card.front, answer: card.back };
+  const frontLabel = labels?.front?.trim() || 'Frage';
+  const backLabel = labels?.back?.trim() || 'Antwort';
+  return flip
+    ? { prompt: card.back, answer: card.front, promptLabel: backLabel, answerLabel: frontLabel }
+    : { prompt: card.front, answer: card.back, promptLabel: frontLabel, answerLabel: backLabel };
 }
 function hashFlip(id: string): boolean {
   let h = 0;
@@ -46,10 +58,11 @@ function snapshotOf(card: Flashcard): Partial<Flashcard> {
   return { box: card.box, reviewedAt: card.reviewedAt, correctCount: card.correctCount, wrongCount: card.wrongCount };
 }
 
-export function StudySession({ open, onClose, deckName, cards, onReview, restoreCard }: Props) {
+export function StudySession({ open, onClose, deckName, cards, frontLabel, backLabel, onReview, restoreCard }: Props) {
   const [phase, setPhase] = useState<Phase>('config');
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
   const [mode, setMode] = useState<ReviewMode>('flip');
+  const labels: SideLabels = { front: frontLabel, back: backLabel };
 
   // Beim Öffnen Konfig zurücksetzen.
   useEffect(() => { if (open) setPhase('config'); }, [open]);
@@ -86,7 +99,7 @@ export function StudySession({ open, onClose, deckName, cards, onReview, restore
             />
           )}
           {phase === 'flip' && (
-            <FlipRunner cards={cards} direction={direction} onReview={onReview} restoreCard={restoreCard} onDone={() => setPhase('done')} />
+            <FlipRunner cards={cards} direction={direction} labels={labels} onReview={onReview} restoreCard={restoreCard} onDone={() => setPhase('done')} />
           )}
           {phase === 'match' && (
             <MatchRunner cards={cards} direction={direction} onReview={onReview} onDone={() => setPhase('done')} />
@@ -167,8 +180,8 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, onStart }: 
 
 // ─── Schritt: Aufdecken + Swipe ──────────────────────────────────────────────
 
-function FlipRunner({ cards, direction, onReview, restoreCard, onDone }: {
-  cards: Flashcard[]; direction: ReviewDirection;
+function FlipRunner({ cards, direction, labels, onReview, restoreCard, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels;
   onReview: (id: string, outcome: ReviewOutcome) => void;
   restoreCard: (id: string, snapshot: Partial<Flashcard>) => void;
   onDone: () => void;
@@ -209,7 +222,7 @@ function FlipRunner({ cards, direction, onReview, restoreCard, onDone }: {
   }, [index, queue, restoreCard, history, x]);
 
   if (!card) return null;
-  const { prompt, answer } = sides(card, direction);
+  const { prompt, answer, promptLabel, answerLabel } = sides(card, direction, labels);
   const progress = (index / queue.length) * 100;
 
   return (
@@ -259,8 +272,8 @@ function FlipRunner({ cards, direction, onReview, restoreCard, onDone }: {
               animate={{ rotateY: flipped ? 180 : 0 }}
               transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
             >
-              <CardFace label="Frage" text={prompt} box={card.box} hint="Tippen zum Aufdecken" />
-              <CardFace label="Antwort" text={answer} box={card.box} back />
+              <CardFace label={promptLabel} text={prompt} box={card.box} hint="Tippen zum Aufdecken" />
+              <CardFace label={answerLabel} text={answer} box={card.box} back />
             </motion.div>
           </motion.div>
         </AnimatePresence>

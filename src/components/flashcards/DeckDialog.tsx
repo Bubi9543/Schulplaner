@@ -20,6 +20,37 @@ interface Props {
 
 const NEW_FOLDER = '__new__';
 
+/** Vorauswahl für die Seiten-Beschriftung (Sprachen + gängige Begriffe). */
+const SIDE_LABEL_PRESETS = [
+  'Deutsch', 'Englisch', 'Französisch', 'Spanisch', 'Italienisch', 'Latein',
+  'Griechisch', 'Russisch', 'Frage', 'Antwort', 'Begriff', 'Definition',
+];
+const CUSTOM_LABEL = '__custom__';
+
+/** Ein Feld zum Beschriften einer Karten-Seite: Vorauswahl + eigene Eingabe. */
+function SideLabelField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+}) {
+  // „Eigene Eingabe", sobald ein Wert gesetzt ist, der nicht in der Liste steht.
+  const isCustom = !!value && !SIDE_LABEL_PRESETS.includes(value);
+  const sel = value === '' ? '' : isCustom ? CUSTOM_LABEL : value;
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <select className="input" value={sel}
+        onChange={e => onChange(e.target.value === CUSTOM_LABEL ? ' ' : e.target.value)}>
+        <option value="">— Keine —</option>
+        {SIDE_LABEL_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+        <option value={CUSTOM_LABEL}>Eigene Beschriftung …</option>
+      </select>
+      {(isCustom || sel === CUSTOM_LABEL) && (
+        <input className="input mt-2" autoFocus value={value.trim() === '' ? '' : value}
+          onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+      )}
+    </div>
+  );
+}
+
 export function DeckDialog({ open, onClose, initial }: Props) {
   const addDeck = useStore(s => s.addDeck);
   const updateDeck = useStore(s => s.updateDeck);
@@ -36,6 +67,8 @@ export function DeckDialog({ open, onClose, initial }: Props) {
   const [subjectId, setSubjectId] = useState<string | undefined>(undefined);
   const [folderSel, setFolderSel] = useState<string>('');
   const [newFolder, setNewFolder] = useState('');
+  const [frontLabel, setFrontLabel] = useState('');
+  const [backLabel, setBackLabel] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -46,6 +79,8 @@ export function DeckDialog({ open, onClose, initial }: Props) {
       setSubjectId(initial?.subjectId);
       setFolderSel(initial?.folderId ?? '');
       setNewFolder('');
+      setFrontLabel(initial?.frontLabel ?? '');
+      setBackLabel(initial?.backLabel ?? '');
     }
   }, [open, initial]);
 
@@ -62,6 +97,8 @@ export function DeckDialog({ open, onClose, initial }: Props) {
       icon,
       subjectId: subjectId || undefined,
       folderId,
+      frontLabel: frontLabel.trim() || undefined,
+      backLabel: backLabel.trim() || undefined,
     };
     if (editing && initial?.id) await updateDeck(initial.id, payload);
     else await addDeck(payload);
@@ -104,6 +141,16 @@ export function DeckDialog({ open, onClose, initial }: Props) {
         <div>
           <label className="label">Beschreibung (optional)</label>
           <input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Worum geht's?" />
+        </div>
+
+        <div className="rounded-2xl bg-white/40 p-3 space-y-3">
+          <p className="text-[11px] text-ink-500 leading-snug">
+            Was steht auf den beiden Seiten? Praktisch für Vokabeln – z. B. vorne „Deutsch", hinten „Englisch". Wird beim Lernen auf den Karten angezeigt.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <SideLabelField label="Vorderseite" value={frontLabel} onChange={setFrontLabel} placeholder="z.B. Deutsch" />
+            <SideLabelField label="Rückseite" value={backLabel} onChange={setBackLabel} placeholder="z.B. Englisch" />
+          </div>
         </div>
 
         <div>
