@@ -4,6 +4,7 @@ import {
   X, RotateCcw, ArrowLeftRight, Shuffle, Layers, Trophy, Undo2, Flag,
   ThumbsUp, ThumbsDown, Equal, ChevronRight, PartyPopper,
   Keyboard, Check, ArrowRight, CornerDownLeft, ListChecks, Brain, ClipboardCheck,
+  Flame, Heart, Crown,
 } from 'lucide-react';
 import type { Flashcard, ReviewDirection, ReviewMode, ReviewOutcome, TypoTolerance } from '@/types';
 import { LEITNER_BOXES } from '@/types';
@@ -23,7 +24,7 @@ interface Props {
   restoreCard: (cardId: string, snapshot: Partial<Flashcard>) => void;
 }
 
-type Phase = 'config' | 'flip' | 'match' | 'write' | 'choice' | 'learn' | 'test' | 'done';
+type Phase = 'config' | 'flip' | 'match' | 'write' | 'choice' | 'learn' | 'test' | 'gravity' | 'done';
 
 /** Modi, bei denen die Antwort getippt wird → Toleranz-Regler relevant. */
 const TYPED_MODES: ReviewMode[] = ['write', 'learn', 'test'];
@@ -123,6 +124,9 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
           {phase === 'test' && (
             <TestRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
           )}
+          {phase === 'gravity' && (
+            <MeteorRunner cards={cards} direction={direction} labels={labels} tolerance={tolerance} onReview={onReview} onDone={() => setPhase('done')} />
+          )}
           {phase === 'done' && (
             <DoneStep deckName={deckName} onRestart={() => setPhase('config')} onClose={onClose} />
           )}
@@ -153,6 +157,7 @@ function ConfigStep({ count, direction, setDirection, mode, setMode, tolerance, 
     { id: 'learn', label: 'Lernen', desc: 'Adaptiv: erst Auswahl, dann Tippen – bis alles sitzt', icon: Brain },
     { id: 'test', label: 'Prüfung', desc: 'Gemischte Prüfung mit Auswertung am Ende', icon: ClipboardCheck },
     { id: 'match', label: 'Zuordnen', desc: 'Begriffe einander zuordnen', icon: ArrowLeftRight },
+    { id: 'gravity', label: 'Meteor', desc: 'Antwort tippen, bevor die Karte einschlägt', icon: Flame },
   ];
   const showTolerance = TYPED_MODES.includes(mode);
   return (
@@ -780,6 +785,182 @@ function TestRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
           <button onClick={onDone} className="btn-primary w-full py-3.5">Fertig <ArrowRight className="size-4" /></button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Schritt: Meteor (Tipp-Spiel) ────────────────────────────────────────────
+//
+// Karten fallen herunter; die Antwort muss getippt werden, bevor die Karte unten
+// einschlägt. Pro Treffer Punkte, bei Einschlag ein Leben weniger. Mit Highscore.
+
+const METEOR_HIGHSCORE_KEY = 'notenapp-meteor-highscore';
+
+function MeteorRunner({ cards, direction, labels, tolerance, onReview, onDone }: {
+  cards: Flashcard[]; direction: ReviewDirection; labels?: SideLabels; tolerance: TypoTolerance;
+  onReview: (id: string, outcome: ReviewOutcome) => void; onDone: () => void;
+}) {
+  const queue = useMemo(() => shuffle(cards), [cards]);
+  const [seq, setSeq] = useState(0);
+  const [input, setInput] = useState('');
+  const [lives, setLives] = useState(3);
+  const [score, setScore] = useState(0);
+  const [cleared, setCleared] = useState(0);
+  const [over, setOver] = useState(false);
+  const [flash, setFlash] = useState<null | 'hit' | 'miss'>(null);
+  const [areaH, setAreaH] = useState(0);
+  const [highscore, setHighscore] = useState<number>(() => {
+    try { return Number(localStorage.getItem(METEOR_HIGHSCORE_KEY)) || 0; } catch { return 0; }
+  });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
+  const livesRef = useRef(3);
+
+  const card = queue.length ? queue[seq % queue.length] : null;
+  const view = useMemo(() => card ? sides(card, direction, labels) : null, [card, direction, labels]);
+  const level = Math.floor(cleared / 5) + 1;
+  const fallDuration = Math.max(3.5, 8 - (level - 1) * 0.6);
+
+  // Spielfläche vermessen (für die Fall-Distanz).
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const update = () => setAreaH(el.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => { if (!over) setTimeout(() => inputRef.current?.focus(), 50); }, [seq, over]);
+
+  // Spiel beenden und ggf. Highscore speichern (aus einem Event-Handler aufgerufen).
+  const endGame = useCallback((finalScore: number) => {
+    setOver(true);
+    setHighscore(hs => {
+      if (finalScore > hs) {
+        try { localStorage.setItem(METEOR_HIGHSCORE_KEY, String(finalScore)); } catch { /* ignore */ }
+        return finalScore;
+      }
+      return hs;
+    });
+  }, []);
+
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blink = useCallback((kind: 'hit' | 'miss') => {
+    setFlash(kind);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 280);
+  }, []);
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current); }, []);
+
+  function nextMeteor() { setInput(''); setSeq(s => s + 1); }
+
+  // Karte schlägt ein (kein Treffer rechtzeitig).
+  function impact() {
+    if (over || !card) return;
+    onReview(card.id, 'wrong');
+    blink('miss');
+    const nl = Math.max(0, livesRef.current - 1);
+    livesRef.current = nl;
+    setLives(nl);
+    if (nl <= 0) endGame(score);
+    else nextMeteor();
+  }
+
+  // Antwort abschicken.
+  function submit() {
+    if (over || !card || !view) return;
+    const j = judgeTyped(input, view.answer, tolerance);
+    if (j.ok) {
+      onReview(card.id, outcomeFromTyped(j));
+      setScore(s => s + 10 * level);
+      setCleared(c => c + 1);
+      blink('hit');
+      nextMeteor();
+    } else {
+      setInput('');
+    }
+  }
+
+  function restart() {
+    livesRef.current = 3;
+    setSeq(0); setInput(''); setLives(3); setScore(0); setCleared(0); setOver(false); setFlash(null);
+  }
+
+  if (over) {
+    const record = score >= highscore && score > 0;
+    return (
+      <div className="h-full grid place-items-center px-6 pb-8">
+        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center max-w-sm w-full">
+          <div className="size-20 rounded-3xl theme-gradient grid place-items-center mx-auto shadow-glow mb-4">
+            <Flame className="size-10 text-white" />
+          </div>
+          <h2 className="h2">Game Over</h2>
+          <div className="text-5xl font-display font-extrabold text-ink-900 mt-3">{score}</div>
+          <p className="subtle mt-1 flex items-center justify-center gap-1">
+            <Crown className="size-4 text-amber-500" /> Rekord: {Math.max(score, highscore)}
+          </p>
+          {record && <div className="chip mx-auto mt-3 text-amber-700 bg-amber-500/15"><Crown className="size-3" /> Neuer Rekord!</div>}
+          <div className="flex flex-col gap-2 mt-6">
+            <button onClick={restart} className="btn-primary w-full"><Flame className="size-4" /> Nochmal</button>
+            <button onClick={onDone} className="btn-ghost w-full">Fertig</button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!card || !view) return null;
+
+  return (
+    <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
+      {/* Kopf: Punkte, Level, Leben */}
+      <div className="flex items-center gap-3 mb-2">
+        <span className="chip text-[11px] font-bold tabular-nums">{score} Pkt</span>
+        <span className="chip text-[11px]">Level {level}</span>
+        <div className="flex-1 flex items-center justify-center gap-1">
+          {[0, 1, 2].map(i => (
+            <Heart key={i} className={`size-5 ${i < lives ? 'text-rose-500 fill-rose-500' : 'text-ink-300'}`} />
+          ))}
+        </div>
+        <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition"><Flag className="size-3" /> Beenden</button>
+      </div>
+
+      {/* Spielfläche */}
+      <div ref={areaRef} className={`relative flex-1 min-h-0 overflow-hidden rounded-3xl transition-colors duration-200
+        ${flash === 'hit' ? 'bg-emerald-500/15' : flash === 'miss' ? 'bg-rose-500/15' : 'bg-white/20'}`}>
+        {/* Boden-Linie */}
+        <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-rose-500/20 to-transparent border-t-2 border-dashed border-rose-400/40" />
+        {areaH > 0 && (
+          <div className="absolute inset-x-0 top-0 flex justify-center px-4 pointer-events-none">
+            <motion.div
+              key={seq}
+              className="w-[78%] max-w-sm"
+              initial={{ y: -10 }}
+              animate={{ y: Math.max(0, areaH - 96) }}
+              transition={{ duration: fallDuration, ease: 'linear' }}
+              onAnimationComplete={impact}
+            >
+              <div className="glass-strong rounded-2xl shadow-soft p-4 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-ink-400">
+                  <Flame className="size-3 text-orange-500" /> {view.promptLabel}
+                </div>
+                <div className="font-display font-bold text-ink-900 text-lg md:text-xl whitespace-pre-wrap break-words mt-1">{view.prompt}</div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </div>
+
+      {/* Eingabe */}
+      <form onSubmit={e => { e.preventDefault(); submit(); }} className="mt-3 max-w-md w-full mx-auto flex gap-2">
+        <input ref={inputRef} className="input text-center text-lg flex-1" value={input}
+          onChange={e => setInput(e.target.value)} placeholder="Antwort tippen & Enter …"
+          autoComplete="off" autoCorrect="off" spellCheck={false} />
+        <button type="submit" className="btn-primary px-5"><ArrowRight className="size-5" /></button>
+      </form>
+      <p className="subtle text-center text-[11px] mt-1">Tippe die Antwort, bevor die Karte unten einschlägt!</p>
     </div>
   );
 }
