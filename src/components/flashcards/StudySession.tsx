@@ -501,9 +501,13 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
   const [result, setResult] = useState<null | { outcome: ReviewOutcome }>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Neue Stufe der aktuellen Karte – wird erst beim Weitergehen übernommen,
+  // damit Karte & Auswertung während der Anzeige stabil bleiben.
+  const pendingLevel = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const mastered = useMemo(() => Object.values(levels).filter(l => l >= 2).length, [levels]);
+  const allDone = queue.length > 0 && mastered >= queue.length;
 
   // Aktuelle Karte: ab pos die erste noch nicht beherrschte (mit Umlauf).
   let card: Flashcard | null = null;
@@ -513,7 +517,7 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
     if ((levels[queue[idx].id] ?? 0) < 2) { card = queue[idx]; ci = idx; break; }
   }
 
-  useEffect(() => { if (queue.length > 0 && mastered >= queue.length) onDone(); }, [mastered, queue.length, onDone]);
+  useEffect(() => { if (allDone) onDone(); }, [allDone, onDone]);
   const level = card ? (levels[card.id] ?? 0) : 0;
   const asChoice = level === 0;
 
@@ -526,36 +530,44 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
 
   useEffect(() => { if (card && !asChoice) setTimeout(() => inputRef.current?.focus(), 50); }, [card?.id, asChoice]);
 
-  const advance = useCallback(() => {
-    setPos((ci + 1) % Math.max(1, queue.length));
-    setChosen(null); setInput(''); setResult(null);
-  }, [ci, queue.length]);
-
   if (!card || !view) return null;
 
-  // Multiple-Choice-Antwort
-  function pickChoice(i: number) {
-    if (!card || !choices || chosen !== null) return;
-    const correct = i === choices.correctIndex;
-    onReview(card.id, correct ? 'correct' : 'wrong');
-    setLevels(l => ({ ...l, [card!.id]: correct ? 1 : 0 }));
-    setChosen(i);
-    timer.current = setTimeout(advance, 1050);
+  const curId = card.id;
+  const curCi = ci;
+
+  // Zur nächsten Karte: erst die vorgemerkte Stufe der aktuellen Karte übernehmen,
+  // dann weiterrücken und die Auswertung zurücksetzen.
+  function goNext() {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const next = pendingLevel.current;
+    pendingLevel.current = null;
+    if (next !== null) setLevels(l => ({ ...l, [curId]: next }));
+    setPos((curCi + 1) % queue.length);
+    setChosen(null); setInput(''); setResult(null);
   }
 
-  // Getippte Antwort
+  // Multiple-Choice-Antwort: kurz die Auflösung zeigen, dann weiter.
+  function pickChoice(i: number) {
+    if (!choices || chosen !== null) return;
+    const correct = i === choices.correctIndex;
+    onReview(curId, correct ? 'correct' : 'wrong');
+    pendingLevel.current = correct ? 1 : 0;
+    setChosen(i);
+    timer.current = setTimeout(goNext, 1050);
+  }
+
+  // Getippte Antwort prüfen (Auswertung bleibt stehen bis „Weiter").
   function checkTyped() {
-    if (!card || result) return;
-    const j = judgeTyped(input, view!.answer, tolerance);
-    const outcome = outcomeFromTyped(j);
-    onReview(card.id, outcome);
-    setLevels(l => ({ ...l, [card!.id]: outcome === 'wrong' ? 0 : 2 }));
+    if (result) return;
+    const outcome = outcomeFromTyped(judgeTyped(input, view!.answer, tolerance));
+    onReview(curId, outcome);
+    pendingLevel.current = outcome === 'wrong' ? 0 : 2;
     setResult({ outcome });
   }
   function overrideTyped() {
-    if (!card || !result || result.outcome === 'correct') return;
-    onReview(card.id, 'correct');
-    setLevels(l => ({ ...l, [card!.id]: 2 }));
+    if (!result || result.outcome === 'correct') return;
+    onReview(curId, 'correct');
+    pendingLevel.current = 2;
     setResult({ outcome: 'correct' });
   }
 
@@ -617,7 +629,7 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
             </div>
           </form>
         ) : (
-          <Feedback tone={tone} outcome={result.outcome} expected={view.answer} given={input} onNext={advance} onOverride={overrideTyped} />
+          <Feedback tone={tone} outcome={result.outcome} expected={view.answer} given={input} onNext={goNext} onOverride={overrideTyped} />
         )}
       </div>
     </div>
