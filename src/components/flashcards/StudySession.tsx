@@ -507,6 +507,9 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const mastered = useMemo(() => Object.values(levels).filter(l => l >= 2).length, [levels]);
+  // Mindestens einmal per Multiple-Choice erkannt (Stufe 1+). Enthält auch die
+  // schon gemeisterten Karten – für den helleren Fortschrittsbalken.
+  const recognized = useMemo(() => Object.values(levels).filter(l => l >= 1).length, [levels]);
   const allDone = queue.length > 0 && mastered >= queue.length;
 
   // Aktuelle Karte: ab pos die erste noch nicht beherrschte (mit Umlauf).
@@ -571,19 +574,28 @@ function LearnRunner({ cards, direction, labels, tolerance, onReview, onDone }: 
     setResult({ outcome: 'correct' });
   }
 
-  const progress = (mastered / queue.length) * 100;
+  const masteredPct = (mastered / queue.length) * 100;
+  const recognizedPct = (recognized / queue.length) * 100;
   const tone = result?.outcome === 'correct' ? 'emerald' : result?.outcome === 'partial' ? 'amber' : 'rose';
+  const spring = { type: 'spring' as const, stiffness: 200, damping: 30 };
 
   return (
     <div className="h-full flex flex-col px-5 md:px-8 pb-[max(env(safe-area-inset-bottom),1rem)]">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1 h-2 rounded-full bg-white/50 overflow-hidden">
-          <motion.div className="h-full theme-gradient rounded-full" animate={{ width: `${progress}%` }} transition={{ type: 'spring', stiffness: 200, damping: 30 }} />
+      <div className="flex items-center gap-3 mb-1.5">
+        {/* Zweifarbig: heller Balken = per Multiple-Choice erkannt, kräftig = sitzt */}
+        <div className="relative flex-1 h-2.5 rounded-full bg-white/50 overflow-hidden">
+          <motion.div className="absolute inset-y-0 left-0 rounded-full bg-theme-deep/25"
+            animate={{ width: `${recognizedPct}%` }} transition={spring} />
+          <motion.div className="absolute inset-y-0 left-0 rounded-full theme-gradient"
+            animate={{ width: `${masteredPct}%` }} transition={spring} />
         </div>
-        <span className="text-xs font-semibold text-ink-500 tabular-nums">{mastered}/{queue.length}</span>
         <button onClick={onDone} className="chip text-[11px] hover:bg-white/80 transition" title="Lernen beenden">
           <Flag className="size-3" /> Beenden
         </button>
+      </div>
+      <div className="flex items-center justify-center gap-4 mb-3 text-[11px] font-semibold tabular-nums">
+        <span className="flex items-center gap-1 text-theme-deep/70"><ListChecks className="size-3" /> {recognized}/{queue.length} erkannt</span>
+        <span className="flex items-center gap-1 text-ink-700"><Check className="size-3" /> {mastered}/{queue.length} sitzt</span>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col justify-center max-w-md w-full mx-auto">
