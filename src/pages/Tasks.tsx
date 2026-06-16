@@ -193,9 +193,14 @@ export function TasksPage() {
 
 // ── Bucket-Berechnung (spiegelt die alte Logik, ergänzt Meta + Reihenfolge). ──
 function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
+  const DAY = 86400000;
   const today = startOfDay(Date.now());
-  const tomorrow = today + 86400000, dayAfter = today + 2 * 86400000;
-  const inAWeek = today + 7 * 86400000, inTwoWeeks = today + 14 * 86400000;
+  const tomorrow = today + DAY, dayAfter = today + 2 * DAY;
+  // „Diese Woche" = alle Tage bis einschließlich kommenden Sonntag (Kalenderwoche, Mo–So).
+  // getDay(): 0 = Sonntag … 6 = Samstag. Bis Sonntag sind es (7 - getDay()) % 7 Tage.
+  const weekday = new Date(today).getDay();
+  const sunThisWeek = startOfDay(today + ((7 - weekday) % 7) * DAY); // Beginn des kommenden Sonntags
+  const sunNextWeek = startOfDay(sunThisWeek + 7 * DAY);             // Sonntag der nächsten Woche
   const mk = () => ({ items: [] as AppTask[], friendItems: [] as FriendTask[] });
   const B: Record<BucketKey, { items: AppTask[]; friendItems: FriendTask[] }> = {
     overdue: mk(), heute: mk(), morgen: mk(), thisWeek: mk(), nextWeek: mk(), later: mk(), noDate: mk(),
@@ -207,9 +212,9 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     if (!t.done && due < today - 86400000) { B.overdue.items.push(t); continue; }
     if (due === today) B.heute.items.push(t);
     else if (due === tomorrow) B.morgen.items.push(t);
-    else if (due >= dayAfter && due < inAWeek) B.thisWeek.items.push(t);
-    else if (due >= inAWeek && due < inTwoWeeks) B.nextWeek.items.push(t);
-    else if (due >= inTwoWeeks) B.later.items.push(t);
+    else if (due >= dayAfter && due <= sunThisWeek) B.thisWeek.items.push(t);
+    else if (due > sunThisWeek && due <= sunNextWeek) B.nextWeek.items.push(t);
+    else if (due > sunNextWeek) B.later.items.push(t);
     else B.heute.items.push(t);
   }
   for (const ft of friend) {
@@ -218,9 +223,9 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     if (due < today - 86400000) { B.overdue.friendItems.push(ft); continue; }
     if (due === today) B.heute.friendItems.push(ft);
     else if (due === tomorrow) B.morgen.friendItems.push(ft);
-    else if (due >= dayAfter && due < inAWeek) B.thisWeek.friendItems.push(ft);
-    else if (due >= inAWeek && due < inTwoWeeks) B.nextWeek.friendItems.push(ft);
-    else if (due >= inTwoWeeks) B.later.friendItems.push(ft);
+    else if (due >= dayAfter && due <= sunThisWeek) B.thisWeek.friendItems.push(ft);
+    else if (due > sunThisWeek && due <= sunNextWeek) B.nextWeek.friendItems.push(ft);
+    else if (due > sunNextWeek) B.later.friendItems.push(ft);
     else B.heute.friendItems.push(ft);
   }
   const sortOwn = (a: AppTask, b: AppTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || b.priority - a.priority;
@@ -231,8 +236,8 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     { key: 'overdue',  label: 'Überfällig',    hint: 'Mehr als 1 Tag nach Fälligkeit', tone: 'danger',  icon: AlertTriangle },
     { key: 'heute',    label: 'Heute',         hint: 'Fällig heute',                   tone: 'warn',    icon: Flame },
     { key: 'morgen',   label: 'Morgen',                                                tone: 'default', icon: ArrowRight },
-    { key: 'thisWeek', label: 'Diese Woche',                                           tone: 'default', icon: CalendarDays },
-    { key: 'nextWeek', label: 'Nächste Woche',                                         tone: 'default', icon: CalendarDays },
+    { key: 'thisWeek', label: 'Diese Woche',  hint: 'Bis Sonntag',                      tone: 'default', icon: CalendarDays },
+    { key: 'nextWeek', label: 'Nächste Woche', hint: 'Kommende Kalenderwoche',           tone: 'default', icon: CalendarDays },
     { key: 'later',    label: 'Später',                                                tone: 'muted',   icon: Clock },
     { key: 'noDate',   label: 'Ohne Datum',                                            tone: 'muted',   icon: Inbox },
   ];
