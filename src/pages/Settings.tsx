@@ -485,11 +485,6 @@ function DashboardSection() {
           { value: 'casual', label: 'Locker' }, { value: 'formal', label: 'Formell' }, { value: 'fun', label: 'Lustig' },
         ]} onChange={v => setSettings({ dashboardGreetingStyle: v })} />
       </Row>
-      <Row label="Wochenstart">
-        <Segmented<0 | 1> value={settings.weekStart} options={[
-          { value: 1, label: 'Montag' }, { value: 0, label: 'Sonntag' },
-        ]} onChange={v => setSettings({ weekStart: v })} />
-      </Row>
       <Row label="Schul-Tagesfenster" hint="Bestimmt den sichtbaren Zeitbereich im Heute-Stundenplan-Widget.">
         <input type="time" className="input max-w-[120px]" value={settings.schoolStart}
           onChange={e => setSettings({ schoolStart: e.target.value })} />

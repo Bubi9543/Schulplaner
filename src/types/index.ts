@@ -482,7 +482,6 @@ export interface AppSettings {
   confettiOnGood: boolean;
   schoolStart: string;
   schoolEnd: string;
-  weekStart: 0 | 1;
   dashboardGreetingStyle: GreetingStyle;
   quickButtons: TaskKind[];
   autoSelectActiveSubject: boolean;
@@ -735,7 +734,6 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'id'> = {
   confettiOnGood: true,
   schoolStart: '08:00',
   schoolEnd: '17:00',
-  weekStart: 1,
   dashboardGreetingStyle: 'casual',
   quickButtons: DEFAULT_QUICK_BUTTONS,
   autoSelectActiveSubject: true,

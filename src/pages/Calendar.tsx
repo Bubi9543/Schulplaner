@@ -110,7 +110,7 @@ export function CalendarPage() {
   }, [allKinds, examGrades, gradingConfig]);
 
   // ── View / Navigation ─────────────────────────────────────────────────────
-  const weekStartsOn = (settings?.weekStart ?? 1) as 0 | 1;
+  const weekStartsOn = 1 as 0 | 1; // Woche beginnt fest am Montag (deutscher Standard)
   const [view, setView] = useState<ViewMode>('month');
   const [showWeekends, setShowWeekends] = useState(true);
   const [anchor, setAnchor] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
