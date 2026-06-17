@@ -155,6 +155,15 @@ export interface Grade {
   studyChecklist?: StudyChecklistItem[];
   /** Ziel-Datum bis wann du die Checkliste durchhaben willst (ms timestamp). */
   studyDeadline?: number;
+  /**
+   * Fokus-Ziel für diesen Test: gewünschte Lernzeit (in Minuten) bis zur Frist.
+   * Analog zu den gleichnamigen Feldern am Subject (dort gilt das Ziel fürs ganze Fach).
+   */
+  focusGoalMinutes?: number;
+  /** Fokus-Ziel: Frist als ms-Timestamp (Ende des gewählten Tages). */
+  focusDeadline?: number;
+  /** Fokus-Ziel: ms-Timestamp, ab dem gelernte Zeit aufs Ziel zählt (wann gesetzt). */
+  focusGoalStart?: number;
 }
 
 export type StudyStatus = 'red' | 'yellow' | 'green';

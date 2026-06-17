@@ -25,10 +25,11 @@ import {
 } from '@/lib/grading';
 import { gradeWeight } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
-import { formatDuration } from '@/lib/focusTimer';
 import { chartTooltipProps } from '@/lib/chartTheme';
+import { FocusGoalEditor } from '@/components/FocusGoalEditor';
+import { DAY, DEFAULT_GOAL_MINUTES, DEFAULT_GOAL_DAYS, toDateInput, endOfDay } from '@/lib/focusGoals';
 import { DEFAULT_GRADING_CONFIG, oberstufeTermsFor } from '@/types';
-import type { Grade, AppTask, GradeKind, Subject, GradingSystem } from '@/types';
+import type { Grade, AppTask, GradeKind, Subject, GradingSystem, FocusSession } from '@/types';
 import { BUILTIN_GRADE_KINDS } from '@/types';
 
 /* ─── kleine Helfer ───────────────────────────────────────────────────────── */
@@ -63,8 +64,6 @@ function neededForTarget(
   }
   return { value: null, reachable: false };
 }
-
-const DAY = 86400000;
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
@@ -277,7 +276,7 @@ export function SubjectDetailPage() {
 
         {/* ─── Fokus-Ziel mit Frist ─── */}
         <Card delay={0.15} className="col-span-12 md:col-span-5">
-          <SubjectFocusGoal subject={subject} focusSessions={focusSessions} />
+          <SubjectFocusGoal subject={subject} subjectGrades={subjectGrades} focusSessions={focusSessions} config={config} />
         </Card>
 
         {/* ─── Tests-Timeline ─── */}
@@ -565,131 +564,93 @@ function TimelineRow({
   );
 }
 
-/* ─── Fokus-Ziel mit Frist ──────────────────────────────────────────────── */
+/* ─── Fokus-Ziel mit Frist (Fach- oder Test-Bindung) ─────────────────────── */
 
-function toDateInput(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function endOfDay(dateStr: string): number {
-  const d = new Date(dateStr + 'T23:59:59');
-  return d.getTime();
-}
-
-function SubjectFocusGoal({ subject, focusSessions }: { subject: Subject; focusSessions: import('@/types').FocusSession[] }) {
+function SubjectFocusGoal({
+  subject, subjectGrades, focusSessions, config,
+}: {
+  subject: Subject;
+  subjectGrades: Grade[];
+  focusSessions: FocusSession[];
+  config: typeof DEFAULT_GRADING_CONFIG;
+}) {
   const updateSubject = useStore(s => s.updateSubject);
+  const updateGrade = useStore(s => s.updateGrade);
   const now = Date.now();
 
-  const goalMin = subject.focusGoalMinutes;
-  const deadline = subject.focusDeadline;
-  const start = subject.focusGoalStart ?? subject.createdAt;
+  // Bindung: 'subject' (ganzes Fach) oder eine gradeId (einzelner Test).
+  const [binding, setBinding] = useState<string>('subject');
+  const grade = binding !== 'subject' ? subjectGrades.find(g => g.id === binding) : undefined;
+  const target: { focusGoalMinutes?: number; focusDeadline?: number; focusGoalStart?: number } = grade ?? subject;
+
+  const goalMin = target.focusGoalMinutes;
+  const deadline = target.focusDeadline;
+  const start = target.focusGoalStart ?? (grade ? now : subject.createdAt);
   const hasGoal = typeof goalMin === 'number' && typeof deadline === 'number';
+  const match = grade ? (f: FocusSession) => f.gradeId === grade.id : (f: FocusSession) => f.subjectId === subject.id;
 
-  const setGoal = (patch: Partial<Subject>) => void updateSubject(subject.id, { ...patch, updatedAt: Date.now() });
-
-  const initGoal = () => setGoal({ focusGoalMinutes: 300, focusDeadline: endOfDay(toDateInput(now + 7 * DAY)), focusGoalStart: now });
-  const clearGoal = () => setGoal({ focusGoalMinutes: undefined, focusDeadline: undefined, focusGoalStart: undefined });
-
-  // Gelernte Zeit für dieses Fach seit Zielstart.
-  const doneMs = useMemo(
-    () => focusSessions.filter(f => f.subjectId === subject.id && f.startedAt >= start).reduce((a, f) => a + f.focusedMs, 0),
-    [focusSessions, subject.id, start],
-  );
-
-  // Tagesbalken: letzte 7 Tage für dieses Fach.
-  const dayBars = useMemo(() => {
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const base = todayStart.getTime();
-    const labels = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-    const bars = Array.from({ length: 7 }, (_, i) => ({ dayStart: base - (6 - i) * DAY, ms: 0 }));
-    for (const f of focusSessions) {
-      if (f.subjectId !== subject.id) continue;
-      const idx = Math.floor((f.startedAt - bars[0].dayStart) / DAY);
-      if (idx >= 0 && idx < 7) bars[idx].ms += f.focusedMs;
-    }
-    const maxMs = Math.max(1, ...bars.map(b => b.ms));
-    return bars.map(b => ({ label: labels[new Date(b.dayStart).getDay()], min: Math.round(b.ms / 60000), heightPct: (b.ms / maxMs) * 100 }));
-  }, [focusSessions, subject.id]);
-
-  if (!hasGoal) {
-    return (
-      <>
-        <h3 className="h3 mb-1 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
-        <p className="subtle mb-4">Setz dir ein Lernziel für {subject.name} mit einer Frist – die Zeit aus deinen Fokus-Sessions zählt automatisch mit.</p>
-        <button onClick={initGoal} className="btn-primary w-full justify-center"><Flame className="size-4" />Lernziel setzen</button>
-      </>
-    );
-  }
-
-  const goalMs = goalMin! * 60000;
-  const remMs = Math.max(0, goalMs - doneMs);
-  const overdue = deadline! < now;
-  const daysLeft = Math.max(0, Math.ceil((deadline! - now) / DAY));
-  const perDayMs = daysLeft > 0 ? remMs / daysLeft : remMs;
-  const barPct = Math.min(100, Math.round((doneMs / goalMs) * 100));
-  const stepGoal = (delta: number) => setGoal({ focusGoalMinutes: Math.max(30, Math.min(6000, goalMin! + delta)) });
+  const save = (patch: Partial<Subject> & Partial<Grade>) => {
+    const p = { ...patch, updatedAt: Date.now() };
+    if (grade) void updateGrade(grade.id, p); else void updateSubject(subject.id, p);
+  };
+  const initGoal = () => {
+    const defDeadline = grade?.date && grade.date > now ? grade.date : now + DEFAULT_GOAL_DAYS * DAY;
+    save({ focusGoalMinutes: DEFAULT_GOAL_MINUTES, focusDeadline: endOfDay(toDateInput(defDeadline)), focusGoalStart: now });
+  };
+  const clearGoal = () => save({ focusGoalMinutes: undefined, focusDeadline: undefined, focusGoalStart: undefined });
 
   return (
     <>
-      <div className="flex items-center justify-between mb-3.5 gap-2">
-        <h3 className="h3 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
-        <button onClick={clearGoal} className="text-[11px] font-semibold text-ink-400 hover:text-rose-500 transition inline-flex items-center gap-1" title="Ziel entfernen"><Trash2 className="size-3" />Entfernen</button>
-      </div>
+      <h3 className="h3 mb-3 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
 
-      <div className="flex gap-3 flex-wrap mb-4">
-        <div className="flex-1 min-w-[130px]">
-          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">Zielzeit</div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => stepGoal(-30)} className="size-8 rounded-xl border border-ink-200 bg-white text-ink-600 text-lg font-bold grid place-items-center hover:bg-ink-50 transition">−</button>
-            <div className="flex-1 text-center font-display font-extrabold text-lg text-ink-900">{formatDuration(goalMs)}</div>
-            <button onClick={() => stepGoal(30)} className="size-8 rounded-xl border border-ink-200 bg-white text-ink-600 text-lg font-bold grid place-items-center hover:bg-ink-50 transition">+</button>
-          </div>
-        </div>
-        <div className="flex-1 min-w-[150px]">
-          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">Frist</div>
-          <input
-            type="date"
-            value={toDateInput(deadline!)}
-            min={toDateInput(now)}
-            onChange={e => { if (e.target.value) setGoal({ focusDeadline: endOfDay(e.target.value) }); }}
-            className="input text-sm w-full"
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-2.5 mb-4">
-        <div className="flex-1 rounded-2xl p-3 bg-orange-50 text-center">
-          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-orange-700">Noch zu lernen</div>
-          <div className="font-display font-extrabold text-xl text-orange-500 mt-0.5">{formatDuration(remMs)}</div>
-        </div>
-        <div className="flex-1 rounded-2xl p-3 bg-ink-50 text-center">
-          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-ink-500">Pro Tag</div>
-          <div className="font-display font-extrabold text-xl text-ink-900 mt-0.5">{overdue ? '–' : formatDuration(perDayMs)}</div>
-        </div>
-        <div className="flex-1 rounded-2xl p-3 bg-ink-50 text-center">
-          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-ink-500">Verbleibend</div>
-          <div className="font-display font-extrabold text-xl text-ink-900 mt-0.5">{overdue ? 'abgelaufen' : `${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'}`}</div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between text-[11.5px] text-ink-500 mb-1.5">
-        <span>Bereits gelernt: <strong className="text-orange-500">{formatDuration(doneMs)}</strong></span>
-        <span>Ziel {formatDuration(goalMs)}</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-ink-100 overflow-hidden mb-4">
-        <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: 'linear-gradient(90deg,#fb923c,#f97316)' }} />
-      </div>
-
-      <div className="flex items-end gap-2 h-16">
-        {dayBars.map((b, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-            <span className="text-[10px] text-ink-400">{b.min > 0 ? `${b.min}m` : ''}</span>
-            <div className="w-full rounded-t-lg" style={{ height: `${Math.max(4, b.heightPct * 0.4)}px`, background: b.min > 0 ? 'linear-gradient(180deg,#fb923c,#f97316)' : 'rgb(var(--ink-200))' }} />
-            <span className="text-[10.5px] font-semibold text-ink-500">{b.label}</span>
-          </div>
+      {/* Bindungs-Auswahl: ganzes Fach oder ein bestimmter Test */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        <FocusBindingChip active={binding === 'subject'} marked={typeof subject.focusGoalMinutes === 'number'} onClick={() => setBinding('subject')}>
+          Ganzes Fach
+        </FocusBindingChip>
+        {subjectGrades.map(g => (
+          <FocusBindingChip key={g.id} active={binding === g.id} marked={typeof g.focusGoalMinutes === 'number'} onClick={() => setBinding(g.id)}>
+            {g.title || getKindLabel(g.kind, config)}
+          </FocusBindingChip>
         ))}
       </div>
+
+      {hasGoal ? (
+        <FocusGoalEditor
+          sessions={focusSessions}
+          match={match}
+          start={start}
+          goalMinutes={goalMin!}
+          deadline={deadline!}
+          onSetMinutes={m => save({ focusGoalMinutes: m })}
+          onSetDeadline={ms => save({ focusDeadline: ms })}
+          onClear={clearGoal}
+        />
+      ) : (
+        <div className="rounded-2xl border-2 border-dashed border-ink-200 p-5 text-center">
+          <p className="subtle mb-4">
+            {grade
+              ? <>Setz dir ein Lernziel für diesen Test – deine Lernzeit dafür zählt automatisch mit.</>
+              : <>Setz dir ein Lernziel fürs ganze Fach – die Zeit aus deinen Fokus-Sessions zählt automatisch mit.</>}
+          </p>
+          <button onClick={initGoal} className="btn-primary w-full justify-center"><Flame className="size-4" />Lernziel setzen</button>
+        </div>
+      )}
     </>
+  );
+}
+
+function FocusBindingChip({ active, marked, onClick, children }: { active: boolean; marked: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 text-[11.5px] px-3 py-1 rounded-full border font-semibold transition ${
+        active ? 'bg-ink-900 text-ink-50 border-ink-900' : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
+      }`}
+    >
+      {marked && <span className="size-1.5 rounded-full bg-orange-400" />}
+      {children}
+    </button>
   );
 }
 

@@ -12,6 +12,8 @@ import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { useStore } from '@/store/useStore';
 import { getKindLabel } from '@/lib/grading';
+import { FocusGoalEditor } from '@/components/FocusGoalEditor';
+import { collectGoals, goalProgress, toDateInput, endOfDay, DAY, DEFAULT_GOAL_MINUTES, DEFAULT_GOAL_DAYS, type ActiveGoal } from '@/lib/focusGoals';
 import { DEFAULT_GRADING_CONFIG } from '@/types';
 import type { FocusMode, FocusSession, Grade, Subject } from '@/types';
 import { startOfISOWeek, computeStreak } from '@/lib/studyShare';
@@ -483,6 +485,9 @@ export function FokusPage() {
           </Card>
         </div>
 
+        {/* ─── Lernziele ─── */}
+        <FocusGoalsCard />
+
         {/* ─── Streak ─── */}
         <Card delay={0.12} className="col-span-12 md:col-span-6">
           <div className="flex items-center gap-4">
@@ -826,5 +831,147 @@ function SessionEditor({ session, extendUnlocked, onClose, onSave }: {
         <button onClick={save} className="px-3 py-1.5 rounded-lg theme-gradient text-white text-xs font-bold shadow-glow hover:brightness-105 transition inline-flex items-center gap-1.5"><Check className="size-3.5" />Speichern</button>
       </div>
     </li>
+  );
+}
+
+// ─── Lernziele (Übersicht + Anlegen/Bearbeiten) ───────────────────────────────
+
+function FocusGoalsCard() {
+  const subjects = useStore(s => s.subjects);
+  const grades = useStore(s => s.grades);
+  const focusSessions = useStore(s => s.focusSessions);
+  const settings = useStore(s => s.settings);
+  const updateSubject = useStore(s => s.updateSubject);
+  const updateGrade = useStore(s => s.updateGrade);
+  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
+  const now = Date.now();
+
+  const goals = useMemo(() => collectGoals(subjects, grades, config), [subjects, grades, config]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newSubjectId, setNewSubjectId] = useState<string>('');
+  const [newGradeId, setNewGradeId] = useState<string>('');
+
+  const newSubjectTests = useMemo(
+    () => newSubjectId
+      ? grades.filter(g => g.subjectId === newSubjectId).sort((a, b) => (b.date ?? 0) - (a.date ?? 0))
+      : [],
+    [grades, newSubjectId],
+  );
+
+  const saveFor = (g: ActiveGoal, patch: Record<string, unknown>) => {
+    const p = { ...patch, updatedAt: Date.now() };
+    if (g.kind === 'test' && g.gradeId) void updateGrade(g.gradeId, p);
+    else void updateSubject(g.subjectId, p);
+  };
+
+  const createGoal = () => {
+    if (!newSubjectId) return;
+    if (newGradeId) {
+      const gr = grades.find(g => g.id === newGradeId);
+      const def = gr?.date && gr.date > now ? gr.date : now + DEFAULT_GOAL_DAYS * DAY;
+      void updateGrade(newGradeId, { focusGoalMinutes: DEFAULT_GOAL_MINUTES, focusDeadline: endOfDay(toDateInput(def)), focusGoalStart: now, updatedAt: Date.now() });
+    } else {
+      void updateSubject(newSubjectId, { focusGoalMinutes: DEFAULT_GOAL_MINUTES, focusDeadline: endOfDay(toDateInput(now + DEFAULT_GOAL_DAYS * DAY)), focusGoalStart: now, updatedAt: Date.now() });
+    }
+    setAdding(false); setNewSubjectId(''); setNewGradeId('');
+  };
+
+  return (
+    <Card delay={0.11} className="col-span-12">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="h3 flex items-center gap-2"><Target className="size-5" style={{ color: 'var(--theme-primary)' }} />Lernziele</h3>
+        {!adding && (
+          <button onClick={() => setAdding(true)} className="btn-primary text-xs"><Plus className="size-3.5" />Neues Ziel</button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="rounded-2xl border border-[rgb(var(--ink-200))] bg-[rgb(var(--ink-100))] p-3 mb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Neues Lernziel</span>
+            <button onClick={() => { setAdding(false); setNewSubjectId(''); setNewGradeId(''); }} className="text-ink-400 hover:text-ink-700 transition"><X className="size-4" /></button>
+          </div>
+          <div>
+            <label className="label text-xs">Fach</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {subjects.map(s => {
+                const sel = newSubjectId === s.id;
+                return (
+                  <button key={s.id} onClick={() => { setNewSubjectId(s.id); setNewGradeId(''); }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition inline-flex items-center gap-1.5"
+                    style={sel ? { background: s.color, borderColor: s.color, color: 'white' } : { borderColor: s.color, color: s.color }}>
+                    {sel ? <Check className="size-3" /> : <SubjectIcon subject={s} className="size-3" />}{s.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {newSubjectId && newSubjectTests.length > 0 && (
+            <div>
+              <label className="label text-xs">Test / Prüfung (optional)</label>
+              <select value={newGradeId} onChange={e => setNewGradeId(e.target.value)} className="input mt-1 text-sm">
+                <option value="">Ganzes Fach</option>
+                {newSubjectTests.map(g => (
+                  <option key={g.id} value={g.id}>
+                    {(g.title || getKindLabel(g.kind, config))}{g.isPending ? ' · geplant' : ''}{g.date ? ` · ${new Date(g.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setAdding(false); setNewSubjectId(''); setNewGradeId(''); }} className="px-3 py-1.5 rounded-lg bg-[rgb(var(--ink-200))] text-ink-700 text-xs font-bold hover:bg-[rgb(var(--ink-300))] transition">Abbrechen</button>
+            <button onClick={createGoal} disabled={!newSubjectId} className="px-3 py-1.5 rounded-lg theme-gradient text-white text-xs font-bold shadow-glow hover:brightness-105 transition disabled:opacity-40 inline-flex items-center gap-1.5"><Check className="size-3.5" />Anlegen</button>
+          </div>
+        </div>
+      )}
+
+      {goals.length === 0 ? (
+        !adding && <p className="text-sm text-ink-500 py-6 text-center">Noch keine Lernziele. Leg eins an oder setz eines direkt auf einer Fach-Seite.</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {goals.map(g => {
+            const prog = goalProgress(focusSessions, g.match, g.start, g.goalMinutes, g.deadline, now);
+            const open = expanded === g.key;
+            return (
+              <li key={g.key} className="rounded-2xl bg-[rgb(var(--surface-rgb))] border border-[rgb(var(--ink-200))] overflow-hidden">
+                <button onClick={() => setExpanded(open ? null : g.key)} className="w-full flex items-center gap-3 p-3 text-left hover:bg-[rgb(var(--ink-100))] transition">
+                  <span className="size-3 rounded-full flex-shrink-0" style={{ background: g.color }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-ink-800 truncate text-sm">{g.label}</span>
+                      <span className="text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full text-ink-500 bg-[rgb(var(--ink-200))] flex-shrink-0">{g.kind === 'test' ? 'Test' : 'Fach'}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-[rgb(var(--ink-200))] overflow-hidden mt-1.5">
+                      <div className="h-full rounded-full" style={{ width: `${prog.barPct}%`, background: 'linear-gradient(90deg,#fb923c,#f97316)' }} />
+                    </div>
+                    <div className="text-[11px] text-ink-500 mt-1">
+                      noch <strong className="text-orange-500">{formatDuration(prog.remMs)}</strong>
+                      {' · '}{prog.overdue ? 'Frist abgelaufen' : `${prog.daysLeft} ${prog.daysLeft === 1 ? 'Tag' : 'Tage'} bis ${new Date(g.deadline).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`}
+                    </div>
+                  </div>
+                  <ChevronRight className={`size-4 text-ink-400 flex-shrink-0 transition ${open ? 'rotate-90' : ''}`} />
+                </button>
+                {open && (
+                  <div className="px-3 pb-3 border-t border-[rgb(var(--ink-200))] pt-3">
+                    <FocusGoalEditor
+                      sessions={focusSessions}
+                      match={g.match}
+                      start={g.start}
+                      goalMinutes={g.goalMinutes}
+                      deadline={g.deadline}
+                      onSetMinutes={m => saveFor(g, { focusGoalMinutes: m })}
+                      onSetDeadline={ms => saveFor(g, { focusDeadline: ms })}
+                      onClear={() => { saveFor(g, { focusGoalMinutes: undefined, focusDeadline: undefined, focusGoalStart: undefined }); setExpanded(null); }}
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
   );
 }
