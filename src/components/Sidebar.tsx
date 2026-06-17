@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '@/store/useStore';
 import { Avatar } from '@/components/Avatar';
 import { FocusMiniWidget } from '@/components/FocusMiniWidget';
+import { LessonMiniWidget } from '@/components/LessonMiniWidget';
 import { oberstufeTermsFor, oberstufeTermLabelFor } from '@/types';
 
 /** Logische Gruppen der Navigation. 'system' wird unten abgesetzt. */
@@ -268,6 +269,7 @@ export function Sidebar() {
             ))}
           </nav>
         )}
+        <LessonMiniWidget />
         <FocusMiniWidget />
         <div className="flex items-center justify-center gap-3 text-[11px] text-ink-400">
           <NavLink to="/impressum" className="hover:text-ink-700 transition">Impressum</NavLink>
