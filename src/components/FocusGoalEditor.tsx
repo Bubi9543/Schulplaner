@@ -53,8 +53,8 @@ export function FocusGoalEditor({
       </div>
 
       <div className="flex gap-2.5 mb-4">
-        <div className="flex-1 rounded-2xl p-3 bg-orange-50 text-center">
-          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-orange-700">Noch zu lernen</div>
+        <div className="flex-1 rounded-2xl p-3 bg-orange-500/10 text-center">
+          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-orange-600">Noch zu lernen</div>
           <div className="font-display font-extrabold text-xl text-orange-500 mt-0.5">{formatDuration(prog.remMs)}</div>
         </div>
         <div className="flex-1 rounded-2xl p-3 bg-ink-50 text-center">

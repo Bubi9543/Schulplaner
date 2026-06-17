@@ -259,7 +259,7 @@ export function SubjectDetailPage() {
             {lineData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={lineData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
+                  <CartesianGrid stroke="rgb(var(--ink-200) / 0.6)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis reversed={meta.goodIsLow} domain={[meta.min, meta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
                   <Tooltip {...chartTooltipProps} />
@@ -320,7 +320,7 @@ export function SubjectDetailPage() {
                 <li key={t.id}>
                   <button
                     onClick={() => setTaskDetail({ open: true, task: t })}
-                    className="w-full flex items-center gap-3 rounded-2xl p-3 bg-white/60 hover:bg-white text-left transition border border-white/60"
+                    className="w-full flex items-center gap-3 rounded-2xl p-3 bg-white/60 hover:bg-white text-left transition border border-white/65"
                   >
                     <div className="size-9 rounded-xl grid place-items-center bg-ink-100 text-ink-500 flex-shrink-0"><TaskKindIcon kind={t.kind} className="size-4" /></div>
                     <div className="flex-1 min-w-0">
@@ -540,7 +540,7 @@ function TimelineRow({
         <div className="relative mt-3.5 size-3 rounded-full border-2 border-white" style={{ background: dotColor, boxShadow: `0 0 0 3px ${dotColor}22` }} />
       </div>
       <div className="flex-1 min-w-0 pb-2.5">
-        <button onClick={onOpen} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/60 hover:bg-white border border-white/60 transition text-left">
+        <button onClick={onOpen} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/60 hover:bg-white border border-white/65 transition text-left">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm text-ink-800 truncate">{g.title || getKindLabel(g.kind, config)}</span>
@@ -906,7 +906,7 @@ function HypotheticalRowEditor({
     : 'Kleine Leistung · zählt ×1';
 
   return (
-    <div className="rounded-2xl bg-white/70 border border-white/60 p-4">
+    <div className="rounded-2xl bg-white/70 border border-white/65 p-4">
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-shrink-0"><GradeBadge value={row.value} system={subject.system} size="md" /></div>
         <div className="flex-1 min-w-0">
@@ -963,7 +963,7 @@ function HypotheticalRowEditor({
               className="flex-1 min-w-[2.25rem] h-11 rounded-xl font-display font-extrabold transition"
               style={sel
                 ? { color: '#fff', border: 'none', background: `linear-gradient(135deg, ${c}, ${c}cc)`, boxShadow: `0 7px 16px -7px ${c}`, transform: 'translateY(-1px)' }
-                : { color: 'rgb(var(--ink-600))', border: '1px solid rgba(15,18,32,.09)', background: 'rgba(255,255,255,.85)' }}
+                : { color: 'rgb(var(--ink-700))', border: '1px solid rgb(var(--ink-200))', background: 'rgb(var(--surface-rgb))' }}
             >
               {meta.formatValue(v).replace(' P', '')}
             </button>
