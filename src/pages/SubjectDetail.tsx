@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar,
-  Calculator, RotateCcw, Sparkles, Trash2, FileText, Lightbulb, Flame, Info, NotebookPen,
+  Calculator, RotateCcw, Sparkles, Trash2, FileText, Lightbulb, Flame, Info, NotebookPen, X,
 } from 'lucide-react';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -578,69 +578,105 @@ function SubjectFocusGoal({
   const updateGrade = useStore(s => s.updateGrade);
   const now = Date.now();
 
-  // Bindung: 'subject' (ganzes Fach) oder eine gradeId (einzelner Test).
-  const [binding, setBinding] = useState<string>('subject');
-  const grade = binding !== 'subject' ? subjectGrades.find(g => g.id === binding) : undefined;
-  const target: { focusGoalMinutes?: number; focusDeadline?: number; focusGoalStart?: number } = grade ?? subject;
+  const recHasGoal = (x: { focusGoalMinutes?: number; focusDeadline?: number }) =>
+    typeof x.focusGoalMinutes === 'number' && typeof x.focusDeadline === 'number';
 
+  // Nur AKTIVE Ziele dieses Fachs: ganzes Fach + Tests, die ein Ziel haben.
+  const activeBindings = useMemo(() => {
+    const list: { id: string; label: string }[] = [];
+    if (recHasGoal(subject)) list.push({ id: 'subject', label: 'Ganzes Fach' });
+    for (const g of subjectGrades) if (recHasGoal(g)) list.push({ id: g.id, label: g.title || getKindLabel(g.kind, config) });
+    return list;
+  }, [subject, subjectGrades, config]);
+
+  // Mögliche Ziele zum Anlegen: Fach (falls noch keins) + Tests ohne Ziel.
+  const createTargets = useMemo(() => {
+    const list: { id: string; label: string }[] = [];
+    if (!recHasGoal(subject)) list.push({ id: 'subject', label: 'Ganzes Fach' });
+    for (const g of subjectGrades) if (!recHasGoal(g)) list.push({ id: g.id, label: g.title || getKindLabel(g.kind, config) });
+    return list;
+  }, [subject, subjectGrades, config]);
+
+  const [binding, setBinding] = useState<string>('subject');
+  const [creating, setCreating] = useState(false);
+
+  // Effektiv ausgewähltes aktives Ziel (fällt auf das erste aktive zurück).
+  const effective = activeBindings.some(b => b.id === binding) ? binding : (activeBindings[0]?.id ?? 'subject');
+  const grade = effective !== 'subject' ? subjectGrades.find(g => g.id === effective) : undefined;
+  const target: { focusGoalMinutes?: number; focusDeadline?: number; focusGoalStart?: number } = grade ?? subject;
   const goalMin = target.focusGoalMinutes;
   const deadline = target.focusDeadline;
   const start = target.focusGoalStart ?? (grade ? now : subject.createdAt);
-  const hasGoal = typeof goalMin === 'number' && typeof deadline === 'number';
   const match = grade ? (f: FocusSession) => f.gradeId === grade.id : (f: FocusSession) => f.subjectId === subject.id;
 
-  const save = (patch: Partial<Subject> & Partial<Grade>) => {
+  const saveTo = (bindId: string, patch: Partial<Subject> & Partial<Grade>) => {
     const p = { ...patch, updatedAt: Date.now() };
-    if (grade) void updateGrade(grade.id, p); else void updateSubject(subject.id, p);
+    if (bindId !== 'subject') void updateGrade(bindId, p); else void updateSubject(subject.id, p);
   };
-  const initGoal = () => {
-    const defDeadline = grade?.date && grade.date > now ? grade.date : now + DEFAULT_GOAL_DAYS * DAY;
-    save({ focusGoalMinutes: DEFAULT_GOAL_MINUTES, focusDeadline: endOfDay(toDateInput(defDeadline)), focusGoalStart: now });
-  };
+  const save = (patch: Partial<Subject> & Partial<Grade>) => saveTo(effective, patch);
   const clearGoal = () => save({ focusGoalMinutes: undefined, focusDeadline: undefined, focusGoalStart: undefined });
+  const createGoal = (bindId: string) => {
+    const g = bindId !== 'subject' ? subjectGrades.find(x => x.id === bindId) : undefined;
+    const defDeadline = g?.date && g.date > now ? g.date : now + DEFAULT_GOAL_DAYS * DAY;
+    saveTo(bindId, { focusGoalMinutes: DEFAULT_GOAL_MINUTES, focusDeadline: endOfDay(toDateInput(defDeadline)), focusGoalStart: now });
+    setBinding(bindId);
+    setCreating(false);
+  };
 
   return (
     <>
-      <h3 className="h3 mb-3 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
-
-      {/* Bindungs-Auswahl: ganzes Fach oder ein bestimmter Test */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        <FocusBindingChip active={binding === 'subject'} marked={typeof subject.focusGoalMinutes === 'number'} onClick={() => setBinding('subject')}>
-          Ganzes Fach
-        </FocusBindingChip>
-        {subjectGrades.map(g => (
-          <FocusBindingChip key={g.id} active={binding === g.id} marked={typeof g.focusGoalMinutes === 'number'} onClick={() => setBinding(g.id)}>
-            {g.title || getKindLabel(g.kind, config)}
-          </FocusBindingChip>
-        ))}
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <h3 className="h3 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
+        {!creating && activeBindings.length > 0 && createTargets.length > 0 && (
+          <button onClick={() => setCreating(true)} className="btn-ghost text-xs"><Plus className="size-3.5" />Erstellen</button>
+        )}
       </div>
 
-      {hasGoal ? (
-        <FocusGoalEditor
-          sessions={focusSessions}
-          match={match}
-          start={start}
-          goalMinutes={goalMin!}
-          deadline={deadline!}
-          onSetMinutes={m => save({ focusGoalMinutes: m })}
-          onSetDeadline={ms => save({ focusDeadline: ms })}
-          onClear={clearGoal}
-        />
-      ) : (
-        <div className="rounded-2xl border-2 border-dashed border-ink-200 p-5 text-center">
-          <p className="subtle mb-4">
-            {grade
-              ? <>Setz dir ein Lernziel für diesen Test – deine Lernzeit dafür zählt automatisch mit.</>
-              : <>Setz dir ein Lernziel fürs ganze Fach – die Zeit aus deinen Fokus-Sessions zählt automatisch mit.</>}
-          </p>
-          <button onClick={initGoal} className="btn-primary w-full justify-center"><Flame className="size-4" />Lernziel setzen</button>
+      {creating ? (
+        <div className="rounded-2xl border-2 border-dashed border-ink-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Wofür ein Ziel?</span>
+            {activeBindings.length > 0 && <button onClick={() => setCreating(false)} className="text-ink-400 hover:text-ink-700 transition"><X className="size-4" /></button>}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {createTargets.map(t => (
+              <button key={t.id} onClick={() => createGoal(t.id)} className="inline-flex items-center gap-1.5 text-[11.5px] px-3 py-1.5 rounded-full border font-semibold bg-white/60 text-ink-700 border-white/70 hover:bg-white transition">
+                <Plus className="size-3" />{t.label}
+              </button>
+            ))}
+          </div>
         </div>
+      ) : activeBindings.length === 0 ? (
+        <div className="rounded-2xl border-2 border-dashed border-ink-200 p-5 text-center">
+          <p className="subtle mb-4">Noch kein Lernziel für dieses Fach – leg eins fürs ganze Fach oder einen einzelnen Test an.</p>
+          <button onClick={() => setCreating(true)} className="btn-primary w-full justify-center"><Flame className="size-4" />Lernziel erstellen</button>
+        </div>
+      ) : (
+        <>
+          {activeBindings.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {activeBindings.map(b => (
+                <FocusBindingChip key={b.id} active={effective === b.id} onClick={() => setBinding(b.id)}>{b.label}</FocusBindingChip>
+              ))}
+            </div>
+          )}
+          <FocusGoalEditor
+            sessions={focusSessions}
+            match={match}
+            start={start}
+            goalMinutes={goalMin!}
+            deadline={deadline!}
+            onSetMinutes={m => save({ focusGoalMinutes: m })}
+            onSetDeadline={ms => save({ focusDeadline: ms })}
+            onClear={clearGoal}
+          />
+        </>
       )}
     </>
   );
 }
 
-function FocusBindingChip({ active, marked, onClick, children }: { active: boolean; marked: boolean; onClick: () => void; children: React.ReactNode }) {
+function FocusBindingChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -648,7 +684,6 @@ function FocusBindingChip({ active, marked, onClick, children }: { active: boole
         active ? 'bg-ink-900 text-ink-50 border-ink-900' : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
       }`}
     >
-      {marked && <span className="size-1.5 rounded-full bg-orange-400" />}
       {children}
     </button>
   );
