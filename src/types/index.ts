@@ -98,6 +98,15 @@ export interface Subject {
    * (in Bayern zählen Leistungsfächer nicht doppelt).
    */
   leistungsfach?: boolean;
+  /**
+   * Fokus-Ziel: gewünschte Lernzeit (in Minuten) für dieses Fach bis zur Frist.
+   * Nur gesetzt, wenn der Nutzer auf der Fach-Seite ein Ziel angelegt hat.
+   */
+  focusGoalMinutes?: number;
+  /** Fokus-Ziel: Frist als ms-Timestamp (Ende des gewählten Tages). */
+  focusDeadline?: number;
+  /** Fokus-Ziel: ms-Timestamp, ab dem die gelernte Zeit aufs Ziel zählt (wann das Ziel gesetzt wurde). */
+  focusGoalStart?: number;
 }
 
 /**

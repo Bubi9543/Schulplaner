@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar, Calculator, RotateCcw, Sparkles, Trash2, FileText, Lightbulb } from 'lucide-react';
+import {
+  ArrowLeft, Plus, Pencil, MapPin, User, Target, TrendingUp, TrendingDown, Calendar,
+  Calculator, RotateCcw, Sparkles, Trash2, FileText, Lightbulb, Flame, Info, NotebookPen,
+} from 'lucide-react';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
@@ -15,12 +18,53 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { TaskDialog } from '@/components/dialogs/TaskDialog';
 import { SubjectDialog } from '@/components/dialogs/SubjectDialog';
 import { useStore } from '@/store/useStore';
-import { average, formatAverage, getSystemMeta, gradeTrend, gradeWeight, gradeColor, getKindLabel, subjectAverage, halfYearPoints, isLargeAssessmentKind, BUILTIN_KIND_LABEL, CATEGORY_LABEL } from '@/lib/grading';
+import {
+  formatAverage, getSystemMeta, gradeTrend, gradeColor, getKindLabel, subjectAverage,
+  halfYearPoints, isLargeAssessmentKind, writtenOralSplit, BUILTIN_KIND_LABEL, CATEGORY_LABEL,
+  type SystemMeta,
+} from '@/lib/grading';
+import { gradeWeight } from '@/lib/grading';
 import { formatDate, relativeDate } from '@/lib/utils';
+import { formatDuration } from '@/lib/focusTimer';
 import { chartTooltipProps } from '@/lib/chartTheme';
 import { DEFAULT_GRADING_CONFIG, oberstufeTermsFor } from '@/types';
-import type { Grade, AppTask, GradeKind, Subject } from '@/types';
+import type { Grade, AppTask, GradeKind, Subject, GradingSystem } from '@/types';
 import { BUILTIN_GRADE_KINDS } from '@/types';
+
+/* ─── kleine Helfer ───────────────────────────────────────────────────────── */
+
+/** Qualitatives Notenwort (nur Bayern/Österreich), sonst null. */
+function gradeWord(value: number, system: GradingSystem): string | null {
+  const v = Math.round(value);
+  if (system === 'bayern') return ['', 'sehr gut', 'gut', 'befriedigend', 'ausreichend', 'mangelhaft', 'ungenügend'][v] ?? null;
+  if (system === 'austria') return ['', 'sehr gut', 'gut', 'befriedigend', 'genügend', 'nicht genügend'][v] ?? null;
+  return null;
+}
+
+/**
+ * Schlechteste Note in der nächsten großen Leistung, mit der das Ziel noch erreicht wird.
+ * Probiert die Werte von „schlecht" nach „gut" und nimmt den ersten, der das Ziel erfüllt.
+ */
+function neededForTarget(
+  realGrades: Grade[], subject: Subject, config: typeof DEFAULT_GRADING_CONFIG, meta: SystemMeta, target: number,
+): { value: number | null; reachable: boolean } {
+  const isNeben = subject.category === 'nebenfach' && subject.system !== 'oberstufe';
+  const vKind: GradeKind = subject.system === 'oberstufe' ? 'klausur' : isNeben ? 'muendlich' : 'schulaufgabe';
+  // „schlecht → gut": goodIsLow ⇒ absteigend (6,5,…), sonst aufsteigend (0,1,…).
+  const order = [...meta.valueOptions].sort((a, b) => meta.goodIsLow ? b - a : a - b);
+  for (const v of order) {
+    const virtual: Grade = {
+      id: '__needed__', subjectId: subject.id, value: v, kind: vKind,
+      date: Date.now(), weight: 1, isPending: false, schoolYearId: subject.schoolYearId,
+    };
+    const e = subjectAverage([...realGrades, virtual], subject, config);
+    if (e === null) continue;
+    if (meta.goodIsLow ? e <= target + 1e-9 : e >= target - 1e-9) return { value: v, reachable: true };
+  }
+  return { value: null, reachable: false };
+}
+
+const DAY = 86400000;
 
 export function SubjectDetailPage() {
   const { subjectId } = useParams();
@@ -34,6 +78,7 @@ export function SubjectDetailPage() {
   const activeSchoolYearId = useStore(s => s.activeSchoolYearId);
   const tasks = useStore(s => s.tasks);
   const lessons = useStore(s => s.lessons);
+  const focusSessions = useStore(s => s.focusSessions);
   const settings = useStore(s => s.settings);
   const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const digits = settings?.averageDigits ?? 2;
@@ -46,23 +91,20 @@ export function SubjectDetailPage() {
   const [subjectDialog, setSubjectDialog] = useState(false);
 
   const subjectGrades = useMemo(() => subject ? grades.filter(g => g.subjectId === subject.id).sort((a, b) => a.date - b.date) : [], [grades, subject]);
-  const realGrades = subjectGrades.filter(g => !g.isPending);
-  const pendingGrades = subjectGrades.filter(g => g.isPending);
+  const realGrades = useMemo(() => subjectGrades.filter(g => !g.isPending), [subjectGrades]);
+  const pendingGrades = useMemo(() => subjectGrades.filter(g => g.isPending), [subjectGrades]);
   const avg = subject ? subjectAverage(grades, subject, config) : null;
   const trend = useMemo(() => gradeTrend(subjectGrades, () => subject, config, settings?.trendThreshold ?? 0.2), [subjectGrades, subject, config, settings?.trendThreshold]);
   const meta = subject ? getSystemMeta(subject.system, config) : null;
 
-  const byKind = useMemo(() => {
-    if (!subject) return [];
-    const m: Record<string, Grade[]> = {};
-    for (const g of realGrades) (m[g.kind] ??= []).push(g);
-    return Object.entries(m).map(([kind, gs]) => ({
-      kind,
-      count: gs.length,
-      avg: average(gs, () => subject, config),
-      weight: 1,
-    }));
-  }, [realGrades, subject, config]);
+  // Schriftlich / Mündlich-Aufteilung für den Segment-Balken.
+  const split = useMemo(() => subject ? writtenOralSplit(realGrades, subject, config) : null, [realGrades, subject, config]);
+
+  // Notenziel: nötige Mindestnote in der nächsten großen Leistung.
+  const needed = useMemo(() => {
+    if (!subject || !meta || subject.targetAverage === undefined) return null;
+    return neededForTarget(realGrades, subject, config, meta, subject.targetAverage);
+  }, [subject, meta, realGrades, config]);
 
   const lineData = useMemo(() => {
     if (!subject) return [];
@@ -75,10 +117,29 @@ export function SubjectDetailPage() {
     });
   }, [realGrades, subject]);
 
-  const lessonCount = subject ? lessons.filter(l => l.subjectId === subject.id).length : 0;
-  const openTasks = subject ? tasks.filter(t => t.subjectId === subject.id && !t.done) : [];
+  // Tests-Timeline: anstehend (Zukunft) → ausstehend (Wert fehlt) → vergangen (mit Note).
+  const timeline = useMemo(() => {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const t0 = todayStart.getTime();
+    const items = [
+      ...realGrades.map(g => ({ grade: g, status: 'vergangen' as const })),
+      ...pendingGrades.map(g => ({
+        grade: g,
+        status: (g.date && g.date >= t0 ? 'anstehend' : 'ausstehend') as 'anstehend' | 'ausstehend',
+      })),
+    ];
+    const rank = { anstehend: 0, ausstehend: 1, vergangen: 2 };
+    return items.sort((a, b) => {
+      if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+      // anstehend: bald zuerst (aufsteigend); sonst neueste zuerst (absteigend)
+      return a.status === 'anstehend' ? (a.grade.date ?? 0) - (b.grade.date ?? 0) : (b.grade.date ?? 0) - (a.grade.date ?? 0);
+    });
+  }, [realGrades, pendingGrades]);
 
-  // Oberstufe: Halbjahresleistung je Ausbildungsabschnitt (aus allen Halbjahren).
+  const lessonCount = subject ? lessons.filter(l => l.subjectId === subject.id).length : 0;
+  const openTasks = useMemo(() => subject ? tasks.filter(t => t.subjectId === subject.id && !t.done).sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity)) : [], [tasks, subject]);
+
+  // Oberstufe: Halbjahresleistung je Ausbildungsabschnitt.
   const isOberstufe = subject?.system === 'oberstufe';
   const oberstufeJahrgaenge = schoolYears.find(y => y.id === activeSchoolYearId)?.oberstufeJahrgaenge;
   const halfYears = useMemo(() => {
@@ -94,7 +155,7 @@ export function SubjectDetailPage() {
     });
   }, [subject, isOberstufe, allYearGrades, config, oberstufeJahrgaenge]);
 
-  if (!subject) {
+  if (!subject || !meta) {
     return (
       <PageShell title="Fach nicht gefunden">
         <Card>
@@ -104,8 +165,10 @@ export function SubjectDetailPage() {
     );
   }
 
+  const subtitleParts = `${subject.system === 'oberstufe' ? (subject.leistungsfach ? 'Leistungsfach' : 'Kurs') : CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`;
+
   return (
-    <PageShell title={subject.name} subtitle={`${subject.system === 'oberstufe' ? (subject.leistungsfach ? 'Leistungsfach' : 'Kurs') : CATEGORY_LABEL[subject.category]} · ${realGrades.length} Noten · ${lessonCount} Stunden/Woche`}
+    <PageShell title={subject.name} subtitle={subtitleParts}
       actions={
         <>
           <button onClick={() => nav('/noten')} className="btn-ghost"><ArrowLeft className="size-4" />Zurück</button>
@@ -144,6 +207,8 @@ export function SubjectDetailPage() {
             </div>
           </Card>
         )}
+
+        {/* ─── Hero ─── */}
         <Card delay={0} className="col-span-12 md:col-span-5 lg:col-span-4 !p-6 text-white border-0 relative overflow-hidden">
           <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${subject.color}, ${subject.color}cc)` }} />
           <div className="absolute -top-12 -right-12 size-48 rounded-full bg-white/10 blur-2xl animate-blob" />
@@ -151,7 +216,7 @@ export function SubjectDetailPage() {
             <div className="flex items-center gap-3">
               <div className="size-16 rounded-3xl bg-white/20 grid place-items-center"><SubjectIcon subject={subject} className="size-8" /></div>
               <div>
-                <div className="text-xs opacity-80 uppercase tracking-wider">{meta?.label}</div>
+                <div className="text-xs opacity-80 uppercase tracking-wider">{meta.label}</div>
                 <div className="font-display font-bold text-xl">{subject.name}</div>
               </div>
             </div>
@@ -172,18 +237,32 @@ export function SubjectDetailPage() {
           </div>
         </Card>
 
-        <Card delay={0.05} className="col-span-12 md:col-span-7 lg:col-span-8">
+        {/* ─── Schnitt-Kasten: Segment-Balken ─── */}
+        <Card delay={0.05} className="col-span-12 md:col-span-7 lg:col-span-5">
+          <SchnittBox subject={subject} avg={avg} split={split} meta={meta} digits={digits} />
+        </Card>
+
+        {/* ─── Notenziel ─── */}
+        <Card delay={0.1} className="col-span-12 lg:col-span-3 flex flex-col">
+          <NotenzielBox
+            subject={subject} avg={avg} meta={meta} needed={needed} digits={digits}
+            onEditTarget={() => setSubjectDialog(true)}
+          />
+        </Card>
+
+        {/* ─── Verlauf ─── */}
+        <Card delay={0.12} className="col-span-12 md:col-span-7">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="h3">Verlauf & Schnitt</h3>
+            <h3 className="h3">Verlauf &amp; Schnitt</h3>
             {subject.targetAverage && <span className="chip">Zielnote: {formatAverage(subject.targetAverage, subject.system, digits)}</span>}
           </div>
-          <div className="h-64">
+          <div className="h-56">
             {lineData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={lineData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid stroke="rgba(15,18,32,0.06)" vertical={false} />
                   <XAxis dataKey="date" stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis reversed={meta?.goodIsLow} domain={meta ? [meta.min, meta.max] : [1, 6]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
+                  <YAxis reversed={meta.goodIsLow} domain={[meta.min, meta.max]} stroke="#94a3b8" tickLine={false} axisLine={false} fontSize={11} width={28} />
                   <Tooltip {...chartTooltipProps} />
                   {subject.targetAverage && <ReferenceLine y={subject.targetAverage} stroke="var(--theme-secondary)" strokeDasharray="4 4" label={{ value: 'Ziel', fill: 'var(--theme-secondary)', fontSize: 10 }} />}
                   <Line type="monotone" dataKey="value" stroke={subject.color} strokeWidth={1.5} dot={{ r: 3 }} strokeOpacity={0.6} />
@@ -196,86 +275,68 @@ export function SubjectDetailPage() {
           </div>
         </Card>
 
-        <Card delay={0.1} className="col-span-12 md:col-span-6">
-          <h3 className="h3 mb-2">Nach Art</h3>
-          {byKind.length === 0 ? (
-            <div className="text-sm text-ink-500 py-4 text-center">Noch keine Noten</div>
-          ) : (
-            <ul className="space-y-2">
-              {byKind.map(b => (
-                <li key={b.kind} className="flex items-center gap-3 rounded-2xl p-2 bg-white/60">
-                  <div className="flex-1">
-                    <div className="font-semibold text-ink-800">{getKindLabel(b.kind, config)}</div>
-                    <div className="text-xs text-ink-500">{b.count} Noten · Gewicht {b.weight}</div>
-                  </div>
-                  <GradeBadge value={b.avg ?? 0} system={subject.system} size="sm" />
-                </li>
-              ))}
-            </ul>
-          )}
+        {/* ─── Fokus-Ziel mit Frist ─── */}
+        <Card delay={0.15} className="col-span-12 md:col-span-5">
+          <SubjectFocusGoal subject={subject} focusSessions={focusSessions} />
         </Card>
 
-        <Card delay={0.15} className="col-span-12 md:col-span-6">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="h3 flex items-center gap-2"><Calendar className="size-5" />Ausstehende & Aufgaben</h3>
+        {/* ─── Tests-Timeline ─── */}
+        <Card delay={0.18} className="col-span-12 md:col-span-7">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className="h3 flex items-center gap-2"><Calendar className="size-5 text-theme" />Alle Tests</h3>
+            <div className="flex gap-2 text-[10.5px] font-semibold">
+              <span className="inline-flex items-center gap-1 text-amber-600"><span className="size-2 rounded-full bg-amber-500" />ausstehend</span>
+              <span className="inline-flex items-center gap-1 text-theme"><span className="size-2 rounded-full bg-theme" />anstehend</span>
+              <span className="inline-flex items-center gap-1 text-ink-500"><span className="size-2 rounded-full bg-slate-400" />vergangen</span>
+            </div>
           </div>
-          {pendingGrades.length === 0 && openTasks.length === 0 ? (
-            <div className="text-sm text-ink-500 py-4 text-center">Nichts geplant.</div>
+          {timeline.length === 0 ? (
+            <Empty icon={Plus} title="Noch keine Tests" description="Trage deine erste Note oder eine geplante Prüfung ein." action={<button onClick={() => setGradeDialog({ open: true })} className="btn-primary"><Plus className="size-4" />Note hinzufügen</button>} />
           ) : (
-            <ul className="space-y-2">
-              {pendingGrades.map(g => (
-                <li key={g.id}>
-                  <button
-                    onClick={() => setGradeDetail({ open: true, grade: g })}
-                    className="w-full flex items-center gap-3 rounded-2xl p-2 bg-white/60 hover:bg-white text-left transition"
-                  >
-                    <GradeBadge value={0} system={subject.system} size="sm" pending />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-ink-800 truncate">{g.title ?? 'Ausstehende Note'}</div>
-                      <div className="text-xs text-ink-500">{getKindLabel(g.kind, config)} · {relativeDate(g.date)}</div>
-                    </div>
-                  </button>
-                </li>
-              ))}
-              {openTasks.map(t => (
-                <li key={t.id}>
-                  <button
-                    onClick={() => setTaskDetail({ open: true, task: t })}
-                    className="w-full flex items-center gap-3 rounded-2xl p-2 bg-white/60 hover:bg-white text-left transition"
-                  >
-                    <div className="size-9 rounded-xl grid place-items-center bg-ink-100 text-ink-500"><TaskKindIcon kind={t.kind} className="size-4" /></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-ink-800 truncate">{t.title}</div>
-                      <div className="text-xs text-ink-500">{t.dueDate ? relativeDate(t.dueDate) : 'Ohne Datum'}</div>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card delay={0.2} className="col-span-12">
-          <h3 className="h3 mb-3">Alle Noten</h3>
-          {realGrades.length === 0 ? (
-            <Empty icon={Plus} title="Noch keine Noten" description="Trage deine erste Note ein." action={<button onClick={() => setGradeDialog({ open: true })} className="btn-primary"><Plus className="size-4" />Note hinzufügen</button>} />
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {[...realGrades].reverse().map(g => (
-                <button key={g.id} onClick={() => setGradeDetail({ open: true, grade: g })}
-                  className="rounded-2xl bg-white/70 hover:bg-white p-3 text-left transition shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
-                    <GradeBadge value={g.value} system={subject.system} size="sm" tendency={g.tendency} />
-                    <span className="chip">{getKindLabel(g.kind, config)}</span>
-                  </div>
-                  <div className="font-semibold text-sm text-ink-800 truncate">{g.title ?? 'Note'}</div>
-                  <div className="text-xs text-ink-500">{formatDate(g.date)}</div>
-                </button>
+            <div className="flex flex-col">
+              {timeline.map((item, i) => (
+                <TimelineRow
+                  key={item.grade.id}
+                  item={item}
+                  subject={subject}
+                  meta={meta}
+                  config={config}
+                  needed={needed}
+                  last={i === timeline.length - 1}
+                  onOpen={() => setGradeDetail({ open: true, grade: item.grade })}
+                />
               ))}
             </div>
           )}
         </Card>
 
+        {/* ─── Ausstehende Hausaufgaben ─── */}
+        <Card delay={0.2} className="col-span-12 md:col-span-5">
+          <h3 className="h3 mb-4 flex items-center gap-2"><NotebookPen className="size-5 text-theme" />Ausstehende Hausaufgaben</h3>
+          {openTasks.length === 0 ? (
+            <div className="text-sm text-ink-500 py-6 text-center">Keine offenen Aufgaben – stark!</div>
+          ) : (
+            <ul className="space-y-2.5">
+              {openTasks.map(t => (
+                <li key={t.id}>
+                  <button
+                    onClick={() => setTaskDetail({ open: true, task: t })}
+                    className="w-full flex items-center gap-3 rounded-2xl p-3 bg-white/60 hover:bg-white text-left transition border border-white/60"
+                  >
+                    <div className="size-9 rounded-xl grid place-items-center bg-ink-100 text-ink-500 flex-shrink-0"><TaskKindIcon kind={t.kind} className="size-4" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-ink-800 truncate">{t.title}</div>
+                      <div className="text-xs text-ink-500">{t.dueDate ? formatDate(t.dueDate, { weekday: 'short', day: '2-digit', month: 'short' }) : 'Ohne Datum'}</div>
+                    </div>
+                    {t.dueDate && <div className="text-xs font-bold text-theme flex-shrink-0">{relativeDate(t.dueDate)}</div>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* ─── Was-wäre-wenn-Rechner ─── */}
         <Card delay={0.25} className="col-span-12">
           <WhatIfCalculator subject={subject} realGrades={realGrades} pendingGrades={pendingGrades} />
         </Card>
@@ -310,23 +371,337 @@ export function SubjectDetailPage() {
   );
 }
 
-/* ─── Was-wäre-wenn-Rechner ──────────────────────────────────────────── */
+/* ─── Schnitt-Kasten (Segment-Balken) ────────────────────────────────────── */
+
+function SchnittBox({
+  subject, avg, split, meta, digits,
+}: {
+  subject: Subject;
+  avg: number | null;
+  split: ReturnType<typeof writtenOralSplit> | null;
+  meta: SystemMeta;
+  digits: number;
+}) {
+  const hasWritten = split && split.written !== null;
+  const hasOral = split && split.oral !== null;
+  const isHaupt = subject.category === 'hauptfach' && subject.system !== 'oberstufe';
+  // Gewicht der schriftlichen Segmente (für Balkenbreite).
+  const writtenFlex = isHaupt ? 2 : 1;
+  const word = avg !== null ? gradeWord(avg, subject.system) : null;
+
+  // Formelzeile passend zur Kategorie (nur wenn beide Gruppen vorhanden).
+  let formula: string | null = null;
+  if (hasWritten && hasOral) {
+    if (isHaupt) formula = '(Schriftlich × 2 + Mündlich) ÷ 3';
+    else if (subject.category === 'nebenfach') formula = 'Gewichteter Mittelwert aller Noten';
+    else formula = '(Schriftlich + Mündlich) ÷ 2';
+  }
+
+  const SCHR = '#22c55e', MUEND = '#f59e0b';
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <h3 className="h3">So entsteht dein Schnitt</h3>
+        <span className="chip">{subject.system === 'oberstufe' ? 'Oberstufe' : CATEGORY_LABEL[subject.category]}</span>
+      </div>
+
+      <div className="flex items-baseline gap-2.5 mb-4">
+        <span className="font-display font-extrabold text-4xl leading-none" style={{ color: avg !== null ? gradeColor(avg, subject.system, undefined) : 'rgb(var(--ink-400))' }}>
+          {formatAverage(avg, subject.system, digits)}
+        </span>
+        <span className="text-sm text-ink-500">Endschnitt{word ? ` · ${word}` : ''}</span>
+      </div>
+
+      {!hasWritten && !hasOral ? (
+        <div className="text-sm text-ink-500 py-4 text-center">Noch keine Noten – sobald du welche einträgst, siehst du hier die Aufteilung.</div>
+      ) : (
+        <>
+          <div className="flex gap-1.5 h-10 mb-3">
+            {hasWritten && (
+              <div className="rounded-l-xl flex flex-col items-center justify-center text-white leading-tight" style={{ flex: writtenFlex, borderRadius: hasOral ? '12px 6px 6px 12px' : 12, background: `linear-gradient(135deg, ${SCHR}, #16a34a)` }}>
+                <span className="font-display font-extrabold text-base">{formatAverage(split!.written, subject.system, digits)}</span>
+                <span className="text-[9.5px] opacity-90 font-semibold">Schriftlich</span>
+              </div>
+            )}
+            {hasOral && (
+              <div className="flex flex-col items-center justify-center text-white leading-tight" style={{ flex: 1, borderRadius: hasWritten ? '6px 12px 12px 6px' : 12, background: `linear-gradient(135deg, #fbbf24, ${MUEND})` }}>
+                <span className="font-display font-extrabold text-base">{formatAverage(split!.oral, subject.system, digits)}</span>
+                <span className="text-[9.5px] opacity-90 font-semibold">Mündlich</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between items-center text-[11.5px] text-ink-500 gap-2 flex-wrap">
+            {hasWritten && <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: SCHR }} />Schriftlich · {split!.writtenCount} {split!.writtenCount === 1 ? 'Note' : 'Noten'}{isHaupt ? ' · ×2' : ''}</span>}
+            {hasOral && <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: MUEND }} />Mündlich · {split!.oralCount} {split!.oralCount === 1 ? 'Note' : 'Noten'}{isHaupt ? ' · ×1' : ''}</span>}
+          </div>
+
+          {formula && (
+            <div className="mt-3.5 pt-3.5 border-t border-dashed border-ink-200 text-xs text-ink-500 flex items-center gap-2">
+              <Info className="size-3.5 text-ink-400 flex-shrink-0" />
+              <span>{formula} = <strong className="text-ink-700">{formatAverage(avg, subject.system, digits)}</strong></span>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+/* ─── Notenziel ───────────────────────────────────────────────────────────── */
+
+function NotenzielBox({
+  subject, avg, meta, needed, digits, onEditTarget,
+}: {
+  subject: Subject;
+  avg: number | null;
+  meta: SystemMeta;
+  needed: { value: number | null; reachable: boolean } | null;
+  digits: number;
+  onEditTarget: () => void;
+}) {
+  const target = subject.targetAverage;
+
+  if (target === undefined) {
+    return (
+      <>
+        <h3 className="h3 mb-1 flex items-center gap-2"><Target className="size-4 text-theme" />Notenziel</h3>
+        <p className="subtle mb-4 flex-1">Setz dir ein Notenziel, dann zeig ich dir, welche Note du dafür brauchst.</p>
+        <button onClick={onEditTarget} className="btn-primary w-full justify-center"><Target className="size-4" />Ziel setzen</button>
+      </>
+    );
+  }
+
+  const msg = needed?.reachable
+    ? `Für dein Ziel ${formatAverage(target, subject.system, digits)} brauchst du in der ${subject.category === 'nebenfach' && subject.system !== 'oberstufe' ? 'nächsten Note' : 'nächsten großen Leistung'} mindestens ${meta.formatValue(needed.value!)}.`
+    : avg === null
+      ? `Trag erst ein paar Noten ein, dann rechne ich dir aus, was du fürs Ziel ${formatAverage(target, subject.system, digits)} brauchst.`
+      : `Dein Ziel ${formatAverage(target, subject.system, digits)} ist mit der nächsten Leistung allein nicht mehr drin — bleib dran!`;
+
+  // Fortschrittsbalken aktuell → Ziel (0–100 %).
+  const pct = (() => {
+    if (avg === null) return 0;
+    const span = meta.max - meta.min;
+    if (span === 0) return 100;
+    const norm = (v: number) => meta.goodIsLow ? 1 - (v - meta.min) / span : (v - meta.min) / span;
+    return Math.max(0, Math.min(100, Math.round((norm(avg) / Math.max(0.0001, norm(target))) * 100)));
+  })();
+
+  return (
+    <>
+      <h3 className="h3 mb-1 flex items-center gap-2"><Target className="size-4 text-theme" />Notenziel</h3>
+      <p className="subtle mb-4 flex-1 leading-relaxed">{msg}</p>
+      <div className="flex items-center gap-3.5">
+        <div className="flex-shrink-0 size-16 rounded-2xl grid place-items-center text-white font-display font-extrabold text-3xl"
+          style={{ background: needed?.value != null ? `linear-gradient(135deg, ${gradeColor(needed.value, subject.system, undefined)}, ${gradeColor(needed.value, subject.system, undefined)}cc)` : 'rgb(var(--ink-300))' }}>
+          {needed?.value != null ? meta.formatValue(needed.value).replace(' P', '') : '–'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between text-[11.5px] text-ink-500 mb-1.5"><span>Ziel</span><span className="font-bold text-ink-700">{formatAverage(target, subject.system, digits)}</span></div>
+          <div className="h-2 rounded-full bg-ink-100 overflow-hidden">
+            <div className="h-full rounded-full theme-gradient" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="text-[11px] text-ink-400 mt-1.5">aktuell {formatAverage(avg, subject.system, digits)}</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ─── Tests-Timeline-Zeile ──────────────────────────────────────────────── */
+
+function TimelineRow({
+  item, subject, meta, config, needed, last, onOpen,
+}: {
+  item: { grade: Grade; status: 'anstehend' | 'ausstehend' | 'vergangen' };
+  subject: Subject;
+  meta: SystemMeta;
+  config: typeof DEFAULT_GRADING_CONFIG;
+  needed: { value: number | null; reachable: boolean } | null;
+  last: boolean;
+  onOpen: () => void;
+}) {
+  const { grade: g, status } = item;
+  const statusMeta = {
+    ausstehend: { label: 'ausstehend', dot: '#f59e0b', text: 'text-amber-600', bg: 'bg-amber-50' },
+    anstehend: { label: 'anstehend', dot: 'var(--theme-primary)', text: 'text-theme', bg: 'bg-theme-soft/50' },
+    vergangen: { label: 'vergangen', dot: '#94a3b8', text: 'text-ink-500', bg: 'bg-ink-100' },
+  }[status];
+  const dotColor = status === 'vergangen' ? gradeColor(g.value, subject.system, config) : statusMeta.dot;
+  const showNeeded = status === 'anstehend' && isLargeAssessmentKind(g.kind, config) && subject.targetAverage !== undefined && needed?.value != null;
+
+  return (
+    <div className="flex gap-3.5 items-stretch">
+      <div className="w-16 flex-shrink-0 text-right text-[11px] text-ink-400 pt-3.5 leading-tight">
+        {g.date ? formatDate(g.date, { day: '2-digit', month: 'short' }) : '—'}
+      </div>
+      <div className="relative w-3.5 flex-shrink-0 flex justify-center">
+        {!last && <div className="absolute top-0 bottom-0 w-0.5 bg-ink-200/70" />}
+        <div className="relative mt-3.5 size-3 rounded-full border-2 border-white" style={{ background: dotColor, boxShadow: `0 0 0 3px ${dotColor}22` }} />
+      </div>
+      <div className="flex-1 min-w-0 pb-2.5">
+        <button onClick={onOpen} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white/60 hover:bg-white border border-white/60 transition text-left">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-ink-800 truncate">{g.title || getKindLabel(g.kind, config)}</span>
+              <span className={`text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${statusMeta.text} ${statusMeta.bg}`}>{statusMeta.label}</span>
+            </div>
+            <div className="text-xs text-ink-500 mt-0.5">{getKindLabel(g.kind, config)}{g.date ? ` · ${relativeDate(g.date)}` : ''}</div>
+          </div>
+          {status === 'vergangen' && <GradeBadge value={g.value} system={subject.system} size="md" tendency={g.tendency} />}
+          {status === 'ausstehend' && (
+            <div className="flex-shrink-0 size-10 rounded-xl grid place-items-center border-2 border-dashed border-ink-300 text-ink-300 font-display font-extrabold text-lg">?</div>
+          )}
+          {status === 'anstehend' && (
+            <div className="text-right flex-shrink-0">
+              {g.date && <div className="text-xs font-bold text-theme">{relativeDate(g.date)}</div>}
+              {showNeeded && <div className="mt-1 text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Ziel: {meta.formatValue(needed!.value!)} o. besser</div>}
+            </div>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Fokus-Ziel mit Frist ──────────────────────────────────────────────── */
+
+function toDateInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function endOfDay(dateStr: string): number {
+  const d = new Date(dateStr + 'T23:59:59');
+  return d.getTime();
+}
+
+function SubjectFocusGoal({ subject, focusSessions }: { subject: Subject; focusSessions: import('@/types').FocusSession[] }) {
+  const updateSubject = useStore(s => s.updateSubject);
+  const now = Date.now();
+
+  const goalMin = subject.focusGoalMinutes;
+  const deadline = subject.focusDeadline;
+  const start = subject.focusGoalStart ?? subject.createdAt;
+  const hasGoal = typeof goalMin === 'number' && typeof deadline === 'number';
+
+  const setGoal = (patch: Partial<Subject>) => void updateSubject(subject.id, { ...patch, updatedAt: Date.now() });
+
+  const initGoal = () => setGoal({ focusGoalMinutes: 300, focusDeadline: endOfDay(toDateInput(now + 7 * DAY)), focusGoalStart: now });
+  const clearGoal = () => setGoal({ focusGoalMinutes: undefined, focusDeadline: undefined, focusGoalStart: undefined });
+
+  // Gelernte Zeit für dieses Fach seit Zielstart.
+  const doneMs = useMemo(
+    () => focusSessions.filter(f => f.subjectId === subject.id && f.startedAt >= start).reduce((a, f) => a + f.focusedMs, 0),
+    [focusSessions, subject.id, start],
+  );
+
+  // Tagesbalken: letzte 7 Tage für dieses Fach.
+  const dayBars = useMemo(() => {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const base = todayStart.getTime();
+    const labels = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+    const bars = Array.from({ length: 7 }, (_, i) => ({ dayStart: base - (6 - i) * DAY, ms: 0 }));
+    for (const f of focusSessions) {
+      if (f.subjectId !== subject.id) continue;
+      const idx = Math.floor((f.startedAt - bars[0].dayStart) / DAY);
+      if (idx >= 0 && idx < 7) bars[idx].ms += f.focusedMs;
+    }
+    const maxMs = Math.max(1, ...bars.map(b => b.ms));
+    return bars.map(b => ({ label: labels[new Date(b.dayStart).getDay()], min: Math.round(b.ms / 60000), heightPct: (b.ms / maxMs) * 100 }));
+  }, [focusSessions, subject.id]);
+
+  if (!hasGoal) {
+    return (
+      <>
+        <h3 className="h3 mb-1 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
+        <p className="subtle mb-4">Setz dir ein Lernziel für {subject.name} mit einer Frist – die Zeit aus deinen Fokus-Sessions zählt automatisch mit.</p>
+        <button onClick={initGoal} className="btn-primary w-full justify-center"><Flame className="size-4" />Lernziel setzen</button>
+      </>
+    );
+  }
+
+  const goalMs = goalMin! * 60000;
+  const remMs = Math.max(0, goalMs - doneMs);
+  const overdue = deadline! < now;
+  const daysLeft = Math.max(0, Math.ceil((deadline! - now) / DAY));
+  const perDayMs = daysLeft > 0 ? remMs / daysLeft : remMs;
+  const barPct = Math.min(100, Math.round((doneMs / goalMs) * 100));
+  const stepGoal = (delta: number) => setGoal({ focusGoalMinutes: Math.max(30, Math.min(6000, goalMin! + delta)) });
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3.5 gap-2">
+        <h3 className="h3 flex items-center gap-2"><Flame className="size-5 text-orange-500" />Fokus-Ziel</h3>
+        <button onClick={clearGoal} className="text-[11px] font-semibold text-ink-400 hover:text-rose-500 transition inline-flex items-center gap-1" title="Ziel entfernen"><Trash2 className="size-3" />Entfernen</button>
+      </div>
+
+      <div className="flex gap-3 flex-wrap mb-4">
+        <div className="flex-1 min-w-[130px]">
+          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">Zielzeit</div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => stepGoal(-30)} className="size-8 rounded-xl border border-ink-200 bg-white text-ink-600 text-lg font-bold grid place-items-center hover:bg-ink-50 transition">−</button>
+            <div className="flex-1 text-center font-display font-extrabold text-lg text-ink-900">{formatDuration(goalMs)}</div>
+            <button onClick={() => stepGoal(30)} className="size-8 rounded-xl border border-ink-200 bg-white text-ink-600 text-lg font-bold grid place-items-center hover:bg-ink-50 transition">+</button>
+          </div>
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <div className="text-[11px] font-semibold text-ink-500 mb-1.5">Frist</div>
+          <input
+            type="date"
+            value={toDateInput(deadline!)}
+            min={toDateInput(now)}
+            onChange={e => { if (e.target.value) setGoal({ focusDeadline: endOfDay(e.target.value) }); }}
+            className="input text-sm w-full"
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-2.5 mb-4">
+        <div className="flex-1 rounded-2xl p-3 bg-orange-50 text-center">
+          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-orange-700">Noch zu lernen</div>
+          <div className="font-display font-extrabold text-xl text-orange-500 mt-0.5">{formatDuration(remMs)}</div>
+        </div>
+        <div className="flex-1 rounded-2xl p-3 bg-ink-50 text-center">
+          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-ink-500">Pro Tag</div>
+          <div className="font-display font-extrabold text-xl text-ink-900 mt-0.5">{overdue ? '–' : formatDuration(perDayMs)}</div>
+        </div>
+        <div className="flex-1 rounded-2xl p-3 bg-ink-50 text-center">
+          <div className="text-[10.5px] uppercase tracking-wide font-semibold text-ink-500">Verbleibend</div>
+          <div className="font-display font-extrabold text-xl text-ink-900 mt-0.5">{overdue ? 'abgelaufen' : `${daysLeft} ${daysLeft === 1 ? 'Tag' : 'Tage'}`}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-[11.5px] text-ink-500 mb-1.5">
+        <span>Bereits gelernt: <strong className="text-orange-500">{formatDuration(doneMs)}</strong></span>
+        <span>Ziel {formatDuration(goalMs)}</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-ink-100 overflow-hidden mb-4">
+        <div className="h-full rounded-full" style={{ width: `${barPct}%`, background: 'linear-gradient(90deg,#fb923c,#f97316)' }} />
+      </div>
+
+      <div className="flex items-end gap-2 h-16">
+        {dayBars.map((b, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+            <span className="text-[10px] text-ink-400">{b.min > 0 ? `${b.min}m` : ''}</span>
+            <div className="w-full rounded-t-lg" style={{ height: `${Math.max(4, b.heightPct * 0.4)}px`, background: b.min > 0 ? 'linear-gradient(180deg,#fb923c,#f97316)' : 'rgb(var(--ink-200))' }} />
+            <span className="text-[10.5px] font-semibold text-ink-500">{b.label}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/* ─── Was-wäre-wenn-Rechner ──────────────────────────────────────────────── */
 
 interface HypotheticalRow {
-  /** Stabile ID für React-Key. */
   id: string;
-  /**
-   * Quelle:
-   * - 'pending'  → eine bestehende ausstehende Note vorbelegt
-   * - 'custom'   → frei hinzugefügter hypothetischer Eintrag
-   */
   source: 'pending' | 'custom';
-  /** Bei source='pending': verweist auf die echte Pending-Grade-ID. */
   pendingGradeId?: string;
   label: string;
   kind: GradeKind;
   value: number;
-  /** Per-Note-Gewichts-Multiplikator (analog zu Grade.weightMultiplier). */
   weightMultiplier: number;
 }
 
@@ -359,13 +734,10 @@ function WhatIfCalculator({
     };
   }
 
-  // Default: alle Pending-Noten als Zeilen vorbelegt mit Default-Wert.
   const [rows, setRows] = useState<HypotheticalRow[]>(() => pendingGrades.map(makeRowFromPending));
-  // Wenn neue Pending-Grades dazukommen, ergänze sie. (Reload bei Wechsel)
   const [lastPendingIds, setLastPendingIds] = useState<string>(() => pendingGrades.map(g => g.id).sort().join(','));
   const currentPendingIds = pendingGrades.map(g => g.id).sort().join(',');
   if (currentPendingIds !== lastPendingIds) {
-    // Behalte bestehende User-Edits, ergänze neue Pendings.
     const knownIds = new Set(rows.filter(r => r.source === 'pending').map(r => r.pendingGradeId));
     const newOnes = pendingGrades.filter(g => !knownIds.has(g.id)).map(makeRowFromPending);
     setRows(prev => [
@@ -378,11 +750,9 @@ function WhatIfCalculator({
   function updateRow(id: string, patch: Partial<HypotheticalRow>) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
   }
-
   function removeRow(id: string) {
     setRows(prev => prev.filter(r => r.id !== id));
   }
-
   function addCustom() {
     setRows(prev => [
       ...prev,
@@ -396,14 +766,10 @@ function WhatIfCalculator({
       },
     ]);
   }
-
   function reset() {
     setRows(pendingGrades.map(makeRowFromPending));
   }
 
-  // ─── Berechnung ────────────────────────────────────────────────────────
-  // currentAvg = nur echte (nicht-pending) Noten
-  // hypotheticalAvg = echte + alle Zeilen als finale Noten
   const currentAvg = useMemo(() => subjectAverage(realGrades, subject, config), [realGrades, subject, config]);
 
   const hypotheticalAvg = useMemo(() => {
@@ -424,17 +790,8 @@ function WhatIfCalculator({
   const delta = currentAvg !== null && hypotheticalAvg !== null
     ? +(hypotheticalAvg - currentAvg).toFixed(3)
     : null;
-
-  // Richtungssensitiv: in goodIsLow-Systemen ist negativer delta gut (besser).
-  const deltaGood = delta === null ? null
-    : meta.goodIsLow ? delta < -0.005
-    : delta > 0.005;
-  const deltaBad = delta === null ? null
-    : meta.goodIsLow ? delta > 0.005
-    : delta < -0.005;
-
-  // Verfügbare Werte für den Stepper – richtig sortiert (gut zuerst beim Slider links).
-  // Bei goodIsLow lassen wir den Standard-Range, der User sieht z.B. 1..6.
+  const deltaGood = delta === null ? null : meta.goodIsLow ? delta < -0.005 : delta > 0.005;
+  const deltaBad = delta === null ? null : meta.goodIsLow ? delta > 0.005 : delta < -0.005;
 
   return (
     <>
@@ -510,51 +867,52 @@ function WhatIfCalculator({
           Keine hypothetischen Noten – füg eine hinzu oder leg eine ausstehende Note an.
         </div>
       ) : (
-        <ul className="space-y-2">
+        <div className="space-y-3">
           {rows.map(r => (
             <HypotheticalRowEditor
               key={r.id}
               row={r}
               subject={subject}
               meta={meta}
+              config={config}
               allKinds={allKinds}
               onChange={patch => updateRow(r.id, patch)}
               onRemove={() => removeRow(r.id)}
             />
           ))}
-        </ul>
+        </div>
       )}
 
       <div className="mt-4 text-[11px] text-ink-400 leading-relaxed flex gap-1.5">
         <Lightbulb className="size-3.5 shrink-0 mt-px" />
         <span>Das hier ändert nichts an deinen echten Noten – nur Simulation. Sobald die Note real ist,
-        einfach in der Notenliste auf die ausstehende Note klicken und den Wert eintragen.</span>
+        einfach in der Timeline auf die ausstehende Note klicken und den Wert eintragen.</span>
       </div>
     </>
   );
 }
 
 function HypotheticalRowEditor({
-  row, subject, meta, allKinds, onChange, onRemove,
+  row, subject, meta, config, allKinds, onChange, onRemove,
 }: {
   row: HypotheticalRow;
   subject: Subject;
-  meta: ReturnType<typeof getSystemMeta>;
+  meta: SystemMeta;
+  config: typeof DEFAULT_GRADING_CONFIG;
   allKinds: GradeKind[];
   onChange: (patch: Partial<HypotheticalRow>) => void;
   onRemove: () => void;
 }) {
-  const settings = useStore(s => s.settings);
-  const config = settings?.gradingConfig ?? DEFAULT_GRADING_CONFIG;
   const isLarge = isLargeAssessmentKind(row.kind, config);
   const showCategoryHint = subject.system === 'oberstufe' || subject.category !== 'nebenfach';
-  // Multiplikator-Optionen analog zum GradeDialog.
-  const weightOptions = [0.5, 1, 1.5, 2];
+  const weightLabel = isLarge
+    ? `Große Leistung · zählt ${subject.category === 'hauptfach' && subject.system !== 'oberstufe' ? '×2' : '1:1'}`
+    : 'Kleine Leistung · zählt ×1';
 
   return (
-    <li className="rounded-2xl bg-white/70 border border-white/60 p-3 sm:p-4">
-      <div className="flex items-start gap-3 flex-wrap sm:flex-nowrap">
-        {/* Label */}
+    <div className="rounded-2xl bg-white/70 border border-white/60 p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-shrink-0"><GradeBadge value={row.value} system={subject.system} size="md" /></div>
         <div className="flex-1 min-w-0">
           <input
             value={row.label}
@@ -562,70 +920,60 @@ function HypotheticalRowEditor({
             className="w-full bg-transparent font-semibold text-sm text-ink-800 outline-none border-b border-transparent focus:border-ink-300 transition"
             placeholder="Bezeichnung"
           />
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {allKinds.map(k => (
-              <button
-                key={k}
-                onClick={() => onChange({ kind: k })}
-                className={`text-[11px] px-2 py-0.5 rounded-full border transition ${
-                  row.kind === k
-                    ? 'bg-ink-900 text-ink-50 border-ink-900'
-                    : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
-                }`}
-              >
-                {getKindLabel(k, config)}
-              </button>
-            ))}
-          </div>
           {showCategoryHint && (
-            <div className="text-[11px] text-ink-500 mt-2 flex items-center gap-1.5">
+            <div className="text-[11.5px] text-ink-500 mt-0.5 flex items-center gap-1.5">
               {isLarge ? <FileText className="size-3.5 shrink-0" /> : <Pencil className="size-3.5 shrink-0" />}
-              <span>{isLarge
-                ? `Zählt als ${subject.category === 'hauptfach' && subject.system !== 'oberstufe' ? 'doppelte' : '1:1'} große Leistung.`
-                : 'Zählt als kleine Leistung (Rest-Block).'}</span>
+              <span>{weightLabel}</span>
             </div>
           )}
         </div>
-
-        {/* Wert */}
-        <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-          <GradeBadge value={row.value} system={subject.system} size="md" />
-          <select
-            value={row.value}
-            onChange={e => onChange({ value: parseFloat(e.target.value) })}
-            className="chip bg-white/80 cursor-pointer text-xs"
-          >
-            {meta.valueOptions.map(v => (
-              <option key={v} value={v}>{meta.formatValue(v)}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Gewicht */}
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <select
-            value={weightOptions.includes(row.weightMultiplier) ? row.weightMultiplier : 'custom'}
-            onChange={e => {
-              if (e.target.value === 'custom') return;
-              onChange({ weightMultiplier: parseFloat(e.target.value) });
-            }}
-            className="chip bg-white/80 cursor-pointer text-xs"
-            title="Per-Note-Gewicht"
-          >
-            {weightOptions.map(w => (
-              <option key={w} value={w}>×{w.toString().replace('.', ',')}</option>
-            ))}
-          </select>
-          <button
-            onClick={onRemove}
-            className="size-7 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
-            title={row.source === 'pending' ? 'Aus Rechner entfernen' : 'Löschen'}
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        </div>
+        <button
+          onClick={onRemove}
+          className="flex-shrink-0 size-8 grid place-items-center rounded-full text-ink-400 hover:text-rose-500 hover:bg-rose-50 transition"
+          title={row.source === 'pending' ? 'Aus Rechner entfernen' : 'Löschen'}
+        >
+          <Trash2 className="size-4" />
+        </button>
       </div>
-    </li>
+
+      {/* Notenart */}
+      <div className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">Notenart</div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {allKinds.map(k => (
+          <button
+            key={k}
+            onClick={() => onChange({ kind: k })}
+            className={`text-[11.5px] px-3 py-1 rounded-full border font-semibold transition ${
+              row.kind === k
+                ? 'bg-ink-900 text-ink-50 border-ink-900'
+                : 'bg-white/60 text-ink-600 border-white/70 hover:bg-white'
+            }`}
+          >
+            {getKindLabel(k, config)}
+          </button>
+        ))}
+      </div>
+
+      {/* Note */}
+      <div className="text-[10.5px] font-semibold text-ink-500 uppercase tracking-wide mb-1.5">Note</div>
+      <div className="flex flex-wrap gap-1.5">
+        {meta.valueOptions.map(v => {
+          const sel = row.value === v;
+          const c = gradeColor(v, subject.system, config);
+          return (
+            <button
+              key={v}
+              onClick={() => onChange({ value: v })}
+              className="flex-1 min-w-[2.25rem] h-11 rounded-xl font-display font-extrabold transition"
+              style={sel
+                ? { color: '#fff', border: 'none', background: `linear-gradient(135deg, ${c}, ${c}cc)`, boxShadow: `0 7px 16px -7px ${c}`, transform: 'translateY(-1px)' }
+                : { color: 'rgb(var(--ink-600))', border: '1px solid rgba(15,18,32,.09)', background: 'rgba(255,255,255,.85)' }}
+            >
+              {meta.formatValue(v).replace(' P', '')}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
-

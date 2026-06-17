@@ -194,6 +194,27 @@ function largeRestOneToOne(valid: Grade[], config?: GradingSystemConfig): number
   return (saMean + restMean) / 2;
 }
 
+/**
+ * Zerlegt die Noten eines Fachs in „schriftlich" (große LN: Schulaufgaben/Klausuren)
+ * und „mündlich" (Rest) und liefert je den gewichteten Mittelwert (oder null).
+ * Treibt den Segment-Balken auf der Fach-Seite. `null` = keine Note in der Gruppe.
+ */
+export function writtenOralSplit(
+  grades: Grade[],
+  subject: Subject,
+  config?: GradingSystemConfig,
+): { written: number | null; oral: number | null; writtenCount: number; oralCount: number } {
+  const valid = grades.filter(g => g.subjectId === subject.id && !g.isPending && typeof g.value === 'number');
+  const sa   = valid.filter(g => isLargeAssessmentKind(g.kind, config));
+  const rest = valid.filter(g => !isLargeAssessmentKind(g.kind, config));
+  return {
+    written: weightedMean(sa),
+    oral: weightedMean(rest),
+    writtenCount: sa.length,
+    oralCount: rest.length,
+  };
+}
+
 /** Berechnet den Schnitt eines Fachs nach Bayern-Logik (Kategorie + per-Note-Multiplikator). */
 export function subjectAverage(grades: Grade[], subject: Subject, config?: GradingSystemConfig): number | null {
   const valid = grades.filter(g => g.subjectId === subject.id && !g.isPending && typeof g.value === 'number');
