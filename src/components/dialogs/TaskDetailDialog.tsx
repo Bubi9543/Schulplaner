@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Check, Circle, Calendar, Flag, NotebookText, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, Check, Circle, Calendar, Flag, NotebookText, AlertTriangle, CheckCircle2, Users } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { usePhotos, usePhotoUrl } from '@/lib/photos';
 import { getTaskKindLabel, getTaskKindIcon } from '@/lib/grading';
@@ -127,6 +127,11 @@ export function TaskDetailDialog({ open, task: taskProp, onClose, onEdit }: Prop
                 {task.createdAt && (
                   <MetaTile icon={NotebookText} label="Angelegt">
                     {new Date(task.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </MetaTile>
+                )}
+                {task.sharedFrom && task.sharedFrom.length > 0 && (
+                  <MetaTile icon={Users} label="Geteilt von">
+                    {task.sharedFrom.join(', ')}
                   </MetaTile>
                 )}
               </div>
