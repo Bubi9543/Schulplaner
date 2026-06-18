@@ -301,7 +301,7 @@ const ROUTE_HUE_MAP: Record<string, number> = {
   '/fokus': 322,       // Pink/Magenta
   '/karteikarten': 48, // Gelb/Bernstein
   '/rechner': 178,     // Türkis
-  '/social': 288,      // Lila
+  '/socials': 288,     // Lila
   '/abitur': 128,      // Smaragd
   '/anstupsen': 332,   // Rosa
   '/einstellungen': 92, // Limette

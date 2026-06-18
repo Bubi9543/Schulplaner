@@ -24,7 +24,7 @@ const NAV: NavItem[] = [
   { to: '/stundenplan', icon: CalendarDays, label: 'Stundenplan', short: 'Plan', group: 'schule' },
   { to: '/kalender', icon: CalendarRange, label: 'Kalender', short: 'Kalender', group: 'schule' },
   // Gruppe „Mehr" – Werkzeuge & Soziales
-  { to: '/social', icon: Sparkles, label: 'Social', short: 'Social', group: 'mehr' },
+  { to: '/socials', icon: Sparkles, label: 'Socials', short: 'Socials', group: 'mehr' },
   { to: '/fokus', icon: Timer, label: 'Fokus', short: 'Fokus', group: 'mehr' },
   { to: '/karteikarten', icon: Layers, label: 'Karteikarten', short: 'Karten', group: 'mehr' },
   { to: '/rechner', icon: Calculator, label: 'Rechner', short: 'Rechner', group: 'mehr' },

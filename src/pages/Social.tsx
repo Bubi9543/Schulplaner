@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Sparkles, Camera, MoreHorizontal, Smile, MessageCircle, Send, X,
+  Sparkles, Camera, MoreHorizontal, Smile, SmilePlus, MessageCircle, Send, X,
   Image as ImageIcon, Clock, Copy, Check, Inbox, Loader2, Users, Trash2, RefreshCw,
   ChevronLeft, Globe2,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import { StudyLeaderboard } from '@/components/StudyLeaderboard';
 import { FriendsList } from '@/components/FriendsList';
 import { SubjectIcon } from '@/components/SubjectIcon';
 import { AccountAuth } from '@/components/AccountAuth';
+import { EmojiPicker } from '@/components/EmojiPicker';
 import { useStore } from '@/store/useStore';
 import { startOfISOWeek, computeStreak } from '@/lib/studyShare';
 import { flashcardActivity } from '@/lib/flashcards';
@@ -70,6 +71,7 @@ function ReactionRow({ post, onToggle, onComment }: {
   onComment: () => void;
 }) {
   const [picker, setPicker] = useState(false);
+  const [fullPicker, setFullPicker] = useState(false);
   const entries = Object.entries(post.reactions);
   const total = entries.reduce((s, [, n]) => s + n, 0);
   return (
@@ -89,7 +91,7 @@ function ReactionRow({ post, onToggle, onComment }: {
         })}
         <button onClick={() => setPicker(v => !v)}
           className="inline-flex items-center justify-center rounded-full size-7 text-ink-500 hover:text-ink-800 transition"
-          style={{ background: 'rgb(var(--ink-100))' }} title="Reagieren">
+          style={{ background: 'rgb(var(--ink-100))' }} title="Schnell reagieren">
           <Smile className="size-4" />
         </button>
         <button onClick={onComment}
@@ -97,7 +99,14 @@ function ReactionRow({ post, onToggle, onComment }: {
           style={{ background: 'rgb(var(--ink-100))' }}>
           <MessageCircle className="size-4" /> Kommentieren
         </button>
-        {total > 0 && <span className="ml-auto text-xs text-ink-400">{total} {total === 1 ? 'Reaktion' : 'Reaktionen'}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {total > 0 && <span className="text-xs text-ink-400">{total} {total === 1 ? 'Reaktion' : 'Reaktionen'}</span>}
+          <button onClick={() => setFullPicker(v => !v)}
+            className="inline-flex items-center justify-center rounded-full size-7 text-white transition active:scale-90 flex-shrink-0"
+            style={{ background: ACCENT }} title="Alle Emojis">
+            <SmilePlus className="size-4" />
+          </button>
+        </div>
       </div>
       {picker && (
         <div className="absolute z-20 bottom-full mb-2 left-0 glass-strong rounded-2xl shadow-soft p-1.5 flex gap-0.5">
@@ -108,6 +117,14 @@ function ReactionRow({ post, onToggle, onComment }: {
             </button>
           ))}
         </div>
+      )}
+      {fullPicker && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setFullPicker(false)} />
+          <div className="absolute z-20 bottom-full mb-2 right-0">
+            <EmojiPicker onPick={e => { onToggle(post.id, e); setFullPicker(false); }} />
+          </div>
+        </>
       )}
     </div>
   );
@@ -620,7 +637,7 @@ export function SocialPage() {
 
   return (
     <PageShell
-      title={<span className="flex items-center gap-2.5">Social <Sparkles className="size-6 text-theme" /></span>}
+      title={<span className="flex items-center gap-2.5">Socials <Sparkles className="size-6 text-theme" /></span>}
       subtitle="Zeig, wie du lernst – und feuert euch gegenseitig an."
       actions={authUser ? (
         <div className="flex items-center gap-2">

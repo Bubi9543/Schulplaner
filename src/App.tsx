@@ -94,7 +94,9 @@ export default function App() {
             <Route path="/fokus" element={<FokusPage />} />
             <Route path="/karteikarten" element={<KarteikartenPage />} />
             <Route path="/karteikarten/:deckId" element={<DeckDetailPage />} />
-            <Route path="/social" element={<SocialPage />} />
+            <Route path="/socials" element={<SocialPage />} />
+            {/* Alter Link /social leitet auf die umbenannte Seite weiter. */}
+            <Route path="/social" element={<Navigate to="/socials" replace />} />
             {/* Freunde-Verwaltung lebt jetzt in den Einstellungen. */}
             <Route path="/freunde" element={<Navigate to="/einstellungen?section=friends" replace />} />
             <Route path="/rechner" element={<RechnerPage />} />
