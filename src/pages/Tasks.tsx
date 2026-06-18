@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Plus, Filter, SlidersHorizontal, CheckCircle2, Circle, AlertTriangle, Inbox,
-  RefreshCw, Users, Trash2, Pencil, Share2, Flame, ArrowRight, CalendarDays, Clock,
+  RefreshCw, Trash2, Pencil, Share2, Flame, ArrowRight, CalendarDays, Clock,
   Flag, AlarmClock, List, LayoutGrid, X, Check, ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -12,7 +12,7 @@ import { TaskDetailDialog } from '@/components/dialogs/TaskDetailDialog';
 import { useStore } from '@/store/useStore';
 import { relativeDate, formatShortDate, daysUntil } from '@/lib/utils';
 import { getTaskKindLabel } from '@/lib/grading';
-import { tasksLikelySame, sameHomework } from '@/lib/homeworkMatch';
+import { sameHomework } from '@/lib/homeworkMatch';
 import { TaskKindIcon } from '@/components/TaskKindIcon';
 import type { AppTask, FriendTask, TaskKind, Subject, GradingSystemConfig } from '@/types';
 import { BUILTIN_TASK_KINDS } from '@/types';
@@ -29,7 +29,6 @@ interface Bucket {
   tone: 'danger' | 'warn' | 'default' | 'muted';
   icon: LucideIcon;
   items: AppTask[];
-  friendItems: FriendTask[];
 }
 
 function startOfDay(ts: number): number {
@@ -109,8 +108,8 @@ export function TasksPage() {
     return true;
   }), [tasks, filterKind, subjectSel, showDone]);
 
-  // Freundes-Hausaufgaben sind im Store bereits vorgefiltert – hier nur UI-Filter.
-  const filteredFriendTasks = useMemo(() => {
+  // Eingehende Hausaufgaben (Inbox) – im Store vorgefiltert, hier nur UI-Filter + abgelehnte raus.
+  const inboxTasks = useMemo(() => {
     const selNames = [...subjectSel].map(id => subjById[id]?.name.toLowerCase()).filter(Boolean) as string[];
     return friendTasks.filter(ft => {
       if (dismissedFriendTaskIds.has(ft.id)) return false;
@@ -120,13 +119,13 @@ export function TasksPage() {
     });
   }, [friendTasks, filterKind, subjectSel, subjById, dismissedFriendTaskIds]);
 
-  const buckets = useMemo<Bucket[]>(() => computeBuckets(filtered, filteredFriendTasks), [filtered, filteredFriendTasks]);
+  const buckets = useMemo<Bucket[]>(() => computeBuckets(filtered), [filtered]);
 
   const openCount = tasks.filter(t => !t.done).length;
   const doneCount = tasks.filter(t => t.done).length;
-  const friendCount = filteredFriendTasks.length;
 
   const onSelect = (t: AppTask) => setDetail({ open: true, task: t });
+  const showInbox = friends.length > 0;
 
   return (
     <PageShell
@@ -135,17 +134,6 @@ export function TasksPage() {
       actions={
         <div className="flex items-center gap-2">
           <ViewToggle layout={layout} setLayout={chooseLayout} />
-          {friends.length > 0 && (
-            <button onClick={() => refreshFriendTasks()} title="Hausaufgaben von Mitschülern aktualisieren"
-              className="relative size-10 grid place-items-center rounded-2xl glass text-ink-600 hover:bg-white transition">
-              <RefreshCw className={`size-[18px] ${friendTasksLoading ? 'animate-spin' : ''}`} />
-              {friendCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full theme-gradient text-white text-[10px] font-bold shadow">
-                  {friendCount > 9 ? '9+' : friendCount}
-                </span>
-              )}
-            </button>
-          )}
           <button className="btn-primary" onClick={() => setEditor({ open: true })}>
             <Plus className="size-4" strokeWidth={2.5} />Neu
           </button>
@@ -160,25 +148,41 @@ export function TasksPage() {
         activeFilters={activeFilters} resetFilter={resetFilter}
       />
 
-      {buckets.length === 0 ? (
-        <EmptyState hasTasks={tasks.length > 0} onNew={() => setEditor({ open: true })} />
-      ) : layout === 'liste' ? (
-        <div className="flex flex-col gap-4">
-          {buckets.map((b, idx) => (
-            <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-              <ListBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} onAccept={acceptFriendTask} />
-            </motion.div>
-          ))}
+      <div className="flex flex-col xl:flex-row gap-5 items-start">
+        {/* ── Eigene Aufgaben ── */}
+        <div className="flex-1 min-w-0 w-full">
+          {buckets.length === 0 ? (
+            <EmptyState hasTasks={tasks.length > 0} onNew={() => setEditor({ open: true })} />
+          ) : layout === 'liste' ? (
+            <div className="flex flex-col gap-4">
+              {buckets.map((b, idx) => (
+                <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
+                  <ListBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} />
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              {buckets.map((b, idx) => (
+                <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
+                  <TileBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} />
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {buckets.map((b, idx) => (
-            <motion.div key={b.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
-              <TileBucket bucket={b} subjById={subjById} config={config} onSelect={onSelect} onToggle={toggleTask} onDelete={deleteTask} onDismiss={dismissFriendTask} onAccept={acceptFriendTask} />
-            </motion.div>
-          ))}
-        </div>
-      )}
+
+        {/* ── Inbox: geteilte Hausaufgaben von Mitschülern ── */}
+        {showInbox && (
+          <aside className="order-first xl:order-none w-full xl:w-[340px] flex-shrink-0 xl:sticky xl:top-4">
+            <InboxPanel
+              items={inboxTasks} ownTasks={tasks} subjById={subjById}
+              loading={friendTasksLoading} onRefresh={() => refreshFriendTasks()}
+              onAccept={acceptFriendTask} onReject={dismissFriendTask}
+            />
+          </aside>
+        )}
+      </div>
 
       <TaskDetailDialog
         open={detail.open}
@@ -191,48 +195,34 @@ export function TasksPage() {
   );
 }
 
-// ── Bucket-Berechnung (spiegelt die alte Logik, ergänzt Meta + Reihenfolge). ──
-function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
+// ── Bucket-Berechnung (nur eigene Aufgaben). ─────────────────────────────────
+function computeBuckets(own: AppTask[]): Bucket[] {
   const DAY = 86400000;
   const today = startOfDay(Date.now());
   const tomorrow = today + DAY, dayAfter = today + 2 * DAY;
   // „Diese Woche" = alle Tage bis einschließlich kommenden Sonntag (Kalenderwoche, Mo–So).
-  // getDay(): 0 = Sonntag … 6 = Samstag. Bis Sonntag sind es (7 - getDay()) % 7 Tage.
   const weekday = new Date(today).getDay();
   const sunThisWeek = startOfDay(today + ((7 - weekday) % 7) * DAY); // Beginn des kommenden Sonntags
   const sunNextWeek = startOfDay(sunThisWeek + 7 * DAY);             // Sonntag der nächsten Woche
-  const mk = () => ({ items: [] as AppTask[], friendItems: [] as FriendTask[] });
-  const B: Record<BucketKey, { items: AppTask[]; friendItems: FriendTask[] }> = {
-    overdue: mk(), heute: mk(), morgen: mk(), thisWeek: mk(), nextWeek: mk(), later: mk(), noDate: mk(),
+  const B: Record<BucketKey, AppTask[]> = {
+    overdue: [], heute: [], morgen: [], thisWeek: [], nextWeek: [], later: [], noDate: [],
   };
 
   for (const t of own) {
-    if (t.dueDate == null) { B.noDate.items.push(t); continue; }
+    if (t.dueDate == null) { B.noDate.push(t); continue; }
     const due = startOfDay(t.dueDate);
-    if (!t.done && due < today - 86400000) { B.overdue.items.push(t); continue; }
-    if (due === today) B.heute.items.push(t);
-    else if (due === tomorrow) B.morgen.items.push(t);
-    else if (due >= dayAfter && due <= sunThisWeek) B.thisWeek.items.push(t);
-    else if (due > sunThisWeek && due <= sunNextWeek) B.nextWeek.items.push(t);
-    else if (due > sunNextWeek) B.later.items.push(t);
-    else B.heute.items.push(t);
-  }
-  for (const ft of friend) {
-    if (ft.dueDate == null) { B.noDate.friendItems.push(ft); continue; }
-    const due = startOfDay(ft.dueDate);
-    if (due < today - 86400000) { B.overdue.friendItems.push(ft); continue; }
-    if (due === today) B.heute.friendItems.push(ft);
-    else if (due === tomorrow) B.morgen.friendItems.push(ft);
-    else if (due >= dayAfter && due <= sunThisWeek) B.thisWeek.friendItems.push(ft);
-    else if (due > sunThisWeek && due <= sunNextWeek) B.nextWeek.friendItems.push(ft);
-    else if (due > sunNextWeek) B.later.friendItems.push(ft);
-    else B.heute.friendItems.push(ft);
+    if (!t.done && due < today - 86400000) { B.overdue.push(t); continue; }
+    if (due === today) B.heute.push(t);
+    else if (due === tomorrow) B.morgen.push(t);
+    else if (due >= dayAfter && due <= sunThisWeek) B.thisWeek.push(t);
+    else if (due > sunThisWeek && due <= sunNextWeek) B.nextWeek.push(t);
+    else if (due > sunNextWeek) B.later.push(t);
+    else B.heute.push(t);
   }
   const sortOwn = (a: AppTask, b: AppTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity) || b.priority - a.priority;
-  const sortFriend = (a: FriendTask, b: FriendTask) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity);
-  Object.values(B).forEach(b => { b.items.sort(sortOwn); b.friendItems.sort(sortFriend); });
+  Object.values(B).forEach(arr => arr.sort(sortOwn));
 
-  const meta: Array<Omit<Bucket, 'items' | 'friendItems'>> = [
+  const meta: Array<Omit<Bucket, 'items'>> = [
     { key: 'overdue',  label: 'Überfällig',    hint: 'Mehr als 1 Tag nach Fälligkeit', tone: 'danger',  icon: AlertTriangle },
     { key: 'heute',    label: 'Heute',         hint: 'Fällig heute',                   tone: 'warn',    icon: Flame },
     { key: 'morgen',   label: 'Morgen',                                                tone: 'default', icon: ArrowRight },
@@ -242,47 +232,148 @@ function computeBuckets(own: AppTask[], friend: FriendTask[]): Bucket[] {
     { key: 'noDate',   label: 'Ohne Datum',                                            tone: 'muted',   icon: Inbox },
   ];
   return meta
-    .map(m => ({ ...m, ...B[m.key] }))
-    .filter(b => b.items.length || b.friendItems.length);
+    .map(m => ({ ...m, items: B[m.key] }))
+    .filter(b => b.items.length);
 }
 
-// Pro Bucket: Map<eigeneTaskId → FriendTask[]> (gleiches Fach + gleicher Tag
-// + inhaltlich passend) + zu Gruppen gebündelte Fremdaufgaben ohne eigenes
-// Pendant. Jede Gruppe (cluster) ist EINE Hausaufgabe, die mehrere Mitschüler
-// geteilt haben – der ausführlichste Titel steht vorne (Repräsentant).
-function bucketFriendGroups(bucket: Bucket, subjById: SubjMap) {
-  const byOwn = new Map<string, FriendTask[]>();
-  const matchedToOwn = new Set<string>();
-  for (const ft of bucket.friendItems) {
-    if (!ft.subjectName || !ft.dueDate) continue;
-    for (const t of bucket.items) {
-      const subj = t.subjectId ? subjById[t.subjectId] : null;
-      if (!subj || !t.dueDate) continue;
-      if (
-        subj.name.toLowerCase() === ft.subjectName.toLowerCase() &&
-        startOfDay(t.dueDate) === startOfDay(ft.dueDate) &&
-        tasksLikelySame(t.title, ft.title)
-      ) {
-        const arr = byOwn.get(t.id) ?? []; arr.push(ft); byOwn.set(t.id, arr);
-        matchedToOwn.add(ft.id);
-      }
-    }
-  }
-  // Übrige Fremdaufgaben untereinander zu Gruppen bündeln.
-  const rest = bucket.friendItems.filter(ft => !matchedToOwn.has(ft.id));
+// ════════════════════════════ INBOX ═════════════════════════════════════════
+
+// Eingehende Hausaufgaben zu Gruppen bündeln: dieselbe Hausaufgabe von mehreren
+// Mitschülern ist EIN Eintrag. Der ausführlichste Titel steht vorne (Repräsentant).
+function clusterFriendTasks(list: FriendTask[]): FriendTask[][] {
   const clusters: FriendTask[][] = [];
-  for (const ft of rest) {
+  for (const ft of list) {
     const hit = clusters.find(c => sameHomework(c[0], ft));
     if (hit) hit.push(ft);
     else clusters.push([ft]);
   }
-  for (const c of clusters) c.sort((a, b) => b.title.length - a.title.length);
-  return { byOwn, clusters };
+  for (const c of clusters) c.sort((a, b) => b.title.length - a.title.length || (a.dueDate ?? 0) - (b.dueDate ?? 0));
+  return clusters.sort((a, b) => (a[0].dueDate ?? Infinity) - (b[0].dueDate ?? Infinity));
 }
 
-function bucketTotal(bucket: Bucket, byOwn: Map<string, FriendTask[]>, clusters: FriendTask[][]) {
-  const friendCount = clusters.reduce((s, c) => s + c.length, 0);
-  return bucket.items.length + friendCount + [...byOwn.values()].reduce((s, a) => s + a.length, 0);
+// Passt eine eingehende Hausaufgabe zu einer offenen eigenen Aufgabe?
+function findOwnMatch(rep: FriendTask, ownTasks: AppTask[], subjById: SubjMap): AppTask | undefined {
+  return ownTasks.find(t =>
+    !t.done && sameHomework(rep, {
+      title: t.title,
+      subjectName: t.subjectId ? subjById[t.subjectId]?.name : undefined,
+      dueDate: t.dueDate,
+    }),
+  );
+}
+
+function InboxPanel({ items, ownTasks, subjById, loading, onRefresh, onAccept, onReject }: {
+  items: FriendTask[];
+  ownTasks: AppTask[];
+  subjById: SubjMap;
+  loading: boolean;
+  onRefresh: () => void;
+  onAccept: (ft: FriendTask) => void;
+  onReject: (id: string | string[]) => void;
+}) {
+  const clusters = useMemo(() => clusterFriendTasks(items), [items]);
+
+  return (
+    <div className="card !p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Inbox className="size-[18px] text-theme" strokeWidth={2.3} />
+        <h3 className="font-display font-bold text-[17px] text-ink-900">Inbox</h3>
+        {clusters.length > 0 && (
+          <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-[12px] font-bold border bg-theme-soft/70 text-theme-deep border-theme/20">{clusters.length}</span>
+        )}
+        <button onClick={onRefresh} title="Aktualisieren"
+          className="ml-auto size-8 grid place-items-center rounded-full hover:bg-white/80 text-ink-400 hover:text-theme-deep transition">
+          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {clusters.length === 0 ? (
+        <div className="grid place-items-center text-center py-8">
+          <div className="size-11 rounded-2xl bg-white/70 border border-white/70 grid place-items-center shadow-soft mb-2"><Check className="size-5 text-ink-400" /></div>
+          <div className="text-[13.5px] font-semibold text-ink-700">Alles erledigt</div>
+          <p className="text-[12px] text-ink-400 mt-0.5 max-w-[200px]">Keine neuen Hausaufgaben von Mitschülern.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {clusters.map(cluster => (
+            <InboxCard
+              key={cluster[0].id} cluster={cluster}
+              ownMatch={findOwnMatch(cluster[0], ownTasks, subjById)}
+              onAccept={onAccept} onReject={onReject}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InboxCard({ cluster, ownMatch, onAccept, onReject }: {
+  cluster: FriendTask[];
+  ownMatch?: AppTask;
+  onAccept: (ft: FriendTask) => void;
+  onReject: (id: string | string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rep = cluster[0];
+  const names = [...new Set(cluster.map(c => c.ownerName))];
+  const multi = cluster.length > 1;
+
+  return (
+    <div className="rounded-2xl border border-theme/25 bg-theme-soft/20 p-3">
+      <div className="flex items-start gap-2.5">
+        <div className="flex -space-x-2 flex-shrink-0">
+          {cluster.slice(0, 3).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={28} /></span>)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13.5px] font-bold text-ink-800 leading-snug" style={{ textWrap: 'pretty' } as React.CSSProperties}>{rep.title}</div>
+          <div className="flex items-center gap-1.5 mt-0.5 text-[11.5px] text-ink-500 flex-wrap">
+            {rep.subjectName && <span className="font-semibold text-theme-deep">{rep.subjectName}</span>}
+            {rep.subjectName && rep.dueDate != null && <span className="text-ink-300">·</span>}
+            {rep.dueDate != null && <span className="font-semibold" style={{ color: urgency(rep.dueDate).text }}>{relativeDate(rep.dueDate)}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Wer hat geteilt */}
+      <button onClick={() => multi && setOpen(v => !v)} className={`mt-2 flex items-center gap-1 text-[11.5px] text-ink-500 ${multi ? 'hover:text-theme-deep' : 'cursor-default'}`}>
+        <span>von <span className="font-semibold text-ink-700">{multi ? `${names.length} Mitschülern` : names[0]}</span></span>
+        {multi && <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />}
+      </button>
+      {open && multi && (
+        <div className="mt-1.5 flex flex-col gap-1">
+          {cluster.map(ft => (
+            <div key={ft.id} className="flex items-center gap-2 rounded-xl bg-white/55 px-2 py-1">
+              <OwnerAvatar ft={ft} size={22} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
+                <div className="text-[11px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hinweis: passt zu einer bestehenden Aufgabe */}
+      {ownMatch && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-xl bg-white/55 px-2 py-1.5 text-[11px] text-ink-500">
+          <Share2 className="size-3 mt-0.5 flex-shrink-0 text-theme-deep" strokeWidth={2.4} />
+          <span>Passt zu deiner Aufgabe „<span className="font-semibold text-ink-700">{ownMatch.title}</span>" – wird dort als Credit ergänzt.</span>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mt-2.5">
+        <button onClick={() => onAccept(rep)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
+          <Check className="size-4" strokeWidth={2.6} />{ownMatch ? 'Hinzufügen' : 'Annehmen'}
+        </button>
+        <button onClick={() => onReject(cluster.map(ft => ft.id))} title="Ablehnen"
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
+          <X className="size-4" />Ablehnen
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ════════════════════════════ HEADER · TOGGLE · FILTER ══════════════════════
@@ -454,19 +545,22 @@ function SubjectTag({ task, subjById }: { task: AppTask; subjById: SubjMap }) {
   return <span className="inline-flex items-center gap-1.5" style={{ color: s.color }}><span className="size-2 rounded-full" style={{ background: s.color }} />{s.name}</span>;
 }
 
+// Credit-Zeile: von welchen Mitschülern wurde diese Hausaufgabe übernommen.
+// Bewusst so klein wie das Fach – nur als dezenter Hinweis.
+function CreditTag({ names }: { names: string[] }) {
+  if (!names.length) return null;
+  const label = names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+  return (
+    <span className="inline-flex items-center gap-1 text-theme-deep font-medium" title={`geteilt von ${names.join(', ')}`}>
+      <Share2 className="size-3" strokeWidth={2.4} />von {label}
+    </span>
+  );
+}
+
 // Nur die wirklich dringende „Hoch"-Priorität wird angezeigt.
 function PriorityChip({ p }: { p: 1 | 2 | 3 }) {
   if (p !== 3) return null;
   return <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold border bg-rose-100 text-rose-600 border-rose-200"><Flag className="size-2.5" strokeWidth={2.6} />Hoch</span>;
-}
-
-function FriendBadge({ count, active, onClick }: { count: number; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold border transition flex-shrink-0 ${active ? 'theme-gradient text-white border-transparent shadow-glow' : 'bg-theme-soft/70 text-theme-deep border-theme/25 hover:bg-theme-soft'}`}>
-      <Users className="size-3" strokeWidth={2.4} />{count} {count === 1 ? 'Freund' : 'Freunde'}
-    </button>
-  );
 }
 
 function OwnerAvatar({ ft, size = 22 }: { ft: FriendTask; size?: number }) {
@@ -517,26 +611,19 @@ interface BucketProps {
   onSelect: (t: AppTask) => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
-  onDismiss: (id: string | string[]) => void;
-  onAccept: (ft: FriendTask) => void;
 }
 
 // ════════════════════════════ A · LISTE ═════════════════════════════════════
 
-function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
-  const { byOwn, clusters } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
-  const [expanded, setExpanded] = useState<string | null>(null);
+function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete }: BucketProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const total = bucketTotal(bucket, byOwn, clusters);
   const cardCls = bucket.tone === 'danger' ? '!border-rose-200/70 !bg-rose-50/40' : '';
 
   return (
     <div className={`card !p-4 ${cardCls}`}>
-      <BucketHead bucket={bucket} count={total} />
+      <BucketHead bucket={bucket} count={bucket.items.length} />
       <div className="flex flex-col divide-y divide-white/55">
         {bucket.items.map(task => {
-          const friends = byOwn.get(task.id) ?? [];
-          const open = expanded === task.id;
           if (confirmDelete === task.id) {
             return <div key={task.id}><DeleteConfirm onConfirm={() => { onDelete(task.id); setConfirmDelete(null); }} onCancel={() => setConfirmDelete(null)} /></div>;
           }
@@ -550,10 +637,10 @@ function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
                   <div className="flex items-center gap-2 mt-0.5 text-[12px] text-ink-500 flex-wrap">
                     <span className="inline-flex items-center gap-1"><TaskKindIcon kind={task.kind} className="size-3" />{getTaskKindLabel(task.kind, config)}</span>
                     <span className="text-ink-300">·</span><SubjectTag task={task} subjById={subjById} />
+                    {task.sharedFrom?.length ? <><span className="text-ink-300">·</span><CreditTag names={task.sharedFrom} /></> : null}
                     {task.shared && <><span className="text-ink-300">·</span><SharedTag /></>}
                   </div>
                 </button>
-                {friends.length > 0 && <FriendBadge count={friends.length} active={open} onClick={() => setExpanded(open ? null : task.id)} />}
                 <PriorityChip p={task.priority} />
                 <HeroDue ts={task.dueDate} done={task.done} />
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
@@ -561,115 +648,34 @@ function ListBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, on
                   <button onClick={() => setConfirmDelete(task.id)} className="size-8 grid place-items-center rounded-full hover:bg-rose-50 text-ink-400 hover:text-rose-500"><Trash2 className="size-4" /></button>
                 </div>
               </div>
-              {open && friends.map(ft => <FriendRowInline key={ft.id} ft={ft} onDismiss={onDismiss} indent />)}
             </div>
           );
         })}
-        {clusters.map(cluster => cluster.length === 1
-          ? <FriendRowInline key={cluster[0].id} ft={cluster[0]} onDismiss={onDismiss} onAccept={onAccept} />
-          : <FriendClusterRow key={cluster[0].id} cluster={cluster} onDismiss={onDismiss} onAccept={onAccept} />)}
       </div>
-    </div>
-  );
-}
-
-// Mehrere Mitschüler haben dieselbe Hausaufgabe geteilt → eine zusammengefasste Zeile.
-function FriendClusterRow({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string | string[]) => void; onAccept: (ft: FriendTask) => void }) {
-  const [open, setOpen] = useState(false);
-  const rep = cluster[0];
-  return (
-    <div>
-      <div className="group flex items-center gap-3 py-2.5">
-        <button onClick={() => setOpen(v => !v)} className="flex -space-x-2 flex-shrink-0">
-          {cluster.slice(0, 3).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={28} /></span>)}
-        </button>
-        <button onClick={() => setOpen(v => !v)} className="flex-1 min-w-0 text-left">
-          <div className="text-[13.5px] font-medium text-ink-700 truncate">{rep.title}</div>
-          <div className="flex items-center gap-2 mt-0.5 text-[11.5px] text-ink-400 flex-wrap">
-            <span className="text-theme-deep font-semibold">{cluster.length} Mitschüler haben das</span>
-            {rep.subjectName && <><span className="text-ink-300">·</span><span>{rep.subjectName}</span></>}
-          </div>
-        </button>
-        <HeroDue ts={rep.dueDate} small />
-        <ChevronDown className={`size-4 text-theme-deep flex-shrink-0 transition-transform cursor-pointer ${open ? 'rotate-180' : ''}`} onClick={() => setOpen(v => !v)} />
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={() => onAccept(rep)} title="Als eigene Aufgabe übernehmen"
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold bg-theme-soft/70 text-theme-deep border border-theme/25 hover:bg-theme-soft transition">
-            <Check className="size-3.5" strokeWidth={2.6} />Annehmen
-          </button>
-          <button onClick={() => onDismiss(cluster.map(ft => ft.id))} title="Alle ablehnen"
-            className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 transition"><X className="size-4" /></button>
-        </div>
-      </div>
-      {open && cluster.map(ft => (
-        <div key={ft.id} className="flex items-center gap-3 py-2 mt-1 pl-3 -mx-1 px-3 rounded-xl bg-theme-soft/20">
-          <OwnerAvatar ft={ft} size={24} />
-          <div className="flex-1 min-w-0">
-            <div className="text-[12.5px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
-            <div className="text-[11.5px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
-          </div>
-          <HeroDue ts={ft.dueDate} small />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FriendRowInline({ ft, onDismiss, onAccept, indent }: { ft: FriendTask; onDismiss: (id: string) => void; onAccept?: (ft: FriendTask) => void; indent?: boolean }) {
-  return (
-    <div className={`group flex items-center gap-3 py-2.5 ${indent ? 'pl-10 bg-theme-soft/20 -mx-1 px-3 rounded-xl' : ''}`}>
-      <OwnerAvatar ft={ft} size={28} />
-      <div className="flex-1 min-w-0">
-        <div className="text-[13.5px] font-medium text-ink-700 truncate">{ft.title}</div>
-        <div className="flex items-center gap-2 mt-0.5 text-[11.5px] text-ink-400 flex-wrap">
-          <span className="text-theme-deep font-semibold">{ft.ownerName}</span>
-          {ft.subjectName && <><span className="text-ink-300">·</span><span>{ft.subjectName}</span></>}
-          {ft.description && <><span className="text-ink-300">·</span><span className="truncate">{ft.description}</span></>}
-        </div>
-      </div>
-      <HeroDue ts={ft.dueDate} small />
-      {onAccept ? (
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={() => onAccept(ft)} title="Als eigene Aufgabe übernehmen"
-            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold bg-theme-soft/70 text-theme-deep border border-theme/25 hover:bg-theme-soft transition">
-            <Check className="size-3.5" strokeWidth={2.6} />Annehmen
-          </button>
-          <button onClick={() => onDismiss(ft.id)} title="Ablehnen"
-            className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 transition"><X className="size-4" /></button>
-        </div>
-      ) : (
-        <button onClick={() => onDismiss(ft.id)} className="size-8 grid place-items-center rounded-full hover:bg-ink-100 text-ink-300 hover:text-ink-600 opacity-0 group-hover:opacity-100 transition flex-shrink-0"><X className="size-4" /></button>
-      )}
     </div>
   );
 }
 
 // ════════════════════════════ B · KACHELN ═══════════════════════════════════
 
-function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete, onDismiss, onAccept }: BucketProps) {
-  const { byOwn, clusters } = useMemo(() => bucketFriendGroups(bucket, subjById), [bucket, subjById]);
-  const total = bucketTotal(bucket, byOwn, clusters);
+function TileBucket({ bucket, subjById, config, onSelect, onToggle, onDelete }: BucketProps) {
   return (
     <div>
-      <BucketHead bucket={bucket} count={total} />
+      <BucketHead bucket={bucket} count={bucket.items.length} />
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(282px, 1fr))' }}>
-        {bucket.items.map(task => <TaskTile key={task.id} task={task} friends={byOwn.get(task.id) ?? []} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} onDismiss={onDismiss} />)}
-        {clusters.map(cluster => cluster.length === 1
-          ? <FriendTile key={cluster[0].id} ft={cluster[0]} onDismiss={onDismiss} onAccept={onAccept} />
-          : <FriendClusterTile key={cluster[0].id} cluster={cluster} onDismiss={onDismiss} onAccept={onAccept} />)}
+        {bucket.items.map(task => <TaskTile key={task.id} task={task} subjById={subjById} config={config} onSelect={onSelect} onToggle={onToggle} onDelete={onDelete} />)}
       </div>
     </div>
   );
 }
 
-function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelete, onDismiss }: {
-  task: AppTask; friends: FriendTask[]; subjById: SubjMap; config?: GradingSystemConfig;
-  onSelect: (t: AppTask) => void; onToggle: (id: string) => void; onDelete: (id: string) => void; onDismiss: (id: string) => void;
+function TaskTile({ task, subjById, config, onSelect, onToggle, onDelete }: {
+  task: AppTask; subjById: SubjMap; config?: GradingSystemConfig;
+  onSelect: (t: AppTask) => void; onToggle: (id: string) => void; onDelete: (id: string) => void;
 }) {
   const s = task.subjectId ? subjById[task.subjectId] : null;
   const color = s ? s.color : '#64748b';
   const [confirm, setConfirm] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   return (
     <div className="group relative card !p-0 overflow-hidden hover:shadow-glow transition cursor-pointer" onClick={() => onSelect(task)}>
       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: color }} />
@@ -687,37 +693,11 @@ function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelet
           <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-ink-500"><TaskKindIcon kind={task.kind} className="size-3.5" />{getTaskKindLabel(task.kind, config)}</span>
           <PriorityChip p={task.priority} />
         </div>
-        {(friends.length > 0 || task.shared) && (
-          <div className="mt-3 pt-3 border-t border-white/55">
-            {friends.length > 0 ? (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-                  className="w-full flex items-center gap-2 text-left hover:opacity-80 transition">
-                  <div className="flex -space-x-2">{friends.slice(0, 4).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={24} /></span>)}</div>
-                  <span className="text-[11.5px] font-semibold text-theme-deep flex-1 min-w-0">{friends.length} {friends.length === 1 ? 'Freund hat das auch' : 'Freunde haben das auch'}</span>
-                  <ChevronDown className={`size-4 text-theme-deep flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                </button>
-                {expanded && (
-                  <div className="mt-2.5 flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
-                    {friends.map(ft => {
-                      const u = urgency(ft.dueDate);
-                      return (
-                        <div key={ft.id} className="group/f flex items-center gap-2 rounded-xl bg-theme-soft/25 px-2 py-1.5">
-                          <OwnerAvatar ft={ft} size={26} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[12px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
-                            <div className="text-[11px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
-                          </div>
-                          {ft.dueDate != null && <span className="text-[11px] font-bold flex-shrink-0" style={{ color: u.text }}>{relativeDate(ft.dueDate)}</span>}
-                          <button onClick={() => onDismiss(ft.id)} title="Ausblenden"
-                            className="size-6 grid place-items-center rounded-full hover:bg-white/70 text-ink-300 hover:text-ink-600 opacity-0 group-hover/f:opacity-100 transition flex-shrink-0"><X className="size-3.5" /></button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            ) : <span className="text-[11.5px] font-semibold text-theme-deep inline-flex items-center gap-1"><Share2 className="size-3.5" />Von dir geteilt</span>}
+        {(task.sharedFrom?.length || task.shared) && (
+          <div className="mt-3 pt-3 border-t border-white/55 text-[11.5px]">
+            {task.sharedFrom?.length
+              ? <CreditTag names={task.sharedFrom} />
+              : <span className="font-semibold text-theme-deep inline-flex items-center gap-1"><Share2 className="size-3.5" />Von dir geteilt</span>}
           </div>
         )}
       </div>
@@ -735,82 +715,6 @@ function TaskTile({ task, friends, subjById, config, onSelect, onToggle, onDelet
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function FriendTile({ ft, onDismiss, onAccept }: { ft: FriendTask; onDismiss: (id: string) => void; onAccept: (ft: FriendTask) => void }) {
-  return (
-    <div className="group relative rounded-3xl border border-dashed border-theme/30 bg-theme-soft/25 p-3.5 hover:bg-theme-soft/40 transition">
-      <div className="flex items-start gap-2.5">
-        <OwnerAvatar ft={ft} size={40} />
-        <div className="flex-1 min-w-0 pt-0.5">
-          <div className="text-[14px] font-bold text-ink-800 leading-snug" style={{ textWrap: 'pretty' } as React.CSSProperties}>{ft.title}</div>
-          <div className="text-[12px] text-theme-deep font-semibold mt-0.5">{ft.ownerName}{ft.subjectName ? ` · ${ft.subjectName}` : ''}</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mt-3">
-        <CountdownPill ts={ft.dueDate} size="sm" />
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400"><Users className="size-3" />Von Mitschüler geteilt</span>
-      </div>
-      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-theme/15">
-        <button onClick={() => onAccept(ft)}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
-          <Check className="size-4" strokeWidth={2.6} />Annehmen
-        </button>
-        <button onClick={() => onDismiss(ft.id)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
-          <X className="size-4" />Ablehnen
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Kachel-Variante: dieselbe Hausaufgabe von mehreren Mitschülern, gebündelt.
-function FriendClusterTile({ cluster, onDismiss, onAccept }: { cluster: FriendTask[]; onDismiss: (id: string | string[]) => void; onAccept: (ft: FriendTask) => void }) {
-  const [open, setOpen] = useState(false);
-  const rep = cluster[0];
-  return (
-    <div className="group relative rounded-3xl border border-dashed border-theme/30 bg-theme-soft/25 p-3.5 hover:bg-theme-soft/40 transition">
-      <div className="flex items-start gap-2.5">
-        <div className="flex -space-x-2 flex-shrink-0">
-          {cluster.slice(0, 3).map(ft => <span key={ft.id} className="ring-2 ring-white rounded-full"><OwnerAvatar ft={ft} size={34} /></span>)}
-        </div>
-        <div className="flex-1 min-w-0 pt-0.5">
-          <div className="text-[14px] font-bold text-ink-800 leading-snug" style={{ textWrap: 'pretty' } as React.CSSProperties}>{rep.title}</div>
-          <div className="text-[12px] text-theme-deep font-semibold mt-0.5">{cluster.length} Mitschüler{rep.subjectName ? ` · ${rep.subjectName}` : ''}</div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 mt-3">
-        <CountdownPill ts={rep.dueDate} size="sm" />
-        <button onClick={() => setOpen(v => !v)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400 hover:text-theme-deep transition">
-          <Users className="size-3" />Wer & Wortlaut<ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
-      </div>
-      {open && (
-        <div className="mt-2.5 flex flex-col gap-1.5">
-          {cluster.map(ft => (
-            <div key={ft.id} className="flex items-center gap-2 rounded-xl bg-white/45 px-2 py-1.5">
-              <OwnerAvatar ft={ft} size={24} />
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-ink-700 truncate">{ft.ownerName}</div>
-                <div className="text-[11px] text-ink-400 truncate">{ft.title}{ft.description ? ` · ${ft.description}` : ''}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-theme/15">
-        <button onClick={() => onAccept(rep)}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-bold theme-gradient text-white shadow-glow transition active:scale-[.97]">
-          <Check className="size-4" strokeWidth={2.6} />Annehmen
-        </button>
-        <button onClick={() => onDismiss(cluster.map(ft => ft.id))}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-semibold bg-white/70 border border-white/70 text-ink-600 hover:bg-white transition active:scale-[.97]">
-          <X className="size-4" />Ablehnen
-        </button>
-      </div>
     </div>
   );
 }

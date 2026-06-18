@@ -210,6 +210,8 @@ export interface AppTask {
   studyDeadline?: number;
   /** Ob diese Hausaufgabe mit Mitschülern geteilt wird (wird in shared_tasks veröffentlicht). */
   shared?: boolean;
+  /** Namen der Mitschüler, von denen diese Hausaufgabe übernommen wurde (Credit-Anzeige). */
+  sharedFrom?: string[];
 }
 
 /**

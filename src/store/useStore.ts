@@ -387,6 +387,8 @@ interface State {
   dismissFriendTask: (id: string | string[]) => void;
   /** Übernimmt eine Fremdaufgabe als eigene Aufgabe und blendet die geteilte Version aus. */
   acceptFriendTask: (ft: FriendTask) => Promise<void>;
+  /** Hängt eine Fremdaufgabe als Credit ans Untermenü einer bestehenden eigenen Aufgabe. */
+  attachFriendTaskToOwn: (ft: FriendTask, ownTaskId: string) => Promise<void>;
 }
 
 // ─── Modul-Singletons für Auth-Listener / Visibility-Listener ─────────────
@@ -1533,7 +1535,7 @@ export const useStore = create<State>((set, get) => ({
     set({ friendTasksLoading: true });
     try {
       const results = await Promise.all(
-        friends.map(f => fetchTasksFromUser(f.userId, f.displayName)),
+        friends.map(f => fetchTasksFromUser(f.userId, f.displayName, f.friendsSince)),
       );
       // Pro Freund den Fächerfilter anwenden:
       //   undefined/null = alle; []/['Mathe'] = nur Aufgaben mit passendem Fach.
@@ -1691,11 +1693,21 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async acceptFriendTask(ft) {
+    // Wenn du dieselbe Hausaufgabe schon als eigene Aufgabe hast, NICHT doppelt
+    // anlegen, sondern die Mitschüler-Namen ans Untermenü dieser Aufgabe hängen.
+    const match = findMatchingOwnTask(get(), ft);
+    if (match) {
+      await get().attachFriendTaskToOwn(ft, match.id);
+      return;
+    }
+
     // Aus einer Freundes-Hausaufgabe eine eigene Aufgabe machen. Fach über den
     // Namen auf ein eigenes Fach mappen (sonst „Allgemein"/ohne Fach).
     const subj = ft.subjectName
       ? get().subjects.find(s => s.name.toLowerCase() === ft.subjectName!.toLowerCase())
       : undefined;
+    // Alle Mitschüler, die genau diese Hausaufgabe geteilt haben → als Credit merken.
+    const same = friendTasksLike(get(), ft);
     await get().addTask({
       title: ft.title,
       description: ft.description,
@@ -1705,15 +1717,41 @@ export const useStore = create<State>((set, get) => ({
       done: false,
       priority: get().settings?.defaultTaskPriority ?? 2,
       shared: false,
+      sharedFrom: uniqueNames(same.map(o => o.ownerName)),
     });
-    // Diese Hausaufgabe gehört jetzt dir – ALLE geteilten Kopien davon ausblenden
-    // (auch dieselbe Aufgabe von anderen Mitschülern), damit nichts doppelt steht.
-    const sameIds = get().friendTasks
-      .filter(o => o.id === ft.id || sameHomework(ft, o))
-      .map(o => o.id);
-    get().dismissFriendTask(sameIds);
+    // Die geteilten Kopien (auch von anderen Mitschülern) ausblenden – nichts doppelt.
+    get().dismissFriendTask(same.map(o => o.id));
+  },
+
+  async attachFriendTaskToOwn(ft, ownTaskId) {
+    const task = get().tasks.find(t => t.id === ownTaskId);
+    if (!task) return;
+    const same = friendTasksLike(get(), ft);
+    const names = uniqueNames([...(task.sharedFrom ?? []), ...same.map(o => o.ownerName)]);
+    await get().updateTask(ownTaskId, { sharedFrom: names });
+    get().dismissFriendTask(same.map(o => o.id));
   },
 }));
+
+// Alle (noch sichtbaren) Fremdaufgaben, die inhaltlich dieselbe Hausaufgabe wie `ft`
+// beschreiben – inkl. `ft` selbst. Genutzt, um Credits zu bündeln und Duplikate auszublenden.
+function friendTasksLike(state: State, ft: FriendTask): FriendTask[] {
+  return state.friendTasks.filter(o =>
+    !state.dismissedFriendTaskIds.has(o.id) && (o.id === ft.id || sameHomework(ft, o)),
+  );
+}
+
+// Sucht eine offene eigene Aufgabe, die inhaltlich zur Fremdaufgabe passt (Fach + Tag + Inhalt).
+function findMatchingOwnTask(state: State, ft: FriendTask): AppTask | undefined {
+  const subjById = new Map(state.subjects.map(s => [s.id, s.name]));
+  return state.tasks.find(t =>
+    !t.done && sameHomework(ft, { title: t.title, subjectName: t.subjectId ? subjById.get(t.subjectId) : undefined, dueDate: t.dueDate }),
+  );
+}
+
+function uniqueNames(names: string[]): string[] {
+  return [...new Set(names.filter(Boolean))];
+}
 
 // ─── Realtime-Handler ────────────────────────────────────────────────────
 // Werden in startAutoSync() registriert und beim Stop wieder unsubscribed.

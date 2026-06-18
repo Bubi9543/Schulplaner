@@ -21,6 +21,8 @@ export interface Friend {
   displayName: string;
   friendCode: string;
   avatarUrl?: string;
+  /** ms-Timestamp, seit wann die Freundschaft besteht. Begrenzt, welche Hausaufgaben man sieht. */
+  friendsSince: number;
 }
 
 export interface FriendRequest {
@@ -121,7 +123,7 @@ export async function loadFriendGraph(): Promise<FriendGraph> {
     const createdAt = new Date(r.created_at).getTime();
 
     if (r.status === 'accepted') {
-      friends.push({ friendshipId: r.id, userId: otherId, displayName, friendCode, avatarUrl });
+      friends.push({ friendshipId: r.id, userId: otherId, displayName, friendCode, avatarUrl, friendsSince: createdAt });
     } else if (r.addressee === me) {
       // Eingehende Anfrage: jemand will mich adden.
       incoming.push({ id: r.id, userId: otherId, displayName, friendCode, avatarUrl, createdAt });

@@ -169,17 +169,24 @@ interface SharedTaskRow {
 /**
  * Holt alle geteilten Aufgaben eines Mitschülers aus Supabase.
  * `ownerName` wird als Anzeigename ins FriendTask geschrieben.
+ *
+ * `friendsSince` = ms-Timestamp, seit wann die Freundschaft besteht. Es werden
+ * NUR Hausaufgaben geladen, die nach diesem Zeitpunkt erstellt wurden – so
+ * flutet ein neuer Freund nicht rückwirkend mit seinen alten Aufgaben.
  */
-export async function fetchTasksFromUser(ownerUserId: string, ownerName: string): Promise<FriendTask[]> {
+export async function fetchTasksFromUser(ownerUserId: string, ownerName: string, friendsSince = 0): Promise<FriendTask[]> {
   if (!supabase) return [];
 
-  // Nur Tasks der letzten 60 Tage + zukünftige laden
+  // Nur Tasks der letzten 60 Tage + zukünftige laden …
   const cutoff = Date.now() - 60 * 24 * 60 * 60 * 1000;
+  // … und niemals welche, die schon VOR Beginn der Freundschaft erstellt wurden.
+  const sinceCreated = Math.floor(friendsSince);
 
   const { data, error } = await supabase
     .from('shared_tasks')
     .select('id, owner_user_id, title, description, subject_name, kind, due_date, created_at')
     .eq('owner_user_id', ownerUserId)
+    .gte('created_at', sinceCreated)
     .or(`due_date.is.null,due_date.gte.${cutoff}`)
     .order('due_date', { ascending: true });
 
