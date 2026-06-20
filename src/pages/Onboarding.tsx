@@ -1529,6 +1529,7 @@ function DesignStep({ name, value, onChange, next, back, gradient }: {
   name: string; value: ThemeId; onChange: (id: ThemeId) => void;
   next: () => void; back: () => void; gradient: string;
 }) {
+  const selected = THEME_LIST.find(t => t.id === value) ?? THEME_LIST[0];
   // Live anwenden, damit die App nach dem Onboarding direkt im gewählten Look ist.
   function pick(id: ThemeId) { onChange(id); applyTheme(id); }
 
@@ -1536,36 +1537,47 @@ function DesignStep({ name, value, onChange, next, back, gradient }: {
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `${name.trim()}, wähl dein Design` : 'Wähl dein Design'}</h2>
-      <p className="text-ink-500 text-sm mt-1">So sieht dein Dashboard aus. Du kannst es später jederzeit in den Einstellungen ändern.</p>
+      <p className="text-ink-500 text-sm mt-1">Tipp eine Farbe an – die Vorschau passt sich sofort an. Änderbar jederzeit in den Einstellungen.</p>
 
-      <div className="mt-5 grid grid-cols-2 gap-2.5">
+      {/* Große Live-Vorschau – wechselt mit der gewählten Farbe. */}
+      <div className="mt-5">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={selected.id}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.22 }}
+          >
+            <DashboardMock t={selected} />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Farb-Buttons im jeweiligen Look mit Glow. */}
+      <div className="mt-4 grid grid-cols-3 gap-2">
         {THEME_LIST.map(t => {
           const active = value === t.id;
+          const g = `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})`;
           return (
             <motion.button
               key={t.id}
               onClick={() => pick(t.id)}
-              whileTap={{ scale: 0.97 }}
-              className="relative rounded-2xl border-2 p-2 text-left transition"
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              className="relative rounded-2xl py-2.5 px-2 text-white text-xs font-bold flex items-center justify-center gap-1 transition"
               style={{
-                borderColor: active ? t.primary : 'rgba(255,255,255,0.5)',
-                background: active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)',
-                boxShadow: active ? `0 8px 22px ${t.primary}33` : 'none',
+                background: g,
+                textShadow: '0 1px 2px rgba(0,0,0,0.28)',
+                boxShadow: active
+                  ? `0 10px 26px ${t.primary}aa, 0 3px 10px ${t.primary}88`
+                  : `0 5px 16px ${t.primary}55`,
+                outline: active ? '2.5px solid #fff' : '2.5px solid transparent',
+                outlineOffset: 2,
               }}
             >
-              <DashboardMock t={t} />
-              <div className="mt-2 flex items-center justify-between px-0.5">
-                <span className="font-bold text-xs text-ink-800">{t.name}</span>
-                {active && (
-                  <motion.span
-                    initial={{ scale: 0 }} animate={{ scale: 1 }}
-                    className="size-4 rounded-full grid place-items-center flex-shrink-0"
-                    style={{ background: t.primary }}
-                  >
-                    <Check className="size-2.5 text-white" strokeWidth={3} />
-                  </motion.span>
-                )}
-              </div>
+              {active && <Check className="size-3.5" strokeWidth={3} />}
+              {t.name}
             </motion.button>
           );
         })}
@@ -1580,40 +1592,45 @@ function DesignStep({ name, value, onChange, next, back, gradient }: {
   );
 }
 
-/** Kompaktes, stilisiertes Dashboard in den Farben eines Themes. */
+/** Stilisiertes Dashboard in den Farben eines Themes (große Vorschau im Design-Schritt). */
 function DashboardMock({ t }: { t: ThemePalette }) {
   const grad = `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})`;
-  const bars = [45, 75, 55, 95, 65];
+  const bars = [42, 68, 50, 88, 60, 76];
+  const grades = [2, 1, 3];
   return (
-    <div className="rounded-xl overflow-hidden border border-black/5" style={{ background: `linear-gradient(160deg, ${t.bgStart}, ${t.bgEnd})` }}>
-      <div className="p-2">
-        {/* Kopf: Avatar + Begrüßungs-Balken */}
-        <div className="flex items-center gap-1.5">
-          <div className="size-4 rounded-full flex-shrink-0" style={{ background: grad }} />
-          <div className="flex-1 space-y-1">
-            <div className="h-1.5 w-2/3 rounded-full" style={{ background: t.primary, opacity: 0.55 }} />
-            <div className="h-1 w-1/3 rounded-full bg-black/10" />
+    <div className="rounded-2xl overflow-hidden border border-black/5 shadow-lg" style={{ background: `linear-gradient(160deg, ${t.bgStart}, ${t.bgEnd})` }}>
+      <div className="p-3.5">
+        {/* Kopf: Avatar + Begrüßung + „+ Note" */}
+        <div className="flex items-center gap-2.5">
+          <div className="size-7 rounded-xl flex-shrink-0" style={{ background: grad }} />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-2 w-2/5 rounded-full" style={{ background: t.primary, opacity: 0.6 }} />
+            <div className="h-1.5 w-1/4 rounded-full bg-black/10" />
           </div>
+          <div className="h-6 px-2.5 rounded-lg flex items-center text-white text-[10px] font-bold" style={{ background: grad }}>+ Note</div>
         </div>
+
         {/* Schnitt-Kachel + Mini-Diagramm */}
-        <div className="mt-1.5 rounded-lg bg-white/70 p-1.5 flex items-end justify-between">
-          <div>
-            <div className="h-1 w-6 rounded-full bg-black/10" />
-            <div className="font-display font-extrabold text-sm leading-none mt-1" style={{ color: t.primaryDeep }}>2,1</div>
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <div className="rounded-xl bg-white/75 p-2.5">
+            <div className="h-1.5 w-10 rounded-full bg-black/10" />
+            <div className="font-display font-extrabold text-2xl leading-none mt-1.5" style={{ color: t.primaryDeep }}>2,1</div>
+            <div className="mt-2 h-1.5 w-3/4 rounded-full" style={{ background: t.primary, opacity: 0.25 }} />
           </div>
-          <div className="flex items-end gap-0.5 h-6">
+          <div className="rounded-xl bg-white/75 p-2.5 flex items-end justify-between gap-1">
             {bars.map((h, i) => (
-              <div key={i} className="w-1 rounded-sm" style={{ height: `${h}%`, background: i % 2 ? t.secondary : t.primary }} />
+              <div key={i} className="flex-1 rounded-sm" style={{ height: `${h}%`, minHeight: 4, background: i % 2 ? t.secondary : t.primary }} />
             ))}
           </div>
         </div>
-        {/* Fächer-Zeilen */}
-        <div className="mt-1.5 space-y-1">
+
+        {/* Fächer-Zeilen mit Noten-Chips */}
+        <div className="mt-2.5 rounded-xl bg-white/75 p-2.5 space-y-2">
           {[t.primary, t.secondary, t.accent].map((c, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <div className="size-2.5 rounded-md flex-shrink-0" style={{ background: c }} />
+            <div key={i} className="flex items-center gap-2">
+              <div className="size-4 rounded-lg flex-shrink-0" style={{ background: c }} />
               <div className="h-1.5 flex-1 rounded-full bg-black/10" />
-              <div className="h-1.5 w-3 rounded-full flex-shrink-0" style={{ background: c, opacity: 0.6 }} />
+              <div className="h-4 w-7 rounded-md grid place-items-center text-[9px] font-bold text-white" style={{ background: c }}>{grades[i]}</div>
             </div>
           ))}
         </div>

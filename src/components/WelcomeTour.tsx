@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, ChevronLeft, X, Sparkles,
-  LayoutDashboard, GraduationCap, CalendarCheck, CalendarDays, Timer, Settings,
+  LayoutDashboard, GraduationCap, CalendarCheck, CalendarDays, Timer, Layers, Settings,
 } from 'lucide-react';
 import { dismissTour } from '@/lib/tour';
 
@@ -28,6 +28,7 @@ const STEPS: TourStep[] = [
   { to: '/aufgaben',    icon: CalendarCheck,   title: 'Aufgaben',        text: 'Hausaufgaben, Tests und Projekte verwalten – mit Fälligkeit und Priorität. Überfälliges wird automatisch markiert.' },
   { to: '/stundenplan', icon: CalendarDays,    title: 'Stundenplan',     text: 'Dein Wochenplan. Du kannst ihn mit der Klasse teilen oder den eines Freundes per Code übernehmen.' },
   { to: '/fokus',       icon: Timer,           title: 'Fokus',           text: 'Lern-Timer mit Statistik: bleib dran, sammle Lernzeit und sieh deine Streak wachsen.' },
+  { to: '/karteikarten', icon: Layers,         title: 'Karteikarten',    text: 'Lern mit Karteikarten – per KI-Import in Sekunden aus deinem Stoff erstellt. Üben kannst du in mehreren Modi: Aufdecken, Schreiben, Multiple-Choice oder Lernen.' },
   { to: '/einstellungen', icon: Settings,      title: 'Einstellungen',   text: 'Profil, Design, Notensystem, Cloud-Sync und Freunde – hier stellst du alles ein. Viel Erfolg! 🎉' },
 ];
 
