@@ -138,13 +138,17 @@ export function Onboarding() {
   const [fullNames, setFullNames]     = useState<string[]>([]);
   const [lessons, setLessons]         = useState<DraftLesson[]>([]);
 
-  // Dynamische Schritt-Liste (Abi nur in der Oberstufe, Freunde nur eingeloggt).
+  // Dynamische Schritt-Liste.
+  //  • Anmelden kommt früh – danach entscheidet sich, ob die Freunde-Schritte
+  //    (Freunde hinzufügen, Stundenplan-Import) überhaupt erscheinen.
+  //  • Ohne Konto: nur Fächer (+ Abi in der Oberstufe), kein Stundenplan-Import.
+  //  • Abi nur in der Oberstufe; Freunde & Stundenplan-Import nur eingeloggt.
   const steps = useMemo<StepKey[]>(() => {
-    const list: StepKey[] = ['welcome', 'profile', 'stufe', 'subjects'];
-    if (system === 'oberstufe') list.push('abi');
-    list.push('plan', 'account');
+    const list: StepKey[] = ['welcome', 'profile', 'stufe', 'account'];
     if (authUser) list.push('friends');
-    list.push('code');
+    list.push('subjects');
+    if (system === 'oberstufe') list.push('abi');
+    if (authUser) list.push('code');
     return list;
   }, [system, authUser]);
 
@@ -362,6 +366,7 @@ export function Onboarding() {
             ) : stepKey === 'stufe' ? (
               <motion.div key="stufe" {...slide(forward)}>
                 <StufeStep
+                  name={name}
                   system={system} regularSystem={regularSystem}
                   oberG8={oberG8} setOberG8={setOberG8}
                   pickRegular={pickRegular} pickRegularSystem={pickRegularSystem} pickOberstufe={pickOberstufe}
@@ -371,6 +376,7 @@ export function Onboarding() {
             ) : stepKey === 'subjects' ? (
               <motion.div key="subjects" {...slide(forward)}>
                 <SubjectsStep
+                  name={name}
                   subjects={subjects} system={system}
                   toggle={toggleStarter} removeSubject={removeSubject} addCustom={addCustom}
                   next={goNext} back={goPrev} gradient={gradient}
@@ -394,11 +400,11 @@ export function Onboarding() {
               </motion.div>
             ) : stepKey === 'account' ? (
               <motion.div key="account" {...slide(forward)}>
-                <AccountStep onAuthed={goNext} onSkip={goNext} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
+                <AccountStep name={name} onAuthed={goNext} onSkip={goNext} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
               </motion.div>
             ) : stepKey === 'friends' ? (
               <motion.div key="friends" {...slide(forward)}>
-                <FriendsStep next={goNext} back={goPrev} gradient={gradient} />
+                <FriendsStep name={name} next={goNext} back={goPrev} gradient={gradient} />
               </motion.div>
             ) : (
               <motion.div key="code" {...slide(forward)}>
@@ -741,7 +747,22 @@ function ProfileStep({ name, setName, avatar, setAvatar, school, setSchool, clas
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Hand className="size-6 text-theme-deep" />Erzähl uns etwas über dich</h2>
-      <p className="text-ink-500 text-sm mt-1">Alles optional – kannst du auch später in den Einstellungen ändern.</p>
+      <AnimatePresence mode="wait">
+        {name.trim() ? (
+          <motion.p
+            key="hi"
+            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="text-sm mt-1 font-semibold"
+            style={{ color: 'var(--theme-primary-deep)' }}
+          >
+            Hallo {name.trim()}! Schön, dass du da bist. 👋
+          </motion.p>
+        ) : (
+          <motion.p key="sub" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-ink-500 text-sm mt-1">
+            Alles optional – kannst du auch später in den Einstellungen ändern.
+          </motion.p>
+        )}
+      </AnimatePresence>
 
       <div className="mt-6 space-y-4">
         {/* Name */}
@@ -799,7 +820,8 @@ function ProfileStep({ name, setName, avatar, setAvatar, school, setSchool, clas
 
 /* ─── Step: Stufe & Notensystem ──────────────────────────────────────── */
 
-function StufeStep({ system, regularSystem, oberG8, setOberG8, pickRegular, pickRegularSystem, pickOberstufe, next, back, gradient }: {
+function StufeStep({ name, system, regularSystem, oberG8, setOberG8, pickRegular, pickRegularSystem, pickOberstufe, next, back, gradient }: {
+  name: string;
   system: GradingSystem; regularSystem: GradingSystem;
   oberG8: boolean; setOberG8: (v: boolean) => void;
   pickRegular: () => void; pickRegularSystem: (v: GradingSystem) => void; pickOberstufe: () => void;
@@ -814,7 +836,7 @@ function StufeStep({ system, regularSystem, oberG8, setOberG8, pickRegular, pick
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">In welcher Stufe bist du?</h2>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `${name.trim()}, in welcher Stufe bist du?` : 'In welcher Stufe bist du?'}</h2>
       <p className="text-ink-500 text-sm mt-1">Bestimmt, wie deine Noten berechnet werden.</p>
 
       <div className="mt-5 grid sm:grid-cols-2 gap-2.5">
@@ -867,7 +889,8 @@ function StufeStep({ system, regularSystem, oberG8, setOberG8, pickRegular, pick
 
 /* ─── Step: Fächer ───────────────────────────────────────────────────── */
 
-function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next, back, gradient }: {
+function SubjectsStep({ name, subjects, system, toggle, removeSubject, addCustom, next, back, gradient }: {
+  name: string;
   subjects: Draft[]; system: GradingSystem;
   toggle: (s: typeof STARTER_SUBJECTS[number]) => void;
   removeSubject: (name: string) => void;
@@ -878,7 +901,7 @@ function SubjectsStep({ subjects, system, toggle, removeSubject, addCustom, next
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Welche Fächer hast du?</h2>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `Welche Fächer hast du, ${name.trim()}?` : 'Welche Fächer hast du?'}</h2>
       <p className="text-ink-500 text-sm mt-1">Tippe zum Hinzufügen – später jederzeit anpassbar.</p>
 
       <div className="mt-5 flex flex-wrap gap-1.5">
@@ -1093,7 +1116,8 @@ function PlanStep({ subjects, lessons, setLessons, next, back, gradient }: {
 
 /* ─── Step: Account ──────────────────────────────────────────────────── */
 
-function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
+function AccountStep({ name, onAuthed, onSkip, back, onSaveState, gradient }: {
+  name: string;
   onAuthed: () => void; onSkip: () => void; back: () => void; onSaveState: () => void; gradient: string;
 }) {
   const { signIn, signUp, signInWithGoogle } = useStore();
@@ -1120,8 +1144,9 @@ function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900">Konto erstellen</h2>
       <p className="text-ink-500 text-sm mt-1 leading-relaxed">
-        Optional – ermöglicht Sync zwischen deinen Geräten und Freunde.<br />
-        Du kannst das auch später in den Einstellungen einrichten.
+        Optional{name.trim() ? `, ${name.trim()}` : ''} – mit Konto syncst du zwischen deinen Geräten und kannst dich
+        mit Freunden vernetzen (Stundenplan & Hausaufgaben teilen).<br />
+        Ohne Konto geht's auch – das lässt sich später in den Einstellungen nachholen.
       </p>
 
       {!supabase ? (
@@ -1175,7 +1200,7 @@ function AccountStep({ onAuthed, onSkip, back, onSaveState, gradient }: {
 
 /* ─── Step: Freunde (nur eingeloggt) ─────────────────────────────────── */
 
-function FriendsStep({ next, back, gradient }: { next: () => void; back: () => void; gradient: string }) {
+function FriendsStep({ name, next, back, gradient }: { name: string; next: () => void; back: () => void; gradient: string }) {
   const sendFriendRequest = useStore(s => s.sendFriendRequest);
   const myProfile = useStore(s => s.myProfile);
   const [code, setCode] = useState('');
@@ -1203,8 +1228,8 @@ function FriendsStep({ next, back, gradient }: { next: () => void; back: () => v
       <BackBtn onClick={back} />
       <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Users className="size-6 text-theme-deep" />Freunde hinzufügen</h2>
       <p className="text-ink-500 text-sm mt-1 leading-relaxed">
-        Hast du den Freundecode eines Mitschülers? Gib ihn ein, um eine Anfrage zu senden.
-        Ihr könnt dann Hausaufgaben & Stundenpläne teilen.
+        Hast du den Freundecode eines Mitschülers{name.trim() ? `, ${name.trim()}` : ''}? Gib ihn ein, um eine Anfrage zu
+        senden. Ihr könnt dann Hausaufgaben & Stundenpläne teilen. <span className="text-ink-400">Kannst du auch später machen.</span>
       </p>
 
       {myProfile?.friendCode && (
