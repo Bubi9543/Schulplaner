@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
-  Download, Upload, Loader2, AlertCircle, KeyRound, Hand, GraduationCap,
+  Download, Upload, Loader2, AlertCircle, Hand, GraduationCap,
   Layers, CalendarClock, Users, MapPin, Star,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
@@ -16,6 +16,7 @@ import { SUBJECT_COLORS } from '@/types';
 import type { GradingSystem, Subject, Weekday, RegionCode } from '@/types';
 import { CATEGORY_LABEL } from '@/lib/grading';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
+import type { SharePayload } from '@/lib/scheduleShare';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
@@ -48,14 +49,6 @@ const STARTER_SUBJECTS: Array<Pick<Draft, 'name' | 'short' | 'category'>> = [
   { name: 'Sozialkunde', short: 'Sk',  category: 'nebenfach' },
 ];
 
-const WEEKDAYS: { value: Weekday; label: string }[] = [
-  { value: 1, label: 'Mo' },
-  { value: 2, label: 'Di' },
-  { value: 3, label: 'Mi' },
-  { value: 4, label: 'Do' },
-  { value: 5, label: 'Fr' },
-];
-
 const MAX_ABI_FAECHER = 5;
 
 // Per-step visual theme: gradient colors + blob colors (zyklisch nach Index)
@@ -68,7 +61,7 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'plan' | 'account' | 'friends' | 'code';
+type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'account' | 'friends';
 
 const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   welcome: Sparkles,
@@ -76,10 +69,8 @@ const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   stufe: Layers,
   subjects: BookOpen,
   abi: Trophy,
-  plan: CalendarClock,
   account: Cloud,
   friends: Users,
-  code: KeyRound,
 };
 
 function gradientFor(idx: number) {
@@ -148,7 +139,6 @@ export function Onboarding() {
     if (authUser) list.push('friends');
     list.push('subjects');
     if (system === 'oberstufe') list.push('abi');
-    if (authUser) list.push('code');
     return list;
   }, [system, authUser]);
 
@@ -380,6 +370,11 @@ export function Onboarding() {
                   subjects={subjects} system={system}
                   toggle={toggleStarter} removeSubject={removeSubject} addCustom={addCustom}
                   next={goNext} back={goPrev} gradient={gradient}
+                  importSlot={authUser ? (
+                    <FriendScheduleImport
+                      setSubjects={setSubjects} setLessons={setLessons} gradient={gradient}
+                    />
+                  ) : null}
                 />
               </motion.div>
             ) : stepKey === 'abi' ? (
@@ -391,24 +386,13 @@ export function Onboarding() {
                   next={goNext} back={goPrev} gradient={gradient}
                 />
               </motion.div>
-            ) : stepKey === 'plan' ? (
-              <motion.div key="plan" {...slide(forward)}>
-                <PlanStep
-                  subjects={subjects} lessons={lessons} setLessons={setLessons}
-                  next={goNext} back={goPrev} gradient={gradient}
-                />
-              </motion.div>
             ) : stepKey === 'account' ? (
               <motion.div key="account" {...slide(forward)}>
                 <AccountStep name={name} onAuthed={goNext} onSkip={goNext} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
               </motion.div>
-            ) : stepKey === 'friends' ? (
+            ) : (
               <motion.div key="friends" {...slide(forward)}>
                 <FriendsStep name={name} next={goNext} back={goPrev} gradient={gradient} />
-              </motion.div>
-            ) : (
-              <motion.div key="code" {...slide(forward)}>
-                <FriendCodeStep finish={finish} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -889,22 +873,34 @@ function StufeStep({ name, system, regularSystem, oberG8, setOberG8, pickRegular
 
 /* ─── Step: Fächer ───────────────────────────────────────────────────── */
 
-function SubjectsStep({ name, subjects, system, toggle, removeSubject, addCustom, next, back, gradient }: {
+function SubjectsStep({ name, subjects, system, toggle, removeSubject, addCustom, next, back, gradient, importSlot }: {
   name: string;
   subjects: Draft[]; system: GradingSystem;
   toggle: (s: typeof STARTER_SUBJECTS[number]) => void;
   removeSubject: (name: string) => void;
   addCustom: () => void;
   next: () => void; back: () => void; gradient: string;
+  importSlot?: React.ReactNode;
 }) {
   const systemLabel = { bayern: '1–6', oberstufe: '0–15', austria: '1–5', custom: 'frei' }[system];
   return (
     <GlassCard className="p-8">
       <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `Welche Fächer hast du, ${name.trim()}?` : 'Welche Fächer hast du?'}</h2>
-      <p className="text-ink-500 text-sm mt-1">Tippe zum Hinzufügen – später jederzeit anpassbar.</p>
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">
+        {importSlot
+          ? 'Stundenplan & Fächer'
+          : name.trim() ? `Welche Fächer hast du, ${name.trim()}?` : 'Welche Fächer hast du?'}
+      </h2>
+      <p className="text-ink-500 text-sm mt-1">
+        {importSlot
+          ? 'Hol dir den Stundenplan eines Freundes – oder tipp deine Fächer einfach selbst dazu.'
+          : 'Tippe zum Hinzufügen – später jederzeit anpassbar.'}
+      </p>
 
-      <div className="mt-5 flex flex-wrap gap-1.5">
+      {importSlot}
+
+      {importSlot && <div className="mt-5 text-xs font-semibold text-ink-500 pl-1">Fächer auswählen oder ergänzen</div>}
+      <div className={`${importSlot ? 'mt-2' : 'mt-5'} flex flex-wrap gap-1.5`}>
         {STARTER_SUBJECTS.map(s => {
           const active = !!subjects.find(p => p.name === s.name);
           return (
@@ -1041,76 +1037,154 @@ function AbiStep({ subjects, examNames, setExamNames, fullNames, setFullNames, n
   );
 }
 
-/* ─── Step: Stundenplan (optional) ───────────────────────────────────── */
+/* ─── Stundenplan-Import vom Freund (im Fächer-Schritt, nur eingeloggt) ── */
 
-function PlanStep({ subjects, lessons, setLessons, next, back, gradient }: {
-  subjects: Draft[]; lessons: DraftLesson[]; setLessons: (f: (prev: DraftLesson[]) => DraftLesson[]) => void;
-  next: () => void; back: () => void; gradient: string;
+/**
+ * Holt per 4-stelligem Code den Stundenplan eines Freundes, zeigt dessen Fächer
+ * als Checkliste (standardmäßig alle an) und übernimmt die gewählten Fächer +
+ * deren Stunden in die Onboarding-Entwürfe (subjects/lessons). Geschrieben wird
+ * erst beim Abschluss – wie bei den selbst gewählten Fächern.
+ */
+function FriendScheduleImport({ setSubjects, setLessons, gradient }: {
+  setSubjects: (f: (prev: Draft[]) => Draft[]) => void;
+  setLessons: (f: (prev: DraftLesson[]) => DraftLesson[]) => void;
+  gradient: string;
 }) {
-  function addRow() {
-    if (subjects.length === 0) return;
-    setLessons(prev => [...prev, { subjectName: subjects[0].name, weekday: 1, start: '08:00', end: '08:45' }]);
-  }
-  function update(i: number, patch: Partial<DraftLesson>) {
-    setLessons(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
-  }
-  function remove(i: number) {
-    setLessons(prev => prev.filter((_, idx) => idx !== i));
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ ownerName?: string; payload: SharePayload } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [adopted, setAdopted] = useState<{ subjects: number; lessons: number; owner?: string } | null>(null);
+
+  async function lookup() {
+    setError(null); setBusy(true);
+    try {
+      const mod = await import('@/lib/scheduleShare');
+      const info = await mod.fetchScheduleShare(code);
+      setPreview({ ownerName: info.payload.ownerName, payload: info.payload });
+      setSelected(new Set(info.payload.subjects.map(s => s.id)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  return (
-    <GlassCard className="p-8">
-      <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan</h2>
-      <p className="text-ink-500 text-sm mt-1">Optional – ein paar Stunden eintragen, oder einfach überspringen.</p>
+  function toggle(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
-      {subjects.length === 0 ? (
-        <div className="mt-5 rounded-2xl bg-white/40 border border-white/55 p-4 text-sm text-ink-500 text-center">
-          Erst Fächer wählen, dann kannst du hier Stunden eintragen.
+  function adopt() {
+    if (!preview) return;
+    const sel = selected;
+    const chosen = preview.payload.subjects.filter(s => sel.has(s.id));
+
+    setSubjects(prev => {
+      const have = new Set(prev.map(p => p.name.toLowerCase().trim()));
+      const add: Draft[] = chosen
+        .filter(s => !have.has(s.name.toLowerCase().trim()))
+        .map(s => ({
+          name: s.name, short: s.short, color: s.color, icon: s.icon,
+          category: s.category, system: s.system, teacher: s.teacher, room: s.room,
+        }));
+      return [...prev, ...add];
+    });
+
+    const idToName = new Map(preview.payload.subjects.map(s => [s.id, s.name]));
+    const newLessons: DraftLesson[] = preview.payload.lessons
+      .filter(l => sel.has(l.subjectId))
+      .map(l => ({ subjectName: idToName.get(l.subjectId) ?? '', weekday: l.weekday, start: l.start, end: l.end }))
+      .filter(l => l.subjectName);
+    setLessons(prev => [...prev, ...newLessons]);
+
+    setAdopted({ subjects: chosen.length, lessons: newLessons.length, owner: preview.ownerName });
+    setPreview(null);
+    setCode('');
+  }
+
+  // Schon übernommen → Erfolgs-Hinweis + Möglichkeit, noch einen Code zu importieren.
+  if (adopted) {
+    return (
+      <div className="mt-5 rounded-2xl border border-emerald-300/70 bg-emerald-50/70 p-4">
+        <div className="flex items-center gap-2 text-emerald-800 font-semibold text-sm">
+          <Check className="size-4" />
+          {adopted.subjects} Fächer & {adopted.lessons} Stunden{adopted.owner ? ` von ${adopted.owner}` : ''} übernommen.
         </div>
-      ) : (
-        <div className="mt-5 space-y-2">
-          {lessons.map((l, i) => (
-            <div key={i} className="flex items-center gap-1.5 rounded-2xl bg-white/40 border border-white/55 p-2">
-              <select
-                value={l.subjectName}
-                onChange={e => update(i, { subjectName: e.target.value })}
-                className="flex-1 min-w-0 px-2 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none cursor-pointer"
-              >
-                {subjects.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
-              </select>
-              <select
-                value={l.weekday}
-                onChange={e => update(i, { weekday: Number(e.target.value) as Weekday })}
-                className="px-2 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none cursor-pointer"
-              >
-                {WEEKDAYS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
-              <input type="time" value={l.start} onChange={e => update(i, { start: e.target.value })}
-                className="px-1.5 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none w-[5.5rem]" />
-              <input type="time" value={l.end} onChange={e => update(i, { end: e.target.value })}
-                className="px-1.5 py-1.5 rounded-xl bg-white/60 border border-white/50 text-sm text-ink-800 focus:outline-none w-[5.5rem]" />
-              <button onClick={() => remove(i)} className="size-7 rounded-full hover:bg-rose-100 text-ink-400 hover:text-rose-500 grid place-items-center transition flex-shrink-0">
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={addRow}
-            className="w-full py-2.5 rounded-2xl border border-dashed border-ink-300 text-ink-500 hover:text-ink-700 hover:border-ink-400 bg-white/30 transition flex items-center justify-center gap-1.5 text-sm font-medium"
-          >
-            <Plus className="size-4" /> Stunde hinzufügen
-          </button>
-        </div>
-      )}
-
-      <div className="mt-5">
-        <PrimaryBtn onClick={next} gradient={gradient}>
-          {lessons.length ? `Mit ${lessons.length} Stunde${lessons.length !== 1 ? 'n' : ''} weiter` : 'Weiter'}
-          <ChevronRight className="size-4" />
-        </PrimaryBtn>
+        <button onClick={() => setAdopted(null)} className="mt-2 text-xs text-emerald-700 hover:text-emerald-900 underline underline-offset-2">
+          Noch einen Stundenplan importieren
+        </button>
       </div>
-    </GlassCard>
+    );
+  }
+
+  // Vorschau + Fächer-Checkliste.
+  if (preview) {
+    const subs = preview.payload.subjects;
+    return (
+      <div className="mt-5 rounded-2xl border border-white/55 bg-white/45 p-4">
+        <div className="flex items-center justify-between">
+          <div className="font-display font-bold text-ink-900">
+            {preview.ownerName ? `${preview.ownerName}s Stundenplan` : 'Stundenplan gefunden'}
+          </div>
+          <button onClick={() => { setPreview(null); setError(null); }} className="text-xs text-ink-400 hover:text-ink-700">Abbrechen</button>
+        </div>
+        <div className="text-xs text-ink-500 mt-0.5">{subs.length} Fächer · {preview.payload.lessons.length} Stunden · wähle, was du übernehmen willst</div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {subs.map(s => {
+            const on = selected.has(s.id);
+            return (
+              <button
+                key={s.id} onClick={() => toggle(s.id)}
+                className="px-3 py-1.5 rounded-full text-sm font-medium border transition inline-flex items-center gap-1"
+                style={on
+                  ? { background: s.color, color: '#fff', borderColor: 'transparent' }
+                  : { background: 'rgba(255,255,255,0.5)', color: '#64748b', borderColor: 'rgba(255,255,255,0.6)' }}
+              >
+                {on && <Check className="size-3.5" />}{s.name}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4">
+          <PrimaryBtn onClick={adopt} disabled={selected.size === 0} gradient={gradient}>
+            {selected.size} Fach{selected.size !== 1 ? '+Stunden' : ''} übernehmen
+          </PrimaryBtn>
+        </div>
+      </div>
+    );
+  }
+
+  // Code-Eingabe.
+  return (
+    <div className="mt-5 rounded-2xl border border-white/55 bg-white/35 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-ink-700">
+        <CalendarClock className="size-4 text-theme-deep" />
+        Stundenplan vom Freund importieren
+        <span className="text-xs font-normal text-ink-400">optional</span>
+      </div>
+      <p className="text-xs text-ink-500 mt-1">
+        Hat dir jemand aus deiner Klasse einen 4-stelligen Code geschickt? Dann holst du dir
+        seinen Stundenplan – und kannst gleich darunter wählen, welche Fächer du übernimmst.
+      </p>
+      <div className="mt-3 space-y-2">
+        <FriendCodeBoxes value={code} onChange={setCode} autoFocus={false} />
+        <PrimaryBtn onClick={lookup} disabled={busy || code.length !== 4} gradient={gradient}>
+          {busy ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen <ChevronRight className="size-4" /></>}
+        </PrimaryBtn>
+        {error && (
+          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-2.5 text-sm text-rose-700 flex items-start gap-2">
+            <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />{error}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1281,124 +1355,7 @@ function FriendsStep({ name, next, back, gradient }: { name: string; next: () =>
   );
 }
 
-/* ─── Step: Stundenplan-Code vom Freund (Abschluss) ──────────────────── */
-
-function FriendCodeStep({ finish, back, gradient }: {
-  finish: () => void; back: () => void; gradient: string;
-}) {
-  const authUser = useStore(s => s.authUser);
-  const importSharedSchedule = useStore(s => s.importSharedSchedule);
-  const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{ ownerName?: string; subjects: number; lessons: number; payload: import('@/lib/scheduleShare').SharePayload } | null>(null);
-
-  async function lookup() {
-    setError(null);
-    setBusy(true);
-    try {
-      const mod = await import('@/lib/scheduleShare');
-      const info = await mod.fetchScheduleShare(code);
-      setPreview({
-        ownerName: info.payload.ownerName,
-        subjects: info.payload.subjects.length,
-        lessons: info.payload.lessons.length,
-        payload: info.payload,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function adoptAndFinish() {
-    if (!preview) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await finish();
-      await new Promise(r => setTimeout(r, 200));
-      await importSharedSchedule(preview.payload, 'replace');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!authUser) {
-    return (
-      <GlassCard className="p-8 text-center">
-        <BackBtn onClick={back} />
-        <h2 className="font-display text-2xl font-extrabold text-ink-900">Fast fertig!</h2>
-        <p className="text-ink-500 text-sm mt-2">Klick weiter, dann landen wir im Dashboard.</p>
-        <div className="mt-6">
-          <PrimaryBtn onClick={finish} gradient={gradient}>
-            Los geht's <ChevronRight className="size-4" />
-          </PrimaryBtn>
-        </div>
-      </GlassCard>
-    );
-  }
-
-  if (preview) {
-    return (
-      <GlassCard className="p-8">
-        <BackBtn onClick={() => { setPreview(null); setCode(''); setError(null); }} />
-        <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan gefunden!</h2>
-        <div className="mt-4 rounded-2xl bg-white/55 border border-white/65 p-4">
-          <div className="text-xs uppercase tracking-wider font-semibold text-ink-500 mb-1">Vorschau</div>
-          <div className="font-display font-bold text-lg text-ink-900">
-            {preview.ownerName ? `${preview.ownerName}s Stundenplan` : 'Stundenplan'}
-          </div>
-          <div className="text-sm text-ink-600 mt-0.5">{preview.subjects} Fächer · {preview.lessons} Stunden</div>
-        </div>
-        <div className="text-xs text-ink-500 mt-3 leading-relaxed">
-          Wenn du übernimmst, werden die Fächer aus dem Code zu deinen hinzugefügt
-          (gleichnamige werden zusammengeführt) und alle Stunden in dein aktuelles Schuljahr eingetragen.
-        </div>
-        <div className="mt-5 space-y-2">
-          <PrimaryBtn onClick={adoptAndFinish} disabled={busy} gradient={gradient}>
-            {busy ? <><Loader2 className="size-4 animate-spin" />Übernehme …</> : <>Übernehmen & los geht's</>}
-          </PrimaryBtn>
-          <button onClick={finish} disabled={busy} className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition">
-            Ohne übernehmen weiter
-          </button>
-        </div>
-        {error && <div className="text-xs text-rose-600 mt-2 px-1">{error}</div>}
-      </GlassCard>
-    );
-  }
-
-  return (
-    <GlassCard className="p-8">
-      <BackBtn onClick={back} />
-      <h2 className="font-display text-2xl font-extrabold text-ink-900">Stundenplan vom Freund?</h2>
-      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
-        Wenn jemand aus deiner Klasse dir einen 4-stelligen Code geschickt hat,
-        kannst du den jetzt eingeben. Sonst einfach überspringen.
-      </p>
-
-      <div className="mt-6 space-y-3">
-        <FriendCodeBoxes value={code} onChange={setCode} />
-        <PrimaryBtn onClick={lookup} disabled={busy || code.length !== 4} gradient={gradient}>
-          {busy ? <><Loader2 className="size-4 animate-spin" />Suche …</> : <>Code prüfen <ChevronRight className="size-4" /></>}
-        </PrimaryBtn>
-        {error && (
-          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700 flex items-start gap-2">
-            <AlertCircle className="size-4 flex-shrink-0 mt-0.5" />{error}
-          </div>
-        )}
-        <button onClick={finish} className="w-full py-2.5 rounded-2xl text-ink-500 hover:text-ink-700 text-sm flex items-center justify-center gap-2 transition">
-          Habe keinen Code – überspringen
-        </button>
-      </div>
-    </GlassCard>
-  );
-}
-
-function FriendCodeBoxes({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function FriendCodeBoxes({ value, onChange, autoFocus = true }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   function normalize(raw: string): string {
     return raw.toUpperCase().split('').filter(c => ALPHABET.includes(c)).join('').slice(0, 4);
@@ -1410,15 +1367,15 @@ function FriendCodeBoxes({ value, onChange }: { value: string; onChange: (v: str
       <div className="flex gap-2 justify-center">
         {chars.map((c, i) => (
           <div key={i}
-            className={`size-14 md:size-16 rounded-2xl border-2 grid place-items-center font-display font-extrabold text-3xl md:text-4xl transition ${
-              c.trim() ? 'border-white/80 bg-white/70 text-ink-900' : 'border-white/40 bg-white/25 text-white/40'
+            className={`size-12 md:size-14 rounded-2xl border-2 grid place-items-center font-display font-extrabold text-2xl md:text-3xl transition ${
+              c.trim() ? 'border-white/80 bg-white/70 text-ink-900' : 'border-white/40 bg-white/25 text-ink-300'
             }`}>
             {c.trim() || '·'}
           </div>
         ))}
       </div>
       <input
-        autoFocus
+        autoFocus={autoFocus}
         value={value}
         onChange={e => onChange(normalize(e.target.value))}
         placeholder="ABCD"
