@@ -4,7 +4,7 @@ import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
   Download, Upload, Loader2, AlertCircle, Hand, GraduationCap,
-  Layers, CalendarClock, Users, MapPin, Star, Inbox, AlertTriangle,
+  Layers, CalendarClock, Users, MapPin, Star, Inbox, AlertTriangle, Palette,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
@@ -19,6 +19,8 @@ import { CATEGORY_LABEL } from '@/lib/grading';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { SharePayload } from '@/lib/scheduleShare';
 import type { Friend } from '@/lib/friends';
+import { THEME_LIST, applyTheme } from '@/lib/themes';
+import type { ThemeId, ThemePalette } from '@/lib/themes';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
@@ -63,7 +65,7 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'account' | 'friends' | 'homework';
+type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'account' | 'friends' | 'homework' | 'design';
 
 const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   welcome: Sparkles,
@@ -74,6 +76,7 @@ const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   account: Cloud,
   friends: Users,
   homework: Inbox,
+  design: Palette,
 };
 
 function gradientFor(idx: number) {
@@ -96,6 +99,7 @@ interface PendingState {
   name: string; avatar: string; school: string; classLevel: string;
   system: GradingSystem; oberG8: boolean; region: RegionCode;
   subjects: Draft[]; examNames: string[]; fullNames: string[]; lessons: DraftLesson[];
+  colorTheme: ThemeId;
 }
 
 /* ─── Main component ─────────────────────────────────────────────────── */
@@ -132,6 +136,9 @@ export function Onboarding() {
   const [fullNames, setFullNames]     = useState<string[]>([]);
   const [lessons, setLessons]         = useState<DraftLesson[]>([]);
 
+  // Design
+  const [colorTheme, setColorTheme]   = useState<ThemeId>('indigo');
+
   // Dynamische Schritt-Liste.
   //  • Anmelden kommt früh – danach entscheidet sich, ob die Freunde-Schritte
   //    (Freunde hinzufügen, Stundenplan-Import) überhaupt erscheinen.
@@ -143,6 +150,7 @@ export function Onboarding() {
     list.push('subjects');
     if (system === 'oberstufe') list.push('abi');
     if (authUser) list.push('homework');
+    list.push('design');
     return list;
   }, [system, authUser]);
 
@@ -165,12 +173,13 @@ export function Onboarding() {
     setName(s.name); setAvatar(s.avatar); setSchool(s.school); setClassLevel(s.classLevel);
     setSystem(s.system); setOberG8(s.oberG8); setRegion(s.region);
     setSubjects(s.subjects); setExamNames(s.examNames); setFullNames(s.fullNames); setLessons(s.lessons);
+    if (s.colorTheme) setColorTheme(s.colorTheme);
     setForward(true);
     setStepKey('friends');
   }, [authUser]);
 
   function saveStateForRedirect() {
-    const s: PendingState = { name, avatar, school, classLevel, system, oberG8, region, subjects, examNames, fullNames, lessons };
+    const s: PendingState = { name, avatar, school, classLevel, system, oberG8, region, subjects, examNames, fullNames, lessons, colorTheme };
     localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify(s));
   }
 
@@ -246,9 +255,11 @@ export function Onboarding() {
       classLevel: classLevel.trim() || undefined,
       system,
       region: region.country ? { country: region.country, subdivision: region.subdivision || undefined } : undefined,
+      colorTheme,
       onboarded: true,
       demo: false,
     });
+    applyTheme(colorTheme);
     await load();
   }
 
@@ -398,9 +409,13 @@ export function Onboarding() {
               <motion.div key="friends" {...slide(forward)}>
                 <FriendsStep name={name} next={goNext} back={goPrev} gradient={gradient} />
               </motion.div>
-            ) : (
+            ) : stepKey === 'homework' ? (
               <motion.div key="homework" {...slide(forward)}>
                 <HomeworkStep subjects={subjects} next={goNext} back={goPrev} gradient={gradient} />
+              </motion.div>
+            ) : (
+              <motion.div key="design" {...slide(forward)}>
+                <DesignStep name={name} value={colorTheme} onChange={setColorTheme} next={goNext} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1504,6 +1519,105 @@ function FriendCodeBoxes({ value, onChange, autoFocus = true }: { value: string;
         spellCheck={false}
         className="w-full px-4 py-3.5 rounded-2xl bg-white/40 border border-white/50 text-ink-900 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-white/70 focus:bg-white/60 transition text-center text-2xl font-display font-bold tracking-[0.3em] uppercase"
       />
+    </div>
+  );
+}
+
+/* ─── Step: Design auswählen (mit Dashboard-Mockup) ──────────────────── */
+
+function DesignStep({ name, value, onChange, next, back, gradient }: {
+  name: string; value: ThemeId; onChange: (id: ThemeId) => void;
+  next: () => void; back: () => void; gradient: string;
+}) {
+  // Live anwenden, damit die App nach dem Onboarding direkt im gewählten Look ist.
+  function pick(id: ThemeId) { onChange(id); applyTheme(id); }
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `${name.trim()}, wähl dein Design` : 'Wähl dein Design'}</h2>
+      <p className="text-ink-500 text-sm mt-1">So sieht dein Dashboard aus. Du kannst es später jederzeit in den Einstellungen ändern.</p>
+
+      <div className="mt-5 grid grid-cols-2 gap-2.5">
+        {THEME_LIST.map(t => {
+          const active = value === t.id;
+          return (
+            <motion.button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              whileTap={{ scale: 0.97 }}
+              className="relative rounded-2xl border-2 p-2 text-left transition"
+              style={{
+                borderColor: active ? t.primary : 'rgba(255,255,255,0.5)',
+                background: active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)',
+                boxShadow: active ? `0 8px 22px ${t.primary}33` : 'none',
+              }}
+            >
+              <DashboardMock t={t} />
+              <div className="mt-2 flex items-center justify-between px-0.5">
+                <span className="font-bold text-xs text-ink-800">{t.name}</span>
+                {active && (
+                  <motion.span
+                    initial={{ scale: 0 }} animate={{ scale: 1 }}
+                    className="size-4 rounded-full grid place-items-center flex-shrink-0"
+                    style={{ background: t.primary }}
+                  >
+                    <Check className="size-2.5 text-white" strokeWidth={3} />
+                  </motion.span>
+                )}
+              </div>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      <div className="mt-5">
+        <PrimaryBtn onClick={next} gradient={gradient}>
+          Fertig – los geht's <Sparkles className="size-4" />
+        </PrimaryBtn>
+      </div>
+    </GlassCard>
+  );
+}
+
+/** Kompaktes, stilisiertes Dashboard in den Farben eines Themes. */
+function DashboardMock({ t }: { t: ThemePalette }) {
+  const grad = `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})`;
+  const bars = [45, 75, 55, 95, 65];
+  return (
+    <div className="rounded-xl overflow-hidden border border-black/5" style={{ background: `linear-gradient(160deg, ${t.bgStart}, ${t.bgEnd})` }}>
+      <div className="p-2">
+        {/* Kopf: Avatar + Begrüßungs-Balken */}
+        <div className="flex items-center gap-1.5">
+          <div className="size-4 rounded-full flex-shrink-0" style={{ background: grad }} />
+          <div className="flex-1 space-y-1">
+            <div className="h-1.5 w-2/3 rounded-full" style={{ background: t.primary, opacity: 0.55 }} />
+            <div className="h-1 w-1/3 rounded-full bg-black/10" />
+          </div>
+        </div>
+        {/* Schnitt-Kachel + Mini-Diagramm */}
+        <div className="mt-1.5 rounded-lg bg-white/70 p-1.5 flex items-end justify-between">
+          <div>
+            <div className="h-1 w-6 rounded-full bg-black/10" />
+            <div className="font-display font-extrabold text-sm leading-none mt-1" style={{ color: t.primaryDeep }}>2,1</div>
+          </div>
+          <div className="flex items-end gap-0.5 h-6">
+            {bars.map((h, i) => (
+              <div key={i} className="w-1 rounded-sm" style={{ height: `${h}%`, background: i % 2 ? t.secondary : t.primary }} />
+            ))}
+          </div>
+        </div>
+        {/* Fächer-Zeilen */}
+        <div className="mt-1.5 space-y-1">
+          {[t.primary, t.secondary, t.accent].map((c, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <div className="size-2.5 rounded-md flex-shrink-0" style={{ background: c }} />
+              <div className="h-1.5 flex-1 rounded-full bg-black/10" />
+              <div className="h-1.5 w-3 rounded-full flex-shrink-0" style={{ background: c, opacity: 0.6 }} />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
