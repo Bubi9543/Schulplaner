@@ -4,10 +4,11 @@ import {
   ChevronRight, Sparkles, Plus, Trash2, Wand2, BookOpen, Trophy,
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
   Download, Upload, Loader2, AlertCircle, Hand, GraduationCap,
-  Layers, CalendarClock, Users, MapPin, Star,
+  Layers, CalendarClock, Users, MapPin, Star, Inbox, AlertTriangle,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
+import { Avatar } from '@/components/Avatar';
 import { AvatarUpload } from '@/components/AvatarUpload';
 import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
@@ -17,6 +18,7 @@ import type { GradingSystem, Subject, Weekday, RegionCode } from '@/types';
 import { CATEGORY_LABEL } from '@/lib/grading';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { SharePayload } from '@/lib/scheduleShare';
+import type { Friend } from '@/lib/friends';
 
 type Draft = Omit<Subject, 'id' | 'createdAt'>;
 
@@ -61,7 +63,7 @@ const STEP_CFG = [
   { g1: '#8b5cf6', g2: '#6d28d9', b1: '#c4b5fd', b2: '#d8b4fe', b3: '#f0abfc' }, // violet/purple
 ] as const;
 
-type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'account' | 'friends';
+type StepKey = 'welcome' | 'profile' | 'stufe' | 'subjects' | 'abi' | 'account' | 'friends' | 'homework';
 
 const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   welcome: Sparkles,
@@ -71,6 +73,7 @@ const STEP_ICON: Record<StepKey, typeof Sparkles> = {
   abi: Trophy,
   account: Cloud,
   friends: Users,
+  homework: Inbox,
 };
 
 function gradientFor(idx: number) {
@@ -139,6 +142,7 @@ export function Onboarding() {
     if (authUser) list.push('friends');
     list.push('subjects');
     if (system === 'oberstufe') list.push('abi');
+    if (authUser) list.push('homework');
     return list;
   }, [system, authUser]);
 
@@ -390,9 +394,13 @@ export function Onboarding() {
               <motion.div key="account" {...slide(forward)}>
                 <AccountStep name={name} onAuthed={goNext} onSkip={goNext} back={goPrev} onSaveState={saveStateForRedirect} gradient={gradient} />
               </motion.div>
-            ) : (
+            ) : stepKey === 'friends' ? (
               <motion.div key="friends" {...slide(forward)}>
                 <FriendsStep name={name} next={goNext} back={goPrev} gradient={gradient} />
+              </motion.div>
+            ) : (
+              <motion.div key="homework" {...slide(forward)}>
+                <HomeworkStep subjects={subjects} next={goNext} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1352,6 +1360,116 @@ function FriendsStep({ name, next, back, gradient }: { name: string; next: () =>
         </PrimaryBtn>
       </div>
     </GlassCard>
+  );
+}
+
+/* ─── Step: Hausaufgaben von Freunden empfangen (nur eingeloggt) ──────── */
+
+function HomeworkStep({ subjects, next, back, gradient }: {
+  subjects: Draft[]; next: () => void; back: () => void; gradient: string;
+}) {
+  const friends = useStore(s => s.friends);
+  const loadFriends = useStore(s => s.loadFriends);
+  const filters = useStore(s => s.settings?.friendSubjectFilters);
+  const setFriendSubjectFilter = useStore(s => s.setFriendSubjectFilter);
+
+  useEffect(() => { void loadFriends(); }, [loadFriends]);
+
+  return (
+    <GlassCard className="p-8">
+      <BackBtn onClick={back} />
+      <h2 className="font-display text-2xl font-extrabold text-ink-900 flex items-center gap-2"><Inbox className="size-6 text-theme-deep" />Hausaufgaben empfangen</h2>
+      <p className="text-ink-500 text-sm mt-1 leading-relaxed">
+        Aus welchen Fächern willst du die Hausaufgaben deiner Freunde im Posteingang sehen?
+        Standardmäßig alle – tipp Fächer weg, die du nicht brauchst, oder wähle einen Freund ganz ab.
+      </p>
+
+      {friends.length === 0 ? (
+        <div className="mt-5 rounded-2xl bg-white/40 border border-white/55 p-4 text-sm text-ink-500 text-center leading-relaxed">
+          Du bist noch mit niemandem verbunden. Sobald eine Freundschaftsanfrage angenommen wurde,
+          kannst du das hier einstellen – standardmäßig bekommst du dann alle Hausaufgaben.
+          Ändern geht jederzeit in den Einstellungen.
+        </div>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {friends.map(f => (
+            <FriendHwRow
+              key={f.userId}
+              friend={f}
+              subjects={subjects}
+              filter={filters?.[f.userId] ?? null}
+              onChange={val => setFriendSubjectFilter(f.userId, val)}
+              gradient={gradient}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5">
+        <PrimaryBtn onClick={next} gradient={gradient}>
+          Weiter <ChevronRight className="size-4" />
+        </PrimaryBtn>
+      </div>
+    </GlassCard>
+  );
+}
+
+function FriendHwRow({ friend, subjects, filter, onChange, gradient }: {
+  friend: Friend; subjects: Draft[]; filter: string[] | null;
+  onChange: (val: string[] | null) => void; gradient: string;
+}) {
+  const allSelected = filter == null;
+  const none = filter !== null && filter.length === 0;
+
+  function toggleAll() { onChange(allSelected ? [] : null); }
+  function toggleSubject(nm: string) {
+    if (filter == null) { onChange(subjects.map(s => s.name).filter(n => n !== nm)); return; }
+    if (filter.includes(nm)) onChange(filter.filter(n => n !== nm));
+    else { const nextSel = [...filter, nm]; onChange(nextSel.length === subjects.length ? null : nextSel); }
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/55 bg-white/40 p-3">
+      <div className="flex items-center gap-2.5">
+        <Avatar name={friend.displayName} avatarUrl={friend.avatarUrl} className="size-9" />
+        <div className="flex-1 min-w-0 font-semibold text-ink-800 text-sm truncate">{friend.displayName}</div>
+        <button
+          onClick={toggleAll}
+          className="text-xs font-semibold px-2.5 py-1 rounded-full border transition"
+          style={allSelected
+            ? { background: gradient, color: '#fff', borderColor: 'transparent' }
+            : { background: 'rgba(255,255,255,0.5)', color: '#64748b', borderColor: 'rgba(255,255,255,0.6)' }}
+        >
+          {allSelected ? 'Alle Fächer' : 'Alle wählen'}
+        </button>
+      </div>
+
+      {subjects.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {subjects.map(s => {
+            const on = allSelected || (filter?.includes(s.name) ?? false);
+            return (
+              <button
+                key={s.name}
+                onClick={() => toggleSubject(s.name)}
+                className="px-2.5 py-1 rounded-full text-xs font-medium border transition inline-flex items-center gap-1"
+                style={on
+                  ? { background: s.color + '22', borderColor: s.color + '88', color: s.color }
+                  : { background: 'rgba(255,255,255,0.4)', color: '#94a3b8', borderColor: 'rgba(255,255,255,0.5)' }}
+              >
+                <SubjectIcon subject={s} className="size-3.5 flex-shrink-0" />{s.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {none && (
+        <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+          <AlertTriangle className="size-3 shrink-0" />Du bekommst keine Hausaufgaben von {friend.displayName}.
+        </p>
+      )}
+    </div>
   );
 }
 
