@@ -108,7 +108,7 @@ export function WelcomeTour({ onFinish }: { onFinish: () => void }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -18, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            className="rounded-3xl bg-white shadow-2xl p-5 border border-black/5"
+            className="rounded-3xl glass-strong shadow-2xl p-5"
           >
             <div className="flex items-start gap-3">
               <div className="size-11 rounded-2xl theme-gradient grid place-items-center flex-shrink-0 text-white shadow-glow">
@@ -131,7 +131,7 @@ export function WelcomeTour({ onFinish }: { onFinish: () => void }) {
                   <span
                     key={i}
                     className="h-1.5 rounded-full transition-all"
-                    style={{ width: i === step ? 20 : 6, background: i === step ? 'var(--theme-primary)' : 'rgba(0,0,0,0.12)' }}
+                    style={{ width: i === step ? 20 : 6, background: i === step ? 'var(--theme-primary)' : 'rgba(148,163,184,0.45)' }}
                   />
                 ))}
               </div>

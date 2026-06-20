@@ -5,6 +5,7 @@ import {
   ArrowLeft, Flag, Settings as SettingsIcon, Cloud, User, Check,
   Download, Upload, Loader2, AlertCircle, Hand, GraduationCap,
   Layers, CalendarClock, Users, MapPin, Star, Inbox, AlertTriangle, Palette,
+  Sun, Moon, Monitor,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { SubjectIcon } from '@/components/SubjectIcon';
@@ -14,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { installDemo } from '@/lib/demo';
 import { importData } from '@/lib/portability';
 import { SUBJECT_COLORS } from '@/types';
-import type { GradingSystem, Subject, Weekday, RegionCode } from '@/types';
+import type { GradingSystem, Subject, Weekday, RegionCode, ThemeMode } from '@/types';
 import { CATEGORY_LABEL } from '@/lib/grading';
 import { COUNTRIES, subdivisionsForCountry } from '@/lib/holidays';
 import type { SharePayload } from '@/lib/scheduleShare';
@@ -99,7 +100,7 @@ interface PendingState {
   name: string; avatar: string; school: string; classLevel: string;
   system: GradingSystem; oberG8: boolean; region: RegionCode;
   subjects: Draft[]; examNames: string[]; fullNames: string[]; lessons: DraftLesson[];
-  colorTheme: ThemeId;
+  colorTheme: ThemeId; themeMode: ThemeMode;
 }
 
 /* ─── Main component ─────────────────────────────────────────────────── */
@@ -138,6 +139,7 @@ export function Onboarding() {
 
   // Design
   const [colorTheme, setColorTheme]   = useState<ThemeId>('indigo');
+  const [themeMode, setThemeMode]     = useState<ThemeMode>('auto');
 
   // Dynamische Schritt-Liste.
   //  • Anmelden kommt früh – danach entscheidet sich, ob die Freunde-Schritte
@@ -174,12 +176,13 @@ export function Onboarding() {
     setSystem(s.system); setOberG8(s.oberG8); setRegion(s.region);
     setSubjects(s.subjects); setExamNames(s.examNames); setFullNames(s.fullNames); setLessons(s.lessons);
     if (s.colorTheme) setColorTheme(s.colorTheme);
+    if (s.themeMode) setThemeMode(s.themeMode);
     setForward(true);
     setStepKey('friends');
   }, [authUser]);
 
   function saveStateForRedirect() {
-    const s: PendingState = { name, avatar, school, classLevel, system, oberG8, region, subjects, examNames, fullNames, lessons, colorTheme };
+    const s: PendingState = { name, avatar, school, classLevel, system, oberG8, region, subjects, examNames, fullNames, lessons, colorTheme, themeMode };
     localStorage.setItem(ONBOARDING_PENDING_KEY, JSON.stringify(s));
   }
 
@@ -256,6 +259,7 @@ export function Onboarding() {
       system,
       region: region.country ? { country: region.country, subdivision: region.subdivision || undefined } : undefined,
       colorTheme,
+      theme: themeMode,
       onboarded: true,
       demo: false,
     });
@@ -415,7 +419,7 @@ export function Onboarding() {
               </motion.div>
             ) : (
               <motion.div key="design" {...slide(forward)}>
-                <DesignStep name={name} value={colorTheme} onChange={setColorTheme} next={goNext} back={goPrev} gradient={gradient} />
+                <DesignStep name={name} value={colorTheme} onChange={setColorTheme} mode={themeMode} onModeChange={setThemeMode} next={goNext} back={goPrev} gradient={gradient} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -1525,13 +1529,25 @@ function FriendCodeBoxes({ value, onChange, autoFocus = true }: { value: string;
 
 /* ─── Step: Design auswählen (mit Dashboard-Mockup) ──────────────────── */
 
-function DesignStep({ name, value, onChange, next, back, gradient }: {
+function DesignStep({ name, value, onChange, mode, onModeChange, next, back, gradient }: {
   name: string; value: ThemeId; onChange: (id: ThemeId) => void;
+  mode: ThemeMode; onModeChange: (m: ThemeMode) => void;
   next: () => void; back: () => void; gradient: string;
 }) {
   const selected = THEME_LIST.find(t => t.id === value) ?? THEME_LIST[0];
   // Live anwenden, damit die App nach dem Onboarding direkt im gewählten Look ist.
   function pick(id: ThemeId) { onChange(id); applyTheme(id); }
+
+  // Für die Vorschau: 'auto' nach Systemeinstellung auflösen.
+  const prefersDark = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches : false;
+  const previewDark = mode === 'dark' || (mode === 'auto' && prefersDark);
+
+  const MODE_OPTS: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
+    { id: 'light', label: 'Hell', icon: Sun },
+    { id: 'dark', label: 'Dunkel', icon: Moon },
+    { id: 'auto', label: 'Auto', icon: Monitor },
+  ];
 
   return (
     <GlassCard className="p-8">
@@ -1539,23 +1555,41 @@ function DesignStep({ name, value, onChange, next, back, gradient }: {
       <h2 className="font-display text-2xl font-extrabold text-ink-900">{name.trim() ? `${name.trim()}, wähl dein Design` : 'Wähl dein Design'}</h2>
       <p className="text-ink-500 text-sm mt-1">Tipp eine Farbe an – die Vorschau passt sich sofort an. Änderbar jederzeit in den Einstellungen.</p>
 
-      {/* Große Live-Vorschau – wechselt mit der gewählten Farbe. */}
+      {/* Große Live-Vorschau – wechselt mit Farbe und Hell/Dunkel. */}
       <div className="mt-5">
         <AnimatePresence mode="wait">
           <motion.div
-            key={selected.id}
+            key={selected.id + (previewDark ? '-d' : '-l')}
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.22 }}
           >
-            <DashboardMock t={selected} />
+            <DashboardMock t={selected} dark={previewDark} />
           </motion.div>
         </AnimatePresence>
       </div>
 
+      {/* Hell / Dunkel / Auto */}
+      <div className="mt-3 grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/35 border border-white/50">
+        {MODE_OPTS.map(o => {
+          const active = mode === o.id;
+          const Icon = o.icon;
+          return (
+            <button
+              key={o.id}
+              onClick={() => onModeChange(o.id)}
+              className={`relative py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition ${active ? 'text-white' : 'text-ink-600 hover:text-ink-900'}`}
+            >
+              {active && <motion.span layoutId="mode-active" className="absolute inset-0 rounded-xl" style={{ background: gradient }} transition={{ type: 'spring', stiffness: 380, damping: 30 }} />}
+              <span className="relative flex items-center gap-1.5"><Icon className="size-4" />{o.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Farb-Buttons im jeweiligen Look mit Glow. */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         {THEME_LIST.map(t => {
           const active = value === t.id;
           const g = `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})`;
@@ -1593,31 +1627,41 @@ function DesignStep({ name, value, onChange, next, back, gradient }: {
 }
 
 /** Stilisiertes Dashboard in den Farben eines Themes (große Vorschau im Design-Schritt). */
-function DashboardMock({ t }: { t: ThemePalette }) {
+function DashboardMock({ t, dark = false }: { t: ThemePalette; dark?: boolean }) {
   const grad = `linear-gradient(135deg, ${t.gradientFrom}, ${t.gradientTo})`;
   const bars = [42, 68, 50, 88, 60, 76];
   const grades = [2, 1, 3];
+
+  // Helle vs. dunkle Flächen.
+  const pageBg = dark
+    ? 'linear-gradient(160deg, #1e293b, #0f172a)'
+    : `linear-gradient(160deg, ${t.bgStart}, ${t.bgEnd})`;
+  const cardCls = dark ? 'bg-white/10' : 'bg-white/75';
+  const lineCls = dark ? 'bg-white/15' : 'bg-black/10';
+  const statColor = dark ? t.secondary : t.primaryDeep;
+  const greetOpacity = dark ? 0.85 : 0.6;
+
   return (
-    <div className="rounded-2xl overflow-hidden border border-black/5 shadow-lg" style={{ background: `linear-gradient(160deg, ${t.bgStart}, ${t.bgEnd})` }}>
+    <div className="rounded-2xl overflow-hidden border shadow-lg" style={{ background: pageBg, borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}>
       <div className="p-3.5">
         {/* Kopf: Avatar + Begrüßung + „+ Note" */}
         <div className="flex items-center gap-2.5">
           <div className="size-7 rounded-xl flex-shrink-0" style={{ background: grad }} />
           <div className="flex-1 space-y-1.5">
-            <div className="h-2 w-2/5 rounded-full" style={{ background: t.primary, opacity: 0.6 }} />
-            <div className="h-1.5 w-1/4 rounded-full bg-black/10" />
+            <div className="h-2 w-2/5 rounded-full" style={{ background: t.primary, opacity: greetOpacity }} />
+            <div className={`h-1.5 w-1/4 rounded-full ${lineCls}`} />
           </div>
           <div className="h-6 px-2.5 rounded-lg flex items-center text-white text-[10px] font-bold" style={{ background: grad }}>+ Note</div>
         </div>
 
         {/* Schnitt-Kachel + Mini-Diagramm */}
         <div className="mt-3 grid grid-cols-2 gap-2.5">
-          <div className="rounded-xl bg-white/75 p-2.5">
-            <div className="h-1.5 w-10 rounded-full bg-black/10" />
-            <div className="font-display font-extrabold text-2xl leading-none mt-1.5" style={{ color: t.primaryDeep }}>2,1</div>
-            <div className="mt-2 h-1.5 w-3/4 rounded-full" style={{ background: t.primary, opacity: 0.25 }} />
+          <div className={`rounded-xl ${cardCls} p-2.5`}>
+            <div className={`h-1.5 w-10 rounded-full ${lineCls}`} />
+            <div className="font-display font-extrabold text-2xl leading-none mt-1.5" style={{ color: statColor }}>2,1</div>
+            <div className="mt-2 h-1.5 w-3/4 rounded-full" style={{ background: t.primary, opacity: dark ? 0.45 : 0.25 }} />
           </div>
-          <div className="rounded-xl bg-white/75 p-2.5 flex items-end justify-between gap-1">
+          <div className={`rounded-xl ${cardCls} p-2.5 flex items-end justify-between gap-1`}>
             {bars.map((h, i) => (
               <div key={i} className="flex-1 rounded-sm" style={{ height: `${h}%`, minHeight: 4, background: i % 2 ? t.secondary : t.primary }} />
             ))}
@@ -1625,11 +1669,11 @@ function DashboardMock({ t }: { t: ThemePalette }) {
         </div>
 
         {/* Fächer-Zeilen mit Noten-Chips */}
-        <div className="mt-2.5 rounded-xl bg-white/75 p-2.5 space-y-2">
+        <div className={`mt-2.5 rounded-xl ${cardCls} p-2.5 space-y-2`}>
           {[t.primary, t.secondary, t.accent].map((c, i) => (
             <div key={i} className="flex items-center gap-2">
               <div className="size-4 rounded-lg flex-shrink-0" style={{ background: c }} />
-              <div className="h-1.5 flex-1 rounded-full bg-black/10" />
+              <div className={`h-1.5 flex-1 rounded-full ${lineCls}`} />
               <div className="h-4 w-7 rounded-md grid place-items-center text-[9px] font-bold text-white" style={{ background: c }}>{grades[i]}</div>
             </div>
           ))}
