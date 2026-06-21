@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Sparkles, Camera, MoreHorizontal, Smile, SmilePlus, MessageCircle, Send, X,
+  Sparkles, Camera, MoreHorizontal, SmilePlus, MessageCircle, Send, X,
   Image as ImageIcon, Clock, Copy, Check, Inbox, Loader2, Users, Trash2, RefreshCw,
   ChevronLeft, Globe2,
 } from 'lucide-react';
@@ -65,15 +65,18 @@ function StudyBadge({ min, streak, floating = false }: { min: number; streak: nu
 
 // ─── Reaktionen ─────────────────────────────────────────────────────────────
 
-function ReactionRow({ post, onToggle, onComment }: {
+function ReactionRow({ post, quickEmojis, onToggle, onPick, onComment }: {
   post: FeedPost;
+  quickEmojis: string[];
   onToggle: (id: string, emoji: string) => void;
+  onPick: (emoji: string) => void;
   onComment: () => void;
 }) {
-  const [picker, setPicker] = useState(false);
   const [fullPicker, setFullPicker] = useState(false);
   const entries = Object.entries(post.reactions);
   const total = entries.reduce((s, [, n]) => s + n, 0);
+  // Vorschläge, die noch nicht als Reaktion auf diesem Post stehen – verhindert Dopplungen.
+  const suggestions = quickEmojis.filter(e => !post.reactions[e]);
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -89,40 +92,31 @@ function ReactionRow({ post, onToggle, onComment }: {
             </button>
           );
         })}
-        <button onClick={() => setPicker(v => !v)}
-          className="inline-flex items-center justify-center rounded-full size-7 text-ink-500 hover:text-ink-800 transition"
-          style={{ background: 'rgb(var(--ink-100))' }} title="Schnell reagieren">
-          <Smile className="size-4" />
+        {/* „Alle Emojis" steht als Erstes vor den vorausgewählten Emojis. */}
+        <button onClick={() => setFullPicker(v => !v)}
+          className="inline-flex items-center justify-center rounded-full size-7 text-white transition active:scale-90 flex-shrink-0"
+          style={{ background: ACCENT }} title="Alle Emojis">
+          <SmilePlus className="size-4" />
         </button>
+        {suggestions.map(e => (
+          <button key={e} onClick={() => onToggle(post.id, e)} title="Reagieren"
+            className="inline-flex items-center justify-center rounded-full size-7 text-base leading-none hover:scale-110 transition active:scale-95"
+            style={{ background: 'rgb(var(--ink-100))' }}>
+            {e}
+          </button>
+        ))}
         <button onClick={onComment}
           className="inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-xs font-semibold text-ink-500 hover:text-ink-800 transition"
           style={{ background: 'rgb(var(--ink-100))' }}>
           <MessageCircle className="size-4" /> Kommentieren
         </button>
-        <div className="ml-auto flex items-center gap-2">
-          {total > 0 && <span className="text-xs text-ink-400">{total} {total === 1 ? 'Reaktion' : 'Reaktionen'}</span>}
-          <button onClick={() => setFullPicker(v => !v)}
-            className="inline-flex items-center justify-center rounded-full size-7 text-white transition active:scale-90 flex-shrink-0"
-            style={{ background: ACCENT }} title="Alle Emojis">
-            <SmilePlus className="size-4" />
-          </button>
-        </div>
+        {total > 0 && <span className="ml-auto text-xs text-ink-400">{total} {total === 1 ? 'Reaktion' : 'Reaktionen'}</span>}
       </div>
-      {picker && (
-        <div className="absolute z-20 bottom-full mb-2 left-0 glass-strong rounded-2xl shadow-soft p-1.5 flex gap-0.5">
-          {QUICK_EMOJI.map(e => (
-            <button key={e} onClick={() => { onToggle(post.id, e); setPicker(false); }}
-              className="size-9 grid place-items-center rounded-xl hover:bg-ink-100 text-xl transition hover:scale-110">
-              {e}
-            </button>
-          ))}
-        </div>
-      )}
       {fullPicker && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setFullPicker(false)} />
-          <div className="absolute z-20 bottom-full mb-2 right-0">
-            <EmojiPicker onPick={e => { onToggle(post.id, e); setFullPicker(false); }} />
+          <div className="absolute z-20 bottom-full mb-2 left-0">
+            <EmojiPicker onPick={e => { onToggle(post.id, e); onPick(e); setFullPicker(false); }} />
           </div>
         </>
       )}
@@ -182,11 +176,13 @@ function Comments({ post, open, meName, meAvatar, onAdd, onDelete }: {
 
 // ─── Post-Karte ─────────────────────────────────────────────────────────────
 
-function PostCard({ post, meName, meAvatar, onToggle, onComment, onDeleteComment, onDeletePost }: {
+function PostCard({ post, meName, meAvatar, quickEmojis, onToggle, onPick, onComment, onDeleteComment, onDeletePost }: {
   post: FeedPost;
   meName: string;
   meAvatar?: string;
+  quickEmojis: string[];
   onToggle: (id: string, emoji: string) => void;
+  onPick: (emoji: string) => void;
   onComment: (id: string, text: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onDeletePost: (id: string) => void;
@@ -229,7 +225,7 @@ function PostCard({ post, meName, meAvatar, onToggle, onComment, onDeleteComment
         post.studyMin > 0 && <div className="px-4 pb-1"><StudyBadge min={post.studyMin} streak={post.streak} /></div>
       )}
       <div className="p-3.5">
-        <ReactionRow post={post} onToggle={onToggle} onComment={() => setOpenC(v => !v)} />
+        <ReactionRow post={post} quickEmojis={quickEmojis} onToggle={onToggle} onPick={onPick} onComment={() => setOpenC(v => !v)} />
         <Comments post={post} open={openC} meName={meName} meAvatar={meAvatar} onAdd={onComment} onDelete={onDeleteComment} />
       </div>
     </div>
@@ -534,6 +530,37 @@ function RequestsCard() {
   );
 }
 
+// ─── Vorausgewählte Emojis (zuletzt benutzt) ────────────────────────────────
+
+const QUICK_COUNT = 6;
+const QUICK_KEY = 'reactionQuickEmojis';
+
+function loadQuickEmojis(): string[] {
+  try {
+    const raw = localStorage.getItem(QUICK_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.every(x => typeof x === 'string')) return arr.slice(0, QUICK_COUNT);
+    }
+  } catch { /* ignorieren – Standard nehmen */ }
+  return QUICK_EMOJI.slice(0, QUICK_COUNT);
+}
+
+// Hält die vorausgewählten Emojis und schiebt ein neu gewähltes nach vorne,
+// das älteste fällt hinten raus. Wird im localStorage gemerkt.
+function useQuickEmojis() {
+  const [list, setList] = useState<string[]>(loadQuickEmojis);
+  const remember = useCallback((emoji: string) => {
+    setList(prev => {
+      const next = [emoji, ...prev.filter(e => e !== emoji)].slice(0, QUICK_COUNT);
+      if (next.length === prev.length && next.every((e, i) => e === prev[i])) return prev;
+      try { localStorage.setItem(QUICK_KEY, JSON.stringify(next)); } catch { /* ignorieren */ }
+      return next;
+    });
+  }, []);
+  return [list, remember] as const;
+}
+
 // ─── Feed-Hook ──────────────────────────────────────────────────────────────
 
 function useSocialFeed(authUserId: string | undefined) {
@@ -591,6 +618,7 @@ export function SocialPage() {
 
   const { posts, setPosts, loading, error, reload } = useSocialFeed(authUser?.id);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [quickEmojis, rememberEmoji] = useQuickEmojis();
 
   function onCreated(p: FeedPost) {
     setPosts(ps => [p, ...ps]);
@@ -681,8 +709,8 @@ export function SocialPage() {
               </div>
             ) : (
               posts.map(p => (
-                <PostCard key={p.id} post={p} meName={meName} meAvatar={meAvatar}
-                  onToggle={toggleReaction} onComment={comment} onDeleteComment={removeComment} onDeletePost={removePost} />
+                <PostCard key={p.id} post={p} meName={meName} meAvatar={meAvatar} quickEmojis={quickEmojis}
+                  onToggle={toggleReaction} onPick={rememberEmoji} onComment={comment} onDeleteComment={removeComment} onDeletePost={removePost} />
               ))
             )}
 
