@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { lookupByFriendCode } from './homeworkShare';
+import { notifySocial } from './socialNotify';
 
 /**
  * Gegenseitiger Freundes-Graph mit Anfragen.
@@ -166,6 +167,8 @@ export async function sendFriendRequestByCode(rawCode: string): Promise<Friend |
   }
 
   const row = data as FriendshipRow;
+  // Empfänger der Anfrage sofort benachrichtigen (im Hintergrund).
+  notifySocial({ type: 'friend_request', friendshipId: row.id });
   return {
     id: row.id,
     userId: profile.userId,
@@ -184,6 +187,8 @@ export async function acceptRequest(friendshipId: string): Promise<void> {
     .update({ status: 'accepted', responded_at: new Date().toISOString() })
     .eq('id', friendshipId);
   if (error) throw new Error('Annehmen fehlgeschlagen: ' + error.message);
+  // Ursprünglichen Anfrager benachrichtigen, dass angenommen wurde.
+  notifySocial({ type: 'friend_accept', friendshipId });
 }
 
 /**

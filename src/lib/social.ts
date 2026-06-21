@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getOrCreateMyProfile } from './homeworkShare';
+import { notifySocial } from './socialNotify';
 
 /**
  * Social-Feed: Lern-Posts, Reaktionen & Kommentare – geteilt mit Freunden.
@@ -239,6 +240,9 @@ export async function createPost(data: NewPost, audienceUserIds: string[]): Prom
     }
   }
 
+  // Empfänger sofort benachrichtigen (im Hintergrund).
+  notifySocial({ type: 'post', postId: p.id });
+
   return {
     id: p.id, userId: p.user_id, authorName: profile.displayName, authorAvatar: profile.avatarUrl,
     subject: p.subject, subjectColor: p.subject_color ?? undefined, caption: p.caption, photoUrl: p.photo_url ?? undefined,
@@ -273,6 +277,8 @@ export async function setReaction(postId: string, emoji: string, current: string
     .from('social_reactions')
     .upsert({ post_id: postId, user_id: me, emoji }, { onConflict: 'post_id,user_id' });
   if (error) throw new Error(error.message);
+  // Nur beim Setzen/Wechseln benachrichtigen – der Autor wird serverseitig ermittelt.
+  notifySocial({ type: 'reaction', postId });
   return emoji;
 }
 
@@ -291,6 +297,7 @@ export async function addComment(postId: string, text: string): Promise<FeedComm
   if (error) throw new Error('Kommentar fehlgeschlagen: ' + error.message);
 
   const c = row as CommentRow;
+  notifySocial({ type: 'comment', commentId: c.id });
   return {
     id: c.id, userId: c.user_id, authorName: profile.displayName, authorAvatar: profile.avatarUrl,
     text: c.text, createdAt: new Date(c.created_at).getTime(), mine: true,

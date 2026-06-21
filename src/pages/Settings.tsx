@@ -1725,7 +1725,8 @@ function NotificationsSection() {
       <Card>
         <h3 className="h3 mb-3 flex items-center gap-2"><Bell className="size-5 text-theme" />Benachrichtigungen</h3>
         <p className="subtle mb-3">
-          Lass dich an Hausaufgaben, Klausuren, Stundenbeginn und Lern-Deadlines erinnern.
+          Lass dich an Hausaufgaben, Klausuren, Stundenbeginn und Lern-Deadlines erinnern –
+          und bei Posts, Reaktionen, Kommentaren und Freundschaften im Social-Feed.
           Funktioniert auch wenn der Browser geschlossen ist (außer iOS-Safari ohne PWA-Install).
         </p>
 
@@ -1834,6 +1835,30 @@ function NotificationsSection() {
               onChange={v => patchSub('studyDeadline', { hoursBefore: v })} />
           </Row>
         </EventBlock>
+      </Card>
+
+      <Card>
+        <h3 className="h3 mb-3 flex items-center gap-2"><Users className="size-5 text-theme" />Freunde & Social</h3>
+        <p className="subtle mb-3">Sofort-Benachrichtigungen, wenn im Lern-Feed oder bei Freundschaften etwas passiert.</p>
+
+        <Row label="Neue Posts" hint="Wenn ein Freund etwas im Feed postet.">
+          <Toggle checked={n.social.posts} onChange={v => patchSub('social', { posts: v })} />
+        </Row>
+        <Row label="Reaktionen auf deine Posts" hint="Wenn jemand mit einem Emoji auf deinen Beitrag reagiert.">
+          <Toggle checked={n.social.reactions} onChange={v => patchSub('social', { reactions: v })} />
+        </Row>
+        <Row label="Kommentare auf deine Posts" hint="Wenn jemand deinen Beitrag kommentiert.">
+          <Toggle checked={n.social.comments} onChange={v => patchSub('social', { comments: v })} />
+        </Row>
+        <Row label="Freundschaftsanfragen" hint="Wenn dir jemand eine Anfrage schickt.">
+          <Toggle checked={n.friends.requests} onChange={v => patchSub('friends', { requests: v })} />
+        </Row>
+        <Row label="Anfrage angenommen" hint="Wenn jemand deine gesendete Anfrage annimmt.">
+          <Toggle checked={n.friends.accepted} onChange={v => patchSub('friends', { accepted: v })} />
+        </Row>
+        <Row label="Geteilte Hausaufgaben" hint="Wenn ein Freund eine Aufgabe mit dir teilt.">
+          <Toggle checked={n.friends.sharedHomework} onChange={v => patchSub('friends', { sharedHomework: v })} />
+        </Row>
       </Card>
 
       <Card>

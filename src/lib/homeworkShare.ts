@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { notifySocial } from './socialNotify';
 import type { AppTask, FriendTask } from '@/types';
 
 /**
@@ -143,6 +144,9 @@ export async function publishTask(task: AppTask, subjectName?: string): Promise<
     due_date: task.dueDate ?? null,
     created_at: task.createdAt,
   }, { onConflict: 'id' });
+
+  // Freunde einmalig benachrichtigen (Server entdoppelt wiederholtes Speichern).
+  notifySocial({ type: 'shared_task', taskId: task.id });
 }
 
 /**

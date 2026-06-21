@@ -71,6 +71,8 @@ function mergeSettings(stored: Partial<AppSettings> | undefined): AppSettings {
     exam: { ...def.exam, ...(n.exam ?? {}) },
     lessonStart: { ...def.lessonStart, ...(n.lessonStart ?? {}) },
     studyDeadline: { ...def.studyDeadline, ...(n.studyDeadline ?? {}) },
+    social: { ...def.social, ...(n.social ?? {}) },
+    friends: { ...def.friends, ...(n.friends ?? {}) },
     quietHours: { ...def.quietHours, ...(n.quietHours ?? {}) },
   };
   return merged;

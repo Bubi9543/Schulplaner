@@ -579,6 +579,28 @@ export interface NotificationSettings {
     /** Stunden vor `studyDeadline`. */
     hoursBefore: number;
   };
+  /**
+   * Social-Feed-Benachrichtigungen. Werden – anders als die obigen
+   * Erinnerungen – *sofort* von der Edge Function `social-notify` ausgelöst,
+   * wenn ein anderer Nutzer etwas tut (posten, reagieren, kommentieren).
+   */
+  social: {
+    /** Ein Freund hat etwas im Feed gepostet. */
+    posts: boolean;
+    /** Jemand hat auf deinen Post reagiert (Emoji). */
+    reactions: boolean;
+    /** Jemand hat deinen Post kommentiert. */
+    comments: boolean;
+  };
+  /** Freundschaft & geteilte Inhalte (ebenfalls sofort via `social-notify`). */
+  friends: {
+    /** Du hast eine neue Freundschaftsanfrage bekommen. */
+    requests: boolean;
+    /** Deine gesendete Anfrage wurde angenommen. */
+    accepted: boolean;
+    /** Ein Freund hat eine Hausaufgabe mit dir geteilt. */
+    sharedHomework: boolean;
+  };
   /** Stille Zeit – während dieses Fensters nicht benachrichtigen. */
   quietHours: {
     enabled: boolean;
@@ -595,6 +617,8 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   exam: { enabled: true, daysBefore: 3, hoursBefore: 12 },
   lessonStart: { enabled: false, minutesBefore: 10, onlyWeekdays: true },
   studyDeadline: { enabled: true, hoursBefore: 24 },
+  social: { posts: true, reactions: true, comments: true },
+  friends: { requests: true, accepted: true, sharedHomework: true },
   quietHours: { enabled: true, from: '22:00', to: '07:00' },
 };
 
