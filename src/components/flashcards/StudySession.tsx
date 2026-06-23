@@ -64,6 +64,34 @@ function snapshotOf(card: Flashcard): Partial<Flashcard> {
   return { box: card.box, reviewedAt: card.reviewedAt, correctCount: card.correctCount, wrongCount: card.wrongCount };
 }
 
+/**
+ * Liefert den tatsächlich sichtbaren Bildbereich (ohne die eingeblendete
+ * Tastatur). Auf iPad/iPhone verkleinert Safari das Layout beim Öffnen der
+ * Tastatur nicht – ein `fixed`-Overlay würde dahinter weiterlaufen und
+ * weggescrollt. Über `window.visualViewport` binden wir das Overlay an den
+ * sichtbaren Teil, damit alles im Rahmen bleibt. Ohne die API (z. B. Desktop)
+ * gilt die volle Fensterhöhe – dort ändert sich nichts.
+ */
+function useVisualViewport(): { height: number; offsetTop: number } {
+  const [vp, setVp] = useState(() => ({
+    height: typeof window !== 'undefined' ? window.innerHeight : 0,
+    offsetTop: 0,
+  }));
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setVp({ height: vv.height, offsetTop: vv.offsetTop });
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
+  return vp;
+}
+
 export function StudySession({ open, onClose, deckName, cards, frontLabel, backLabel, onReview, restoreCard }: Props) {
   const [phase, setPhase] = useState<Phase>('config');
   const [direction, setDirection] = useState<ReviewDirection>('front-back');
@@ -72,6 +100,8 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
   // Anzahl der Aufgaben in der Prüfung (0 = alle).
   const [testCount, setTestCount] = useState(0);
   const labels = useMemo<SideLabels>(() => ({ front: frontLabel, back: backLabel }), [frontLabel, backLabel]);
+  // Sichtbarer Bereich (ohne Tastatur), damit auf dem iPad nichts verdeckt wird.
+  const viewport = useVisualViewport();
 
   // Beim Öffnen Konfig zurücksetzen.
   useEffect(() => { if (open) setPhase('config'); }, [open]);
@@ -81,8 +111,12 @@ export function StudySession({ open, onClose, deckName, cards, frontLabel, backL
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-[70] flex flex-col"
-        style={{ background: 'linear-gradient(180deg, var(--theme-bg-start), var(--theme-bg-end))' }}
+        className="fixed inset-x-0 top-0 z-[70] flex flex-col"
+        style={{
+          background: 'linear-gradient(180deg, var(--theme-bg-start), var(--theme-bg-end))',
+          height: viewport.height,
+          top: viewport.offsetTop,
+        }}
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       >
         <div className="absolute inset-0 -z-10 theme-aurora" />
