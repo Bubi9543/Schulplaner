@@ -60,6 +60,13 @@ DROP POLICY IF EXISTS "social_comments_select" ON public.social_comments;
 CREATE POLICY "social_comments_select" ON public.social_comments
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.social_posts p WHERE p.id = post_id));
+
+-- Antworten auf Kommentare: optionaler Verweis auf den Eltern-Kommentar.
+ALTER TABLE public.social_comments
+  ADD COLUMN IF NOT EXISTS parent_id uuid
+  REFERENCES public.social_comments(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS social_comments_parent_idx
+  ON public.social_comments (parent_id);
 ```
 
 > Hinweis: Posts, die du **vor** diesem Update angelegt hast, haben keine
@@ -112,10 +119,12 @@ CREATE TABLE IF NOT EXISTS public.social_comments (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id    uuid NOT NULL REFERENCES public.social_posts(id) ON DELETE CASCADE,
   user_id    uuid NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+  parent_id  uuid REFERENCES public.social_comments(id) ON DELETE CASCADE,  -- Antwort auf einen Kommentar (NULL = Top-Level)
   text       text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS social_comments_post_idx ON public.social_comments (post_id, created_at);
+CREATE INDEX IF NOT EXISTS social_comments_parent_idx ON public.social_comments (parent_id);
 
 -- ─── RLS ───────────────────────────────────────────────────────────────────
 ALTER TABLE public.social_posts          ENABLE ROW LEVEL SECURITY;

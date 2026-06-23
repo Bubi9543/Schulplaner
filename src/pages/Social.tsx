@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Sparkles, Camera, MoreHorizontal, SmilePlus, MessageCircle, Send, X,
   Image as ImageIcon, Clock, Copy, Check, Inbox, Loader2, Users, Trash2, RefreshCw,
-  ChevronLeft, Globe2,
+  ChevronLeft, Globe2, CornerDownRight,
 } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { Card } from '@/components/Card';
@@ -21,7 +21,7 @@ import { QUICK_EMOJI, fmtMin, timeAgo } from '@/lib/socialDemo';
 import {
   fetchFeed, createPost, deletePost, setReaction, addComment, deleteComment, uploadPostPhoto,
 } from '@/lib/social';
-import type { FeedPost } from '@/lib/social';
+import type { FeedPost, FeedComment } from '@/lib/social';
 
 // Theme-getriebene Akzentfarben (reagieren auf den Theme-Switcher).
 const ACCENT = 'rgb(var(--theme-primary-rgb))';
@@ -124,49 +124,94 @@ function ReactionRow({ post, quickEmojis, onToggle, onPick, onComment }: {
   );
 }
 
-function Comments({ post, open, meName, meAvatar, onAdd, onDelete }: {
+function Comments({ post, open, meName, meAvatar, onOpen, onAdd, onDelete }: {
   post: FeedPost;
   open: boolean;
   meName: string;
   meAvatar?: string;
-  onAdd: (id: string, text: string) => void;
+  onOpen: () => void;
+  onAdd: (postId: string, text: string, parentId: string | null) => void;
   onDelete: (postId: string, commentId: string) => void;
 }) {
   const [text, setText] = useState('');
+  // Auf welchen Kommentar wird geantwortet (rootId = Wurzel-Kommentar, eine Ebene tief).
+  const [replyTo, setReplyTo] = useState<{ rootId: string; name: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   if (!open && post.comments.length === 0) return null;
+
   function submit() {
     const t = text.trim();
     if (!t) return;
-    onAdd(post.id, t);
+    onAdd(post.id, t, replyTo?.rootId ?? null);
     setText('');
+    setReplyTo(null);
   }
+
+  function startReply(rootId: string, name: string) {
+    setReplyTo({ rootId, name });
+    onOpen(); // Eingabefeld einblenden, falls der Kommentar-Bereich noch zu ist.
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  // Eine Kommentar-Zeile (Top-Level oder Antwort). `rootId` ist immer der oberste
+  // Kommentar des Threads, damit Antworten nie tiefer als eine Ebene verschachteln.
+  const renderLine = (c: FeedComment, rootId: string, isReply: boolean) => (
+    <div className="group flex items-start gap-2">
+      <Avatar name={c.authorName} avatarUrl={c.authorAvatar} className={isReply ? 'size-6' : 'size-7'} textClassName="text-[10px]" />
+      <div className="min-w-0 flex-1">
+        <div>
+          <span className="text-[13px] font-semibold text-ink-800">{c.authorName}{c.mine && <span className="text-ink-400 font-normal"> · du</span>}</span>
+          <span className="text-[13px] text-ink-600"> {c.text}</span>
+        </div>
+        <button onClick={() => startReply(rootId, c.authorName)}
+          className="mt-0.5 text-[11px] font-semibold text-ink-400 hover:text-ink-700 transition">
+          Antworten
+        </button>
+      </div>
+      {c.mine && (
+        <button onClick={() => onDelete(post.id, c.id)} className="text-ink-300 hover:text-rose-500 transition opacity-0 group-hover:opacity-100" title="Kommentar löschen">
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="mt-3 space-y-2.5">
       {post.comments.map(c => (
-        <div key={c.id} className="group flex items-start gap-2">
-          <Avatar name={c.authorName} avatarUrl={c.authorAvatar} className="size-7" textClassName="text-[10px]" />
-          <div className="min-w-0 flex-1">
-            <span className="text-[13px] font-semibold text-ink-800">{c.authorName}{c.mine && <span className="text-ink-400 font-normal"> · du</span>}</span>
-            <span className="text-[13px] text-ink-600"> {c.text}</span>
-          </div>
-          {c.mine && (
-            <button onClick={() => onDelete(post.id, c.id)} className="text-ink-300 hover:text-rose-500 transition opacity-0 group-hover:opacity-100" title="Kommentar löschen">
-              <Trash2 className="size-3.5" />
-            </button>
+        <div key={c.id} className="space-y-2">
+          {renderLine(c, c.id, false)}
+          {c.replies.length > 0 && (
+            <div className="ml-9 space-y-2 border-l-2 border-ink-100 pl-3">
+              {c.replies.map(r => <div key={r.id}>{renderLine(r, c.id, true)}</div>)}
+            </div>
           )}
         </div>
       ))}
       {open && (
-        <div className="flex items-center gap-2 pt-0.5">
-          <Avatar name={meName} avatarUrl={meAvatar} className="size-7" textClassName="text-[10px]" />
-          <div className="flex-1 flex items-center gap-1.5 rounded-full bg-ink-100 pl-3 pr-1 py-1">
-            <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
-              placeholder="Kommentieren …" className="flex-1 bg-transparent text-[13px] outline-none text-ink-800 placeholder:text-ink-400" />
-            <button onClick={submit} disabled={!text.trim()}
-              className="size-7 grid place-items-center rounded-full text-white disabled:opacity-40 transition active:scale-90"
-              style={{ background: ACCENT }}>
-              <Send className="size-3.5" />
-            </button>
+        <div className="pt-0.5">
+          {replyTo && (
+            <div className="flex items-center gap-1.5 ml-9 mb-1 text-[11px] text-ink-500">
+              <CornerDownRight className="size-3.5" />
+              Antwort an <span className="font-semibold text-ink-700">{replyTo.name}</span>
+              <button onClick={() => setReplyTo(null)} className="ml-0.5 text-ink-400 hover:text-rose-500" title="Antwort abbrechen">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Avatar name={meName} avatarUrl={meAvatar} className="size-7" textClassName="text-[10px]" />
+            <div className="flex-1 flex items-center gap-1.5 rounded-full bg-ink-100 pl-3 pr-1 py-1">
+              <input ref={inputRef} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
+                placeholder={replyTo ? `Antwort an ${replyTo.name} …` : 'Kommentieren …'}
+                className="flex-1 bg-transparent text-[13px] outline-none text-ink-800 placeholder:text-ink-400" />
+              <button onClick={submit} disabled={!text.trim()}
+                className="size-7 grid place-items-center rounded-full text-white disabled:opacity-40 transition active:scale-90"
+                style={{ background: ACCENT }}>
+                <Send className="size-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -183,7 +228,7 @@ function PostCard({ post, meName, meAvatar, quickEmojis, onToggle, onPick, onCom
   quickEmojis: string[];
   onToggle: (id: string, emoji: string) => void;
   onPick: (emoji: string) => void;
-  onComment: (id: string, text: string) => void;
+  onComment: (postId: string, text: string, parentId: string | null) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onDeletePost: (id: string) => void;
 }) {
@@ -226,7 +271,7 @@ function PostCard({ post, meName, meAvatar, quickEmojis, onToggle, onPick, onCom
       )}
       <div className="p-3.5">
         <ReactionRow post={post} quickEmojis={quickEmojis} onToggle={onToggle} onPick={onPick} onComment={() => setOpenC(v => !v)} />
-        <Comments post={post} open={openC} meName={meName} meAvatar={meAvatar} onAdd={onComment} onDelete={onDeleteComment} />
+        <Comments post={post} open={openC} meName={meName} meAvatar={meAvatar} onOpen={() => setOpenC(true)} onAdd={onComment} onDelete={onDeleteComment} />
       </div>
     </div>
   );
@@ -637,15 +682,30 @@ export function SocialPage() {
     setReaction(postId, emoji, cur).catch(() => void reload());
   }
 
-  async function comment(postId: string, text: string) {
+  async function comment(postId: string, text: string, parentId: string | null) {
     try {
-      const c = await addComment(postId, text);
-      setPosts(ps => ps.map(p => p.id === postId ? { ...p, comments: [...p.comments, c] } : p));
+      const c = await addComment(postId, text, parentId);
+      setPosts(ps => ps.map(p => {
+        if (p.id !== postId) return p;
+        if (!parentId) return { ...p, comments: [...p.comments, c] };
+        // Antwort: an die replies des Wurzel-Kommentars hängen.
+        return { ...p, comments: p.comments.map(top => top.id === parentId ? { ...top, replies: [...top.replies, c] } : top) };
+      }));
     } catch { void reload(); }
   }
 
   function removeComment(postId: string, commentId: string) {
-    setPosts(ps => ps.map(p => p.id === postId ? { ...p, comments: p.comments.filter(c => c.id !== commentId) } : p));
+    setPosts(ps => ps.map(p => {
+      if (p.id !== postId) return p;
+      // Top-Level-Kommentar entfernen (Antworten gehen mit, ON DELETE CASCADE)
+      // oder eine einzelne Antwort aus den replies filtern.
+      return {
+        ...p,
+        comments: p.comments
+          .filter(c => c.id !== commentId)
+          .map(c => ({ ...c, replies: c.replies.filter(r => r.id !== commentId) })),
+      };
+    }));
     deleteComment(commentId).catch(() => void reload());
   }
 

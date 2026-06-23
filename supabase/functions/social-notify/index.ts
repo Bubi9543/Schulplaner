@@ -254,14 +254,32 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // ── Kommentar → Autor des Posts ────────────────────────────────────────
+      // ── Kommentar → Autor des Posts; Antwort → Autor des Eltern-Kommentars ──
       case 'comment': {
         const commentId = String(body.commentId ?? '');
         if (!commentId) return json({ error: 'commentId fehlt.' }, 400);
         const { data: comment } = await admin
-          .from('social_comments').select('post_id, user_id, text').eq('id', commentId).maybeSingle();
+          .from('social_comments').select('post_id, user_id, parent_id, text').eq('id', commentId).maybeSingle();
         if (!comment) return json({ error: 'Kommentar nicht gefunden.' }, 404);
         if (comment.user_id !== me) return json({ error: 'Nicht dein Kommentar.' }, 403);
+
+        // Antwort auf einen Kommentar → Autor des Eltern-Kommentars benachrichtigen.
+        if (comment.parent_id) {
+          const { data: parent } = await admin
+            .from('social_comments').select('user_id').eq('id', comment.parent_id).maybeSingle();
+          const target = parent?.user_id as string | undefined;
+          if (target && target !== me) {
+            delivered += await notifyUser(admin, target, 'comment', () => ({
+              title: `💬 ${meName} hat dir geantwortet`,
+              body: snippet(comment.text as string) || 'Neue Antwort auf deinen Kommentar',
+              url: '/socials',
+              tag: `comment-${comment.post_id}`,
+            }));
+          }
+          break;
+        }
+
+        // Normaler Kommentar → Autor des Posts benachrichtigen.
         const { data: post } = await admin
           .from('social_posts').select('user_id, subject').eq('id', comment.post_id).maybeSingle();
         if (!post) break;

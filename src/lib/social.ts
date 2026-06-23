@@ -24,6 +24,10 @@ export interface FeedComment {
   text: string;
   createdAt: number;
   mine: boolean;
+  /** Auf welchen Kommentar geantwortet wird (Wurzel-Kommentar) – null = Top-Level. */
+  parentId: string | null;
+  /** Direkte Antworten (nur bei Top-Level-Kommentaren gefüllt; eine Ebene tief). */
+  replies: FeedComment[];
 }
 
 export interface FeedPost {
@@ -110,7 +114,7 @@ export async function uploadPostPhoto(file: File): Promise<string> {
 
 interface PostRow { id: string; user_id: string; subject: string | null; subject_color: string | null; caption: string; photo_url: string | null; study_min: number; streak: number; created_at: string; }
 interface ReactionRow { post_id: string; user_id: string; emoji: string; }
-interface CommentRow { id: string; post_id: string; user_id: string; text: string; created_at: string; }
+interface CommentRow { id: string; post_id: string; user_id: string; parent_id: string | null; text: string; created_at: string; }
 interface ProfileRow { user_id: string; display_name: string; avatar_url: string | null; }
 
 /**
@@ -136,7 +140,7 @@ export async function fetchFeed(limit = 100): Promise<FeedPost[]> {
 
   const [reactRes, commentRes] = await Promise.all([
     supabase.from('social_reactions').select('post_id, user_id, emoji').in('post_id', postIds),
-    supabase.from('social_comments').select('id, post_id, user_id, text, created_at').in('post_id', postIds).order('created_at', { ascending: true }),
+    supabase.from('social_comments').select('id, post_id, user_id, parent_id, text, created_at').in('post_id', postIds).order('created_at', { ascending: true }),
   ]);
 
   const reactions = (reactRes.data as ReactionRow[]) ?? [];
@@ -166,15 +170,52 @@ export async function fetchFeed(limit = 100): Promise<FeedPost[]> {
     if (r.user_id === me) e.mine = r.emoji;
   }
 
-  // Kommentare je Post.
+  // Kommentare je Post – Top-Level + eine Ebene Antworten (Instagram-Stil).
+  // `comments` ist nach created_at aufsteigend sortiert, Eltern kommen also vor
+  // ihren Antworten. Antworten auf Antworten werden zum Wurzel-Kommentar
+  // hochgereicht, damit die Darstellung nie tiefer als eine Ebene wird.
+  const rowById = new Map<string, CommentRow>();
+  for (const c of comments) rowById.set(c.id, c);
+  const rootIdOf = (c: CommentRow): string => {
+    let cur = c;
+    const seen = new Set<string>();
+    while (cur.parent_id && rowById.has(cur.parent_id) && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      cur = rowById.get(cur.parent_id)!;
+    }
+    return cur.id;
+  };
+  const toFeed = (c: CommentRow, parentId: string | null): FeedComment => ({
+    id: c.id, userId: c.user_id, authorName: nameOf(c.user_id), authorAvatar: avatarOf(c.user_id),
+    text: c.text, createdAt: new Date(c.created_at).getTime(), mine: c.user_id === me,
+    parentId, replies: [],
+  });
+
   const commentsByPost = new Map<string, FeedComment[]>();
+  const feedById = new Map<string, FeedComment>();
+  // 1) Top-Level-Kommentare (in Zeit-Reihenfolge) anlegen.
   for (const c of comments) {
+    if (rootIdOf(c) !== c.id) continue;
+    const fc = toFeed(c, null);
+    feedById.set(c.id, fc);
     const list = commentsByPost.get(c.post_id) ?? [];
-    list.push({
-      id: c.id, userId: c.user_id, authorName: nameOf(c.user_id), authorAvatar: avatarOf(c.user_id),
-      text: c.text, createdAt: new Date(c.created_at).getTime(), mine: c.user_id === me,
-    });
+    list.push(fc);
     commentsByPost.set(c.post_id, list);
+  }
+  // 2) Antworten in die `replies` ihres Wurzel-Kommentars einsortieren.
+  for (const c of comments) {
+    const root = rootIdOf(c);
+    if (root === c.id) continue; // bereits als Top-Level erfasst
+    const parent = feedById.get(root);
+    if (parent) {
+      parent.replies.push(toFeed(c, root));
+    } else {
+      // Wurzel nicht auffindbar (Datenanomalie) → als Top-Level zeigen statt verlieren.
+      const fc = toFeed(c, null);
+      const list = commentsByPost.get(c.post_id) ?? [];
+      list.push(fc);
+      commentsByPost.set(c.post_id, list);
+    }
   }
 
   return posts.map(p => {
@@ -284,15 +325,18 @@ export async function setReaction(postId: string, emoji: string, current: string
 
 // ─── Kommentare ──────────────────────────────────────────────────────────────
 
-/** Fügt einen Kommentar hinzu und gibt ihn zurück (für optimistisches Einfügen). */
-export async function addComment(postId: string, text: string): Promise<FeedComment> {
+/**
+ * Fügt einen Kommentar hinzu und gibt ihn zurück (für optimistisches Einfügen).
+ * `parentId` gesetzt = Antwort auf einen Kommentar (Wurzel-Kommentar-ID).
+ */
+export async function addComment(postId: string, text: string, parentId: string | null = null): Promise<FeedComment> {
   if (!supabase) throw new SocialAuthError();
   const profile = await getOrCreateMyProfile();
 
   const { data: row, error } = await supabase
     .from('social_comments')
-    .insert({ post_id: postId, user_id: profile.userId, text })
-    .select('id, post_id, user_id, text, created_at')
+    .insert({ post_id: postId, user_id: profile.userId, text, parent_id: parentId })
+    .select('id, post_id, user_id, parent_id, text, created_at')
     .single();
   if (error) throw new Error('Kommentar fehlgeschlagen: ' + error.message);
 
@@ -301,6 +345,7 @@ export async function addComment(postId: string, text: string): Promise<FeedComm
   return {
     id: c.id, userId: c.user_id, authorName: profile.displayName, authorAvatar: profile.avatarUrl,
     text: c.text, createdAt: new Date(c.created_at).getTime(), mine: true,
+    parentId: c.parent_id, replies: [],
   };
 }
 
